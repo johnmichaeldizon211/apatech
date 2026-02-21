@@ -148,6 +148,9 @@
             const dropdown = document.querySelector(".profile-menu .dropdown");
             const serviceButtons = Array.from(document.querySelectorAll(".mini-btn[data-service]"));
             const paymentButtons = Array.from(document.querySelectorAll(".pay-btn[data-payment]"));
+            const codPaymentButton = paymentButtons.find(function (button) {
+                return (button.getAttribute("data-payment") || "").toUpperCase() === "CASH ON DELIVERY";
+            }) || null;
             const formError = document.getElementById("form-error");
             const fullNameInput = document.getElementById("full-name");
             const emailInput = document.getElementById("email");
@@ -310,6 +313,7 @@
                 subtotalEl.innerHTML = formatPeso(subtotal);
                 shippingEl.innerHTML = formatPeso(shippingFee);
                 totalEl.innerHTML = formatPeso(grandTotal);
+                syncPaymentAvailability();
 
                 if (selectedService === "Delivery") {
                     shipAddressInput.disabled = false;
@@ -341,6 +345,49 @@
                 buttons.forEach(function (button) {
                     button.classList.toggle("active", button === activeBtn);
                 });
+            }
+
+            function findPreferredPaymentButton() {
+                const preference = ["GCASH", "MAYA", "INSTALLMENT", "CASH ON DELIVERY"];
+                for (let i = 0; i < preference.length; i += 1) {
+                    const target = preference[i];
+                    const button = paymentButtons.find(function (item) {
+                        return !item.disabled && (item.getAttribute("data-payment") || "").toUpperCase() === target;
+                    });
+                    if (button) {
+                        return button;
+                    }
+                }
+                return paymentButtons.find(function (button) {
+                    return !button.disabled;
+                }) || null;
+            }
+
+            function syncPaymentAvailability() {
+                const codBlocked = selectedService === "Pick Up";
+                if (codPaymentButton) {
+                    codPaymentButton.disabled = codBlocked;
+                    codPaymentButton.setAttribute("aria-disabled", codBlocked ? "true" : "false");
+                }
+
+                const activePaymentButton = paymentButtons.find(function (button) {
+                    return !button.disabled && (button.getAttribute("data-payment") || "") === selectedPayment;
+                }) || null;
+
+                if (activePaymentButton) {
+                    setActiveButton(paymentButtons, activePaymentButton);
+                    return;
+                }
+
+                const fallbackButton = findPreferredPaymentButton();
+                if (fallbackButton) {
+                    selectedPayment = fallbackButton.getAttribute("data-payment") || "GCASH";
+                    setActiveButton(paymentButtons, fallbackButton);
+                    return;
+                }
+
+                selectedPayment = "GCASH";
+                setActiveButton(paymentButtons, null);
             }
 
             function appendRecordToStorage(storageKey, record) {
@@ -445,6 +492,9 @@
 
             paymentButtons.forEach(function (button) {
                 button.addEventListener("click", function () {
+                    if (button.disabled) {
+                        return;
+                    }
                     selectedPayment = button.getAttribute("data-payment") || "GCASH";
                     setActiveButton(paymentButtons, button);
                     clearError();
@@ -453,6 +503,11 @@
 
             confirmBtn.addEventListener("click", function () {
                 if (!validateInputs()) {
+                    return;
+                }
+                if (selectedService === "Pick Up" && selectedPayment === "CASH ON DELIVERY") {
+                    syncPaymentAvailability();
+                    formError.textContent = "Cash on Delivery is not available for Pick up.";
                     return;
                 }
 

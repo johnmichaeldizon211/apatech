@@ -289,6 +289,18 @@ body {
     object-fit: contain;
 }
 
+.pay-btn:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.pay-btn:disabled:hover,
+.pay-btn:disabled:active {
+    transform: none;
+}
+
 .pay-btn.active {
     background: var(--button-blue);
     border-color: var(--button-blue);

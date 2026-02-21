@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", function () {
             ? window.EcodriveSession.getApiBase()
             : localStorage.getItem("ecodrive_api_base")
                 || localStorage.getItem("ecodrive_kyc_api_base")
-                || "http://127.0.0.1:5050")
+                || "")
     )
         .trim()
         .replace(/\/+$/, "");
@@ -66,8 +66,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function getApiBaseCandidates() {
         const candidates = [
             configuredApiBase,
-            "http://127.0.0.1:5050",
-            "http://localhost:5050",
             ""
         ];
 

@@ -25,11 +25,13 @@ document.addEventListener("DOMContentLoaded", function () {
         var base = String(
             localStorage.getItem("ecodrive_api_base") ||
             localStorage.getItem("ecodrive_kyc_api_base") ||
-            "http://127.0.0.1:5050"
+            (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
+                ? window.EcodriveSession.getApiBase()
+                : "")
         )
             .trim()
             .replace(/\/+$/, "");
-        return base + path;
+        return base ? base + path : path;
     }
 
     function setError(message) {

@@ -28,7 +28,9 @@
     var API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
         || localStorage.getItem("ecodrive_kyc_api_base")
-        || "http://127.0.0.1:5050"
+        || (global.EcodriveSession && typeof global.EcodriveSession.getApiBase === "function"
+            ? global.EcodriveSession.getApiBase()
+            : "")
     )
         .trim()
         .replace(/\/+$/, "");

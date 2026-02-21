@@ -34,11 +34,13 @@ document.addEventListener("DOMContentLoaded", function () {
         var base = String(
             localStorage.getItem("ecodrive_api_base") ||
             localStorage.getItem("ecodrive_kyc_api_base") ||
-            "http://127.0.0.1:5050"
+            (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
+                ? window.EcodriveSession.getApiBase()
+                : "")
         )
             .trim()
             .replace(/\/+$/, "");
-        return base + path;
+        return base ? base + path : path;
     }
 
     function showMessage(message, type) {
@@ -244,7 +246,23 @@ document.addEventListener("DOMContentLoaded", function () {
             if (otpInputs[0]) {
                 otpInputs[0].focus();
             }
-            showMessage("Code sent. Please check your email/mobile.", "success");
+            var deliveryMode = String(((payload.delivery || {}).mode || "")).trim().toLowerCase();
+            var serverMessage = String(payload.message || "").trim();
+            var isDemoDelivery = deliveryMode === "demo" || /demo/i.test(serverMessage);
+            if (isDemoDelivery) {
+                var demoCode = String(payload.demoCode || "").trim();
+                var deliveryReason = String(payload.deliveryReason || "").trim();
+                var demoMessage = demoCode
+                    ? "Demo mode only. Use this code: " + demoCode + "."
+                    : "Demo mode only. Verification code was generated locally.";
+                if (deliveryReason) {
+                    demoMessage += " " + deliveryReason;
+                }
+                demoMessage += " Configure email/SMS provider for real delivery.";
+                showMessage(demoMessage, "success");
+            } else {
+                showMessage(serverMessage || "Code sent. Please check your email/mobile.", "success");
+            }
         } catch (_error) {
             showMessage("API is unavailable. Please start the backend server.", "error");
         } finally {

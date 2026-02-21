@@ -153,7 +153,7 @@ body {
     object-fit: contain;
     object-position: center;
     background: #ffffff;
-    clip-path: inset(0 0 14px 0);
+    clip-path: none;
     image-rendering: auto;
     filter: contrast(1.06) saturate(1.06) brightness(1.02);
     margin-left: 42px;
