@@ -545,7 +545,7 @@ async function ensureDbSchema() {
         const pool = await getDbPool();
         try {
             await pool.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data_url MEDIUMTEXT NULL AFTER address"
+                "ALTER TABLE users ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address"
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add users.avatar_data_url automatically:", alterError.message || alterError);
@@ -609,7 +609,7 @@ async function ensureDbSchema() {
 
         try {
             await pool.execute(
-                "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_info VARCHAR(255) NULL AFTER category"
+                "ALTER TABLE products ADD COLUMN product_info VARCHAR(255) NULL AFTER category"
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add products.product_info automatically:", alterError.message || alterError);
