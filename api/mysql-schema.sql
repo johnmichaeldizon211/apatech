@@ -1,8 +1,5 @@
-CREATE DATABASE IF NOT EXISTS ecodrive_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE ecodrive_db;
+-- Import this file while your target database is already selected
+-- (e.g. if0_41209708_ecodrive in InfinityFree phpMyAdmin).
 
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -26,9 +23,6 @@ CREATE TABLE IF NOT EXISTS users (
   KEY idx_users_role_blocked (role, is_blocked),
   KEY idx_users_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-ALTER TABLE users
-  ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address;
 
 CREATE TABLE IF NOT EXISTS bookings (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -84,9 +78,6 @@ CREATE TABLE IF NOT EXISTS products (
   KEY idx_products_active_category (is_active, category),
   KEY idx_products_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-ALTER TABLE products
-  ADD COLUMN product_info VARCHAR(255) NULL AFTER category;
 
 ALTER TABLE products
   MODIFY COLUMN image_url MEDIUMTEXT NULL;

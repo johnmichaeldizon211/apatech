@@ -8,6 +8,7 @@
     var API_BASE_KEY = "ecodrive_api_base";
     var LEGACY_API_BASE_KEY = "ecodrive_kyc_api_base";
     var DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5050";
+    var DEFAULT_REMOTE_API_BASE = "https://apatech-production.up.railway.app";
     var DEFAULT_API_BASE = detectDefaultApiBase();
     var originalFetch = typeof global.fetch === "function" ? global.fetch.bind(global) : null;
 
@@ -36,12 +37,20 @@
         }
 
         var origin = trimSlashes(global.location.origin || "");
-        var hostname = String(global.location.hostname || "").trim();
+        var hostname = String(global.location.hostname || "").trim().toLowerCase();
         if (!origin || origin === "null" || origin.indexOf("file:") === 0 || isLocalHost(hostname)) {
             return DEFAULT_LOCAL_API_BASE;
         }
 
-        return origin;
+        if (
+            hostname.endsWith(".onrender.com") ||
+            hostname.endsWith(".up.railway.app") ||
+            hostname.endsWith(".railway.app")
+        ) {
+            return origin;
+        }
+
+        return DEFAULT_REMOTE_API_BASE;
     }
 
     function getStorageValue(key) {
@@ -150,6 +159,42 @@
     function ensureApiBaseConfig() {
         try {
             var primary = trimSlashes(getStorageValue(API_BASE_KEY));
+            var legacy = trimSlashes(getStorageValue(LEGACY_API_BASE_KEY));
+            var origin = trimSlashes((global.location && global.location.origin) || "");
+            var host = String((global.location && global.location.hostname) || "").trim().toLowerCase();
+            var primaryHost = "";
+            var legacyHost = "";
+            try {
+                primaryHost = primary ? String(new URL(primary).hostname || "").toLowerCase() : "";
+            } catch (_error) {
+                primaryHost = "";
+            }
+            try {
+                legacyHost = legacy ? String(new URL(legacy).hostname || "").toLowerCase() : "";
+            } catch (_error) {
+                legacyHost = "";
+            }
+
+            var shouldForceRemote = Boolean(
+                origin &&
+                !isLocalHost(host) &&
+                !host.endsWith(".onrender.com") &&
+                !host.endsWith(".up.railway.app") &&
+                !host.endsWith(".railway.app") &&
+                (
+                    primary === origin ||
+                    legacy === origin ||
+                    primaryHost.endsWith(".onrender.com") ||
+                    legacyHost.endsWith(".onrender.com")
+                )
+            );
+
+            if (shouldForceRemote) {
+                localStorage.setItem(API_BASE_KEY, DEFAULT_REMOTE_API_BASE);
+                localStorage.setItem(LEGACY_API_BASE_KEY, DEFAULT_REMOTE_API_BASE);
+                return DEFAULT_REMOTE_API_BASE;
+            }
+
             if (primary) {
                 if (!trimSlashes(localStorage.getItem(LEGACY_API_BASE_KEY))) {
                     localStorage.setItem(LEGACY_API_BASE_KEY, primary);
@@ -157,7 +202,6 @@
                 return primary;
             }
 
-            var legacy = trimSlashes(getStorageValue(LEGACY_API_BASE_KEY));
             if (legacy) {
                 localStorage.setItem(API_BASE_KEY, legacy);
                 return legacy;

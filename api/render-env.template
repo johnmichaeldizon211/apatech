@@ -1,0 +1,22 @@
+PUBLIC_API_BASE=https://your-service-name.onrender.com
+
+# Preferred: one connection string from your DB provider (e.g. Railway MYSQL_URL)
+MYSQL_URL=mysql://user:password@host:3306/database_name
+
+# Optional SSL toggles (enable only if your DB provider requires it)
+DB_SSL=false
+DB_SSL_REJECT_UNAUTHORIZED=false
+
+# Optional OTP/email settings
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=Ecodrive <no-reply@example.com>
+SMTP_SECURE=false
+
+SMS_WEBHOOK_URL=
+SMS_WEBHOOK_TOKEN=
+
+AUTH_SESSION_TTL_MS=86400000
+ALLOW_DEMO_OTP=false
