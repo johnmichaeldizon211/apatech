@@ -659,6 +659,30 @@ async function ensureDbSchema() {
 
     try {
         const pool = await getDbPool();
+        await pool.execute(
+            `CREATE TABLE IF NOT EXISTS users (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                first_name VARCHAR(100) NOT NULL,
+                middle_initial CHAR(1) NULL,
+                last_name VARCHAR(100) NOT NULL,
+                full_name VARCHAR(220) NOT NULL,
+                email VARCHAR(190) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                address VARCHAR(255) NOT NULL,
+                avatar_data_url MEDIUMTEXT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+                is_blocked TINYINT(1) NOT NULL DEFAULT 0,
+                last_login_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_users_email (email),
+                UNIQUE KEY uq_users_phone (phone),
+                KEY idx_users_role_blocked_created (role, is_blocked, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        );
+
         try {
             await pool.execute(
                 "ALTER TABLE users ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address"
