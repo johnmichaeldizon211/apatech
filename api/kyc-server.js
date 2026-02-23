@@ -80,6 +80,19 @@ function parseMysqlUrl(rawValue) {
         return null;
     }
 
+    function safeDecode(value) {
+        const text = String(value || "");
+        if (!text) {
+            return "";
+        }
+        try {
+            return decodeURIComponent(text);
+        } catch (_error) {
+            // Keep raw value when URL component is not percent-encoded cleanly.
+            return text;
+        }
+    }
+
     try {
         const parsed = new URL(raw);
         if (String(parsed.protocol || "").toLowerCase() !== "mysql:") {
@@ -91,8 +104,8 @@ function parseMysqlUrl(rawValue) {
         return {
             host: String(parsed.hostname || "").trim(),
             port: Number.isFinite(portNumber) && portNumber > 0 ? portNumber : 3306,
-            user: decodeURIComponent(String(parsed.username || "")),
-            password: decodeURIComponent(String(parsed.password || "")),
+            user: safeDecode(String(parsed.username || "")),
+            password: safeDecode(String(parsed.password || "")),
             database: pathValue
         };
     } catch (_error) {
@@ -132,6 +145,25 @@ const DB_NAME = String(
     (PARSED_MYSQL_URL && PARSED_MYSQL_URL.database) ||
     "ecodrive_db"
 ).trim();
+const DB_CONFIG_SOURCE = (
+    process.env.DB_HOST ||
+    process.env.DB_PORT ||
+    process.env.DB_USER ||
+    process.env.DB_PASSWORD ||
+    process.env.DB_NAME
+)
+    ? "DB_*"
+    : (
+        process.env.MYSQLHOST ||
+        process.env.MYSQLPORT ||
+        process.env.MYSQLUSER ||
+        process.env.MYSQLPASSWORD ||
+        process.env.MYSQLDATABASE
+    )
+        ? "MYSQL*"
+        : PARSED_MYSQL_URL
+            ? "MYSQL_URL"
+            : "defaults";
 let dbPool = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
@@ -2992,6 +3024,12 @@ server.listen(PORT, () => {
     const smsStatus = SMS_WEBHOOK_URL ? "configured" : "demo-fallback";
     const otpMode = ALLOW_DEMO_OTP ? "demo-allowed" : "provider-required";
     const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
+    console.log(
+        `[db-config] source=${DB_CONFIG_SOURCE} host=${DB_HOST || "(empty)"} ` +
+        `port=${Number.isFinite(DB_PORT) ? DB_PORT : "(invalid)"} ` +
+        `user=${DB_USER || "(empty)"} db=${DB_NAME || "(empty)"} ` +
+        `mysqlUrlPresent=${MYSQL_URL ? "yes" : "no"} parsedMysqlUrl=${PARSED_MYSQL_URL ? "yes" : "no"}`
+    );
     console.log(
         `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, OTP: ${otpMode}, SessionTTLms: ${SESSION_TTL_MS})`
     );
