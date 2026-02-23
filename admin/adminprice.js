@@ -110,6 +110,45 @@ document.addEventListener("DOMContentLoaded", function () {
         return apiBase ? `${apiBase}${path}` : path;
     }
 
+    function getAppBasePath() {
+        const pathname = String(window.location.pathname || "").replace(/\\/g, "/");
+        const adminIndex = pathname.toLowerCase().lastIndexOf("/admin/");
+        if (adminIndex > 0) {
+            return pathname.slice(0, adminIndex);
+        }
+        return "";
+    }
+
+    function resolveAssetPath(path) {
+        const raw = String(path || "").trim();
+        if (!raw) {
+            return "";
+        }
+
+        if (/^(?:https?:)?\/\//i.test(raw) || /^data:/i.test(raw) || /^blob:/i.test(raw)) {
+            return raw;
+        }
+
+        const normalized = raw.replace(/\\/g, "/");
+        const appBase = getAppBasePath();
+
+        if (normalized.startsWith("/")) {
+            if (!appBase) {
+                return normalized;
+            }
+            if (normalized.toLowerCase().startsWith(`${appBase.toLowerCase()}/`)) {
+                return normalized;
+            }
+            return `${appBase}${normalized}`;
+        }
+
+        if (normalized.startsWith("./")) {
+            return normalized.slice(2);
+        }
+
+        return normalized;
+    }
+
     function getCategoryOrder(category) {
         if (category === "2-Wheel") return 1;
         if (category === "3-Wheel") return 2;
@@ -148,8 +187,8 @@ document.addEventListener("DOMContentLoaded", function () {
             price: price,
             category: normalizeCategory(source.category),
             info: info,
-            imageUrl: imageUrl || "/Userhomefolder/image 1.png",
-            detailUrl: detailUrl,
+            imageUrl: resolveAssetPath(imageUrl || "/Userhomefolder/image 1.png"),
+            detailUrl: resolveAssetPath(detailUrl),
             isActive: toIsActive(source.isActive)
         };
     }
@@ -214,8 +253,12 @@ document.addEventListener("DOMContentLoaded", function () {
         card.className = "panel product-card";
 
         const image = document.createElement("img");
-        image.src = product.imageUrl || "/Userhomefolder/image 1.png";
+        image.src = resolveAssetPath(product.imageUrl || "/Userhomefolder/image 1.png");
         image.alt = product.model;
+        image.onerror = function () {
+            image.onerror = null;
+            image.src = resolveAssetPath("/Userhomefolder/image 1.png");
+        };
         card.appendChild(image);
 
         const title = document.createElement("h3");

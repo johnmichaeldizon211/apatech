@@ -141,6 +141,44 @@ document.addEventListener("DOMContentLoaded", function () {
         return apiBase ? `${apiBase}${path}` : path;
     }
 
+    function getAppBasePath() {
+        const pathname = String(window.location.pathname || "").replace(/\\/g, "/");
+        const adminIndex = pathname.toLowerCase().lastIndexOf("/admin/");
+        if (adminIndex > 0) {
+            return pathname.slice(0, adminIndex);
+        }
+        return "";
+    }
+
+    function resolveAssetPath(path) {
+        const raw = String(path || "").trim();
+        if (!raw) {
+            return "";
+        }
+        if (/^(?:https?:)?\/\//i.test(raw) || /^data:/i.test(raw) || /^blob:/i.test(raw)) {
+            return raw;
+        }
+
+        const normalized = raw.replace(/\\/g, "/");
+        const appBase = getAppBasePath();
+
+        if (normalized.startsWith("/")) {
+            if (!appBase) {
+                return normalized;
+            }
+            if (normalized.toLowerCase().startsWith(`${appBase.toLowerCase()}/`)) {
+                return normalized;
+            }
+            return `${appBase}${normalized}`;
+        }
+
+        if (normalized.startsWith("./")) {
+            return normalized.slice(2);
+        }
+
+        return normalized;
+    }
+
     function getCategoryOrder(category) {
         if (category === "2-Wheel") return 1;
         if (category === "3-Wheel") return 2;
@@ -169,8 +207,8 @@ document.addEventListener("DOMContentLoaded", function () {
             price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
             category: normalizeCategory(source.category),
             info: info,
-            imageUrl: imageUrl || "/Userhomefolder/image 1.png",
-            detailUrl: detailUrl,
+            imageUrl: resolveAssetPath(imageUrl || "/Userhomefolder/image 1.png"),
+            detailUrl: resolveAssetPath(detailUrl),
             isActive: toIsActive(source.isActive),
             createdAt: createdAt || null
         };
@@ -326,28 +364,28 @@ document.addEventListener("DOMContentLoaded", function () {
             return raw;
         }
         if (raw.startsWith("/")) {
-            return raw;
+            return resolveAssetPath(raw);
         }
         if (detailUrl) {
             try {
                 const baseUrl = new URL(detailUrl, window.location.origin);
                 const resolved = new URL(raw, baseUrl);
-                return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+                return resolveAssetPath(`${resolved.pathname}${resolved.search}${resolved.hash}`);
             } catch (_error) {
                 // continue with fallback normalization
             }
         }
         if (raw.startsWith("../")) {
-            return `/Userhomefolder/${raw.slice(3)}`;
+            return resolveAssetPath(`/Userhomefolder/${raw.slice(3)}`);
         }
         if (raw.startsWith("./")) {
-            return raw.slice(2);
+            return resolveAssetPath(raw.slice(2));
         }
-        return raw;
+        return resolveAssetPath(raw);
     }
 
     async function readColorVariantsFromDetailPage(product) {
-        const detailUrl = String(product && product.detailUrl || "").trim();
+        const detailUrl = resolveAssetPath(String(product && product.detailUrl || "").trim());
         if (!detailUrl) {
             return [];
         }
@@ -509,11 +547,11 @@ document.addEventListener("DOMContentLoaded", function () {
             const image = document.createElement("img");
             image.className = "color-item-image";
             image.alt = `${variant.label} preview`;
-            image.src = variant.imageUrl || "/Userhomefolder/image 1.png";
+            image.src = resolveAssetPath(variant.imageUrl || "/Userhomefolder/image 1.png");
             image.loading = "lazy";
             image.onerror = function () {
                 image.onerror = null;
-                image.src = "/Userhomefolder/image 1.png";
+                image.src = resolveAssetPath("/Userhomefolder/image 1.png");
             };
             head.appendChild(image);
 
@@ -703,11 +741,11 @@ document.addEventListener("DOMContentLoaded", function () {
         card.appendChild(info);
 
         const image = document.createElement("img");
-        image.src = product.imageUrl || "/Userhomefolder/image 1.png";
+        image.src = resolveAssetPath(product.imageUrl || "/Userhomefolder/image 1.png");
         image.alt = product.model;
         image.onerror = function () {
             image.onerror = null;
-            image.src = "/Userhomefolder/image 1.png";
+            image.src = resolveAssetPath("/Userhomefolder/image 1.png");
         };
         card.appendChild(image);
 
@@ -974,7 +1012,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const price = parsePrice(priceInput.value);
         const info = normalizeText(infoInput.value).slice(0, 255);
         const selectedImageFile = imageFileInput.files && imageFileInput.files[0] ? imageFileInput.files[0] : null;
-        let imageUrl = String(imageInput.value || "").trim() || "/Userhomefolder/image 1.png";
+        let imageUrl = resolveAssetPath(String(imageInput.value || "").trim() || "/Userhomefolder/image 1.png");
         const detailUrl = normalizeText(detailInput.value).slice(0, 255);
 
         if (model.length < 2) {
@@ -1025,8 +1063,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 category: category,
                 price: price,
                 info: info,
-                imageUrl: imageUrl,
-                detailUrl: detailUrl,
+                imageUrl: resolveAssetPath(imageUrl),
+                detailUrl: resolveAssetPath(detailUrl),
                 isActive: true
             };
 
