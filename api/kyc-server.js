@@ -74,11 +74,64 @@ const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "echodrivead
 const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
 
-const DB_HOST = String(process.env.DB_HOST || "127.0.0.1").trim();
-const DB_PORT = Number(process.env.DB_PORT || "3306");
-const DB_USER = String(process.env.DB_USER || "root").trim();
-const DB_PASSWORD = String(process.env.DB_PASSWORD || "").trim();
-const DB_NAME = String(process.env.DB_NAME || "ecodrive_db").trim();
+function parseMysqlUrl(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) {
+        return null;
+    }
+
+    try {
+        const parsed = new URL(raw);
+        if (String(parsed.protocol || "").toLowerCase() !== "mysql:") {
+            return null;
+        }
+
+        const pathValue = String(parsed.pathname || "").replace(/^\/+/, "").trim();
+        const portNumber = Number(parsed.port || "3306");
+        return {
+            host: String(parsed.hostname || "").trim(),
+            port: Number.isFinite(portNumber) && portNumber > 0 ? portNumber : 3306,
+            user: decodeURIComponent(String(parsed.username || "")),
+            password: decodeURIComponent(String(parsed.password || "")),
+            database: pathValue
+        };
+    } catch (_error) {
+        return null;
+    }
+}
+
+const MYSQL_URL = String(process.env.MYSQL_URL || process.env.DATABASE_URL || "").trim();
+const PARSED_MYSQL_URL = parseMysqlUrl(MYSQL_URL);
+const DB_HOST = String(
+    process.env.DB_HOST ||
+    process.env.MYSQLHOST ||
+    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.host) ||
+    "127.0.0.1"
+).trim();
+const DB_PORT = Number(
+    process.env.DB_PORT ||
+    process.env.MYSQLPORT ||
+    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.port) ||
+    "3306"
+);
+const DB_USER = String(
+    process.env.DB_USER ||
+    process.env.MYSQLUSER ||
+    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.user) ||
+    "root"
+).trim();
+const DB_PASSWORD = String(
+    process.env.DB_PASSWORD ||
+    process.env.MYSQLPASSWORD ||
+    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.password) ||
+    ""
+).trim();
+const DB_NAME = String(
+    process.env.DB_NAME ||
+    process.env.MYSQLDATABASE ||
+    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.database) ||
+    "ecodrive_db"
+).trim();
 let dbPool = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
