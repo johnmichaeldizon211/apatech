@@ -9,15 +9,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
     }
 
-    if (window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function") {
-        var existingUser = window.EcodriveSession.getCurrentUser();
-        if (existingUser && window.EcodriveSession.getToken && window.EcodriveSession.getToken()) {
-            var existingRole = String(existingUser.role || "").trim().toLowerCase();
-            window.location.href = existingRole === "admin" ? "admin/admin.html" : "Userhomefolder/userhome.html";
-            return;
-        }
-    }
-
     function getApiUrl(path) {
         if (window.EcodriveSession && typeof window.EcodriveSession.getApiUrl === "function") {
             return window.EcodriveSession.getApiUrl(path);
@@ -74,7 +65,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 })
             });
         } catch (_error) {
-            setError("API is unavailable. Please start the backend server.");
+            setError("API is unavailable. Please check your API service connection.");
             return;
         }
 

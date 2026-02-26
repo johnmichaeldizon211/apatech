@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up - Ecodrive</title>
-    <link rel="stylesheet" href="signup.css">
+    <link rel="stylesheet" href="signup.css?v=20260224-2">
 </head>
 <body>
 
@@ -47,13 +47,70 @@
             <p class="note">Must be at least 8 characters, include uppercase, number and symbol.</p>
             <span class="error" id="password-error"></span>
 
-            <button class="create-btn" type="submit" id="create-btn" disabled>Create account</button>
+            <button class="create-btn" type="submit" id="continue-btn" disabled>Continue to verification</button>
 
             <p class="login-link">
                 Already have an account? <a href="log in.html">Log in</a>
             </p>
 
         </form>
+
+        <section id="signup-verification-step" class="verification-step" hidden>
+            <h3>Verify your contact details</h3>
+            <p class="verification-intro">
+                Choose where to receive your 4-digit code. One verified method is enough to create your account.
+            </p>
+
+            <div class="method-switch" role="radiogroup" aria-label="Signup verification method">
+                <button
+                    type="button"
+                    class="method-btn is-active"
+                    data-method="email"
+                    aria-pressed="true"
+                >
+                    Email
+                </button>
+                <button
+                    type="button"
+                    class="method-btn"
+                    data-method="mobile"
+                    aria-pressed="false"
+                >
+                    Mobile Number
+                </button>
+            </div>
+
+            <div class="verification-card" id="verification-card">
+                <div class="verification-head single">
+                    <div>
+                        <p class="verification-label" id="verify-contact-label">Email Address</p>
+                        <p class="verification-value" id="verify-contact-value">-</p>
+                    </div>
+                    <span class="verification-badge" id="verification-badge">Not verified</span>
+                </div>
+                <div class="verification-actions">
+                    <button type="button" class="secondary-btn" id="send-code-btn">Send Code</button>
+                </div>
+                <div class="otp-inputs" id="otp-inputs">
+                    <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="0" aria-label="Verification code digit 1">
+                    <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="1" aria-label="Verification code digit 2">
+                    <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="2" aria-label="Verification code digit 3">
+                    <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="3" aria-label="Verification code digit 4">
+                </div>
+                <div class="verification-actions">
+                    <button type="button" class="secondary-btn" id="verify-code-btn">Verify Code</button>
+                </div>
+                <div class="verification-actions">
+                    <button type="button" class="secondary-btn" id="resend-code-btn">Send Again</button>
+                </div>
+                <p class="verification-status" id="verification-status" aria-live="polite"></p>
+            </div>
+
+            <div class="verification-footer">
+                <button type="button" class="secondary-btn" id="back-to-form-btn">Back to form</button>
+                <button type="button" class="create-btn" id="create-btn" disabled>Create account</button>
+            </div>
+        </section>
     </div>
 
     <div class="right">
@@ -64,8 +121,8 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="session.js?v=20260221-2"></script>
-<script src="signup.js?v=20260213-4"></script>
+<script src="session.js?v=20260224-3"></script>
+<script src="signup.js?v=20260224-3"></script>
 </body>
 </html>
 

@@ -92,6 +92,17 @@
         return KYC_API_BASE ? `${KYC_API_BASE}${endpoint}` : endpoint;
     }
 
+    function buildApiHeaders(baseHeaders) {
+        const headers = Object.assign({}, baseHeaders || {});
+        const token = (window.EcodriveSession && typeof window.EcodriveSession.getToken === "function")
+            ? String(window.EcodriveSession.getToken() || "").trim()
+            : "";
+        if (token) {
+            headers.Authorization = "Bearer " + token;
+        }
+        return headers;
+    }
+
     function normalizeLocationText(value) {
         const raw = String(value || "").trim();
         if (!raw) {
@@ -526,22 +537,45 @@
         try {
             const response = await fetch(getApiUrl("/api/bookings"), {
                 method: "POST",
-                headers: {
+                headers: buildApiHeaders({
                     "Content-Type": "application/json"
-                },
+                }),
                 body: JSON.stringify(record)
             });
 
             if (response.status === 404 || response.status === 405) {
-                return false;
+                return {
+                    success: false,
+                    message: "Booking service is currently unavailable."
+                };
+            }
+
+            if (response.status === 401 || response.status === 403) {
+                return {
+                    success: false,
+                    message: "Your session has expired. Please log in again."
+                };
             }
 
             const payload = await response.json().catch(function () {
                 return {};
             });
-            return response.ok && payload && payload.success === true;
+            if (!response.ok || !payload || payload.success !== true) {
+                return {
+                    success: false,
+                    message: String((payload && payload.message) || "Unable to sync booking to server.")
+                };
+            }
+
+            return {
+                success: true,
+                message: ""
+            };
         } catch (_error) {
-            return false;
+            return {
+                success: false,
+                message: "Network error while saving booking. Please try again."
+            };
         }
     }
 
@@ -1090,7 +1124,11 @@
     }
 
     async function appendBookingRecord(record) {
-        await saveBookingToApi(record);
+        const apiResult = await saveBookingToApi(record);
+        if (!apiResult || apiResult.success !== true) {
+            return apiResult || { success: false, message: "Unable to sync booking to server." };
+        }
+
         let existing = [];
         try {
             const parsed = safeParse(localStorage.getItem("ecodrive_bookings"));
@@ -1101,9 +1139,28 @@
             existing = [];
         }
 
-        existing.push(record);
+        const incomingOrderId = String((record && (record.orderId || record.id)) || "")
+            .trim()
+            .toLowerCase();
+        if (incomingOrderId) {
+            const existingIndex = existing.findIndex(function (item) {
+                const itemOrderId = String((item && (item.orderId || item.id)) || "")
+                    .trim()
+                    .toLowerCase();
+                return itemOrderId === incomingOrderId;
+            });
+
+            if (existingIndex >= 0) {
+                existing[existingIndex] = Object.assign({}, existing[existingIndex], record);
+            } else {
+                existing.push(record);
+            }
+        } else {
+            existing.push(record);
+        }
         localStorage.setItem("ecodrive_bookings", JSON.stringify(existing));
         localStorage.setItem("latestBooking", JSON.stringify(record));
+        return { success: true, message: "" };
     }
 
     function setupStep1Notice() {
@@ -1542,13 +1599,27 @@
                 total: draft.total,
                 payment: draft.payment,
                 service: "Installment",
+                scheduleDate: draft.scheduleDate || "",
+                scheduleTime: draft.scheduleTime || "",
+                bookingDate: draft.scheduleDate || "",
+                bookingTime: draft.scheduleTime || "",
+                date: draft.scheduleDate || "",
+                time: draft.scheduleTime || "",
+                scheduledAt: draft.scheduledAt || "",
+                scheduleLabel: draft.scheduleLabel || "",
                 status: "Application Review",
                 fulfillmentStatus: "Under Review",
                 createdAt: new Date().toISOString(),
                 installment: merged
             };
 
-            await appendBookingRecord(bookingRecord);
+            const saveResult = await appendBookingRecord(bookingRecord);
+            if (!saveResult || saveResult.success !== true) {
+                if (error) {
+                    error.textContent = (saveResult && saveResult.message) || "Unable to submit installment booking right now.";
+                }
+                return;
+            }
             localStorage.removeItem(INSTALLMENT_CHECKOUT_KEY);
             window.location.href = "installment-success.html";
         });

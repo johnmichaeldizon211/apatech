@@ -285,15 +285,97 @@
         return "E-Bike";
     }
 
+    function ensureBikeLayoutStyles() {
+        const styleId = "ecodrive-bike-layout-style";
+        if (document.getElementById(styleId)) {
+            return;
+        }
+
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
+.left-card{
+    display:flex !important;
+    flex-direction:column !important;
+    align-items:center !important;
+    padding-top:52px !important;
+}
+.bike-image-stage{
+    width:min(420px,100%) !important;
+    height:clamp(240px,32vw,320px) !important;
+    display:flex !important;
+    align-items:flex-end !important;
+    justify-content:center !important;
+    margin-top:0 !important;
+    padding-bottom:8px !important;
+    box-sizing:border-box !important;
+}
+.bike-img{
+    width:100% !important;
+    height:100% !important;
+    max-width:420px !important;
+    max-height:320px !important;
+    display:block !important;
+    object-fit:contain !important;
+    object-position:center bottom !important;
+    margin:0 auto !important;
+    border:2px solid #3652a2 !important;
+    border-radius:14px !important;
+    background:#ffffff !important;
+    padding:6px !important;
+    box-sizing:border-box !important;
+}
+.left-card .color-picker{
+    width:min(300px,100%) !important;
+    margin:6px auto 0 !important;
+    align-self:center !important;
+}
+@media (max-width: 768px){
+    .left-card{
+        padding-top:16px !important;
+    }
+    .bike-image-stage{
+        height:clamp(210px,62vw,300px) !important;
+        margin-top:0 !important;
+    }
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    function ensureBikeImageStage(leftCard, bikeImage) {
+        if (!leftCard || !bikeImage) {
+            return null;
+        }
+
+        let stage = leftCard.querySelector(".bike-image-stage");
+        const colorPicker = leftCard.querySelector(".color-picker");
+
+        if (!stage) {
+            stage = document.createElement("div");
+            stage.className = "bike-image-stage";
+            if (colorPicker) {
+                leftCard.insertBefore(stage, colorPicker);
+            } else {
+                leftCard.insertBefore(stage, bikeImage.nextSibling);
+            }
+        }
+
+        if (bikeImage.parentElement !== stage) {
+            stage.appendChild(bikeImage);
+        }
+
+        return stage;
+    }
+
     function applyBikeImageBorder() {
         const bikeImage = document.getElementById("bike-image");
         if (!bikeImage) {
             return;
         }
-        bikeImage.style.border = "2px solid #3652a2";
-        bikeImage.style.borderRadius = "14px";
-        bikeImage.style.background = "#ffffff";
-        bikeImage.style.padding = "6px";
+        ensureBikeLayoutStyles();
+        const leftCard = bikeImage.closest(".left-card");
+        ensureBikeImageStage(leftCard, bikeImage);
     }
 
     async function hydratePriceDisplay() {

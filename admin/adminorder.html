@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="adminorder.css">
+    <link rel="stylesheet" href="adminorder.css?v=20260225a">
     <link rel="stylesheet" href="admin-font-tuning.css">
 </head>
 <body>
@@ -47,6 +47,7 @@
                 <div class="table-head">
                     <span>Name</span>
                     <span>Model</span>
+                    <span>Schedule</span>
                     <span>Plan</span>
                     <span>Status</span>
                     <span>Action</span>
@@ -59,13 +60,51 @@
                     <span>New customer bookings will appear here.</span>
                 </div>
             </section>
+
+            <section class="panel calendar-panel" aria-label="Booking schedule calendar">
+                <div class="calendar-toolbar">
+                    <button type="button" class="calendar-nav-btn" id="calendarPrevBtn" aria-label="Previous month">Previous</button>
+                    <p class="calendar-month" id="calendarMonthLabel">Month Year</p>
+                    <button type="button" class="calendar-nav-btn" id="calendarNextBtn" aria-label="Next month">Next</button>
+                </div>
+                <div class="calendar-legend" aria-hidden="true">
+                    <span class="legend-item"><span class="legend-icon ebike"></span>Scheduled e-bike bookings</span>
+                    <span class="legend-item"><span class="legend-dot installment"></span>Installment plan</span>
+                    <span class="legend-item"><span class="legend-dot full"></span>Full capacity</span>
+                </div>
+                <div id="bookingCalendar" class="booking-calendar"></div>
+                <p class="calendar-summary" id="calendarSummary" aria-live="polite"></p>
+            </section>
         </main>
     </div>
 
+    <div class="day-schedule-modal" id="calendarDayModal" hidden>
+        <div class="day-schedule-backdrop" data-modal-close="true"></div>
+        <section class="day-schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="calendarDayModalTitle">
+            <header class="day-schedule-header">
+                <h2 id="calendarDayModalTitle">Scheduled Bookings</h2>
+                <button type="button" class="day-schedule-close" data-modal-close="true" aria-label="Close schedule details">&times;</button>
+            </header>
+            <p class="day-schedule-meta" id="calendarDayModalMeta"></p>
+            <div class="day-schedule-legend" aria-hidden="true">
+                <span class="day-schedule-legend-label">Status Legend</span>
+                <span class="day-schedule-chip status-pending">Pending</span>
+                <span class="day-schedule-chip status-approved">Approved</span>
+                <span class="day-schedule-chip status-processing">Processing</span>
+                <span class="day-schedule-chip status-completed">Completed</span>
+                <span class="day-schedule-chip status-rejected">Rejected</span>
+                <span class="day-schedule-chip status-cancelled">Cancelled</span>
+            </div>
+            <div class="day-schedule-list" id="calendarDayModalList"></div>
+        </section>
+    </div>
+
     <button class="next-btn" type="button">Next <span aria-hidden="true">&#8594;</span></button>
-    <script src="../session.js?v=20260221-2"></script>
-    <script src="adminorder.js"></script>
+    <script src="../session.js"></script>
+    <script src="adminorder.js?v=20260225a"></script>
 </body>
 </html>
+
+
 
 

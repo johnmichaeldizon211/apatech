@@ -4,3 +4,6 @@ api/.env
 api/.env.*
 !api/.env.example
 api/admin-credentials.json
+api/*.log
+api/*.out.log
+api/*.err.log

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,6 +6,7 @@
     <title>ECODRIVE - E-Bikes</title>
     <link rel="stylesheet" href="userhome2.css">
     <meta name="description" content="E-Bikes catalog">
+    <script>document.documentElement.classList.add("catalog-loading");</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -31,7 +32,7 @@
             <div class="dropdown">
                 <a href="../Usersetting.html/settings.html">Account</a>
                 <a href="../Usersetting.html/settings.html#orderSection">Order Status</a>
-                <a href="../log in.html">Log Out</a>
+                <a class="logout-btn" href="../frontpage.html">Log Out</a>
             </div>
         </div>
     </div>
@@ -116,7 +117,7 @@
             <div class="img-wrap"><img src="image 8.png" alt="ECONO 350 MINI-II"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECONO 350 MINI-II</h3>
-                <p class="price">PRICE â‚± 58,000.00</p>
+                <p class="price">PRICE ₱ 58,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike8.0.html'">Book Now</button>
             </div>
         </article>
@@ -125,7 +126,7 @@
             <div class="img-wrap"><img src="image 9.png" alt="ECARGO 100"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECARGO 100</h3>
-                <p class="price">PRICE â‚± 72,500.00</p>
+                <p class="price">PRICE ₱ 72,500.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike9.0.html'">Book Now</button>
             </div>
         </article>
@@ -134,7 +135,7 @@
             <div class="img-wrap"><img src="image 10.png" alt="ECONO 650 MP"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECONO 650 MP</h3>
-                <p class="price">PRICE â‚± 65,000.00</p>
+                <p class="price">PRICE ₱ 65,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike10.0.html'">Book Now</button>
             </div>
         </article>
@@ -143,7 +144,7 @@
             <div class="img-wrap"><img src="image 11.png" alt="E-CAB 1000 II"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECAB 100V V2</h3>
-                <p class="price">PRICE â‚± 51,500.00</p>
+                <p class="price">PRICE ₱ 51,500.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike11.0.html'">Book Now</button>
             </div>
         </article>
@@ -152,7 +153,7 @@
             <div class="img-wrap"><img src="image 12.png" alt="ECONO 800 MP II"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECONO 800 MP II</h3>
-                <p class="price">PRICE â‚± 67,000.00</p>
+                <p class="price">PRICE ₱ 67,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike12.0.html'">Book Now</button>
             </div>
         </article>
@@ -161,7 +162,7 @@
             <div class="img-wrap"><img src="image 13.png" alt="E-CARGO 800"></div>
             <div class="card-body">
                 <h3 class="prod-name">E-CARGO 800</h3>
-                <p class="price">PRICE â‚± 205,000.00</p>
+                <p class="price">PRICE ₱ 205,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike13.0.html'">Book Now</button>
             </div>
         </article>
@@ -170,7 +171,7 @@
             <div class="img-wrap"><img src="image 14.png" alt="E-CAB MAX 1500"></div>
             <div class="card-body">
                 <h3 class="prod-name">E-CAB MAX 1500</h3>
-                <p class="price">PRICE â‚± 130,000.00</p>
+                <p class="price">PRICE ₱ 130,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike14.0.html'">Book Now</button>
             </div>
         </article>
@@ -179,7 +180,7 @@
             <div class="img-wrap"><img src="image 15.png" alt="E-CAB 1000"></div>
             <div class="card-body">
                 <h3 class="prod-name">E-CAB 1000</h3>
-                <p class="price">PRICE â‚± 75,000.00</p>
+                <p class="price">PRICE ₱ 75,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike15.0.html'">Book Now</button>
             </div>
         </article>
@@ -188,7 +189,7 @@
             <div class="img-wrap"><img src="image 16.png" alt="ECONO 800 MP"></div>
             <div class="card-body">
                 <h3 class="prod-name">ECONO 800 MP</h3>
-                <p class="price">PRICE â‚± 100,000.00</p>
+                <p class="price">PRICE ₱ 100,000.00</p>
                 <button class="btn" onclick="location.href='../Userhomefolder/Ebikes/ebike16.0.html'">Book Now</button>
             </div>
         </article>
@@ -211,7 +212,7 @@
 
 <script src="../session.js"></script>
 <script src="product-catalog.js"></script>
-<script src="chatbot-brain.js"></script>
+<script src="chatbot-brain.js?v=20260225c"></script>
     <script>
         (function () {
         const profileBtn = document.querySelector('.profile-menu .profile-btn');
@@ -242,6 +243,7 @@
             const smartReply = (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.createResponder === 'function')
                 ? window.EcodriveChatbotBrain.createResponder()
                 : null;
+        let liveChatRuntime = null;
 
         if (!(toggle && panel && closeBtn && form && input && body)) {
             return;
@@ -287,6 +289,9 @@
             panel.setAttribute('aria-hidden', 'false');
             renderMessages();
             input.focus();
+            if (liveChatRuntime) {
+                void liveChatRuntime.refreshFromServer();
+            }
         }
 
         function closePanel() {
@@ -311,8 +316,14 @@
             if (!text) return;
 
             messages.push({ from: 'user', text: text });
-            messages.push({ from: 'bot', text: botReply(text) });
+            const allowBotReply = !liveChatRuntime || liveChatRuntime.canBotReply();
+            if (allowBotReply) {
+                messages.push({ from: 'bot', text: botReply(text) });
+            }
             saveMessages();
+            if (liveChatRuntime) {
+                void liveChatRuntime.notifyLocalMessagesUpdated();
+            }
             renderMessages();
             input.value = '';
             input.focus();
@@ -323,10 +334,26 @@
                 closePanel();
             }
         });
+
+        if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === 'function') {
+            liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+                getMessages: function () {
+                    return messages;
+                },
+                setMessages: function (nextMessages) {
+                    messages = Array.isArray(nextMessages) ? nextMessages : [];
+                    saveMessages();
+                    renderMessages();
+                }
+            });
+            void liveChatRuntime.notifyLocalMessagesUpdated();
+        }
     })();
 </script>
 </body>
 </html>
+
+
 
 
 

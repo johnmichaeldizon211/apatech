@@ -81,9 +81,38 @@
         </main>
     </div>
 
+    <section id="admin-chat-modal" class="chat-modal" aria-hidden="true">
+        <div class="chat-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-chat-title">
+            <header class="chat-dialog-header">
+                <div>
+                    <h2 id="admin-chat-title">User Conversation</h2>
+                    <p id="admin-chat-user-label" class="chat-user-label">No user selected</p>
+                </div>
+                <button id="admin-chat-close" type="button" class="chat-close-btn" aria-label="Close chat">&times;</button>
+            </header>
+
+            <div class="chat-dialog-toolbar">
+                <span id="admin-chat-mode-pill" class="chat-mode-pill bot">Bot Active</span>
+                <div class="chat-dialog-actions">
+                    <button id="admin-chat-takeover" type="button" class="action-btn message">Take Over</button>
+                    <button id="admin-chat-release" type="button" class="action-btn unblock">Release Bot</button>
+                </div>
+            </div>
+
+            <p id="admin-chat-status" class="chat-status" aria-live="polite"></p>
+
+            <div id="admin-chat-messages" class="chat-dialog-body" role="log" aria-live="polite"></div>
+
+            <form id="admin-chat-form" class="chat-dialog-form" action="#">
+                <input id="admin-chat-input" type="text" placeholder="Type your reply..." maxlength="2000" autocomplete="off">
+                <button id="admin-chat-send" type="submit" class="action-btn block">Send</button>
+            </form>
+        </div>
+    </section>
+
     <button class="next-btn" type="button">Next <span aria-hidden="true">&#8594;</span></button>
-    <script src="../session.js?v=20260221-2"></script>
-    <script src="adminuser.js?v=20260213"></script>
+    <script src="../session.js"></script>
+    <script src="adminuser.js?v=20260225b"></script>
 </body>
 </html>
 

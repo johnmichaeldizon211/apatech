@@ -19,6 +19,11 @@ body {
     min-height: 100vh;
 }
 
+html.catalog-loading .products {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .navbar {
     width: 100%;
     background: var(--header);

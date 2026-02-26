@@ -2,13 +2,22 @@
 
 This API now supports:
 
-- User signup (`POST /api/signup`) saved to **MySQL**
+- User signup with verification:
+  - `POST /api/signup/send-code`
+  - `POST /api/signup/verify-code`
+  - `POST /api/signup`
+  - Verify either email or mobile before final signup submit
 - User login (`POST /api/login`) with blocked-user check
 - Session auth:
   - `GET /api/auth/me`
   - `POST /api/logout`
 - Admin users list (`GET /api/admin/users`)
 - Admin block/unblock user (`POST /api/admin/users/:id/block`, `POST /api/admin/users/:id/unblock`)
+- Chat support:
+  - User thread/messages: `GET /api/chat/thread`, `POST /api/chat/messages`, `POST /api/chat/thread/clear`
+  - Admin thread view: `GET /api/admin/chat/users/:id`
+  - Admin takeover/release: `POST /api/admin/chat/users/:id/takeover`, `POST /api/admin/chat/users/:id/release`
+  - Admin send message: `POST /api/admin/chat/users/:id/messages`
 - Profile settings and password:
   - `GET /api/profile/settings?email=...`
   - `POST /api/profile/settings`
@@ -22,6 +31,7 @@ This API now supports:
   - `GET /api/admin/bookings/:orderId`
   - `POST /api/admin/bookings/:orderId/approve`
   - `POST /api/admin/bookings/:orderId/reject`
+  - `POST /api/admin/bookings/:orderId/payment-status`
 - Forgot password OTP:
   - `POST /api/forgot/send-code`
   - `POST /api/forgot/verify-code`
@@ -47,7 +57,7 @@ Run the schema:
 mysql -u root -p < mysql-schema.sql
 ```
 
-This creates database `ecodrive_db` with `users` and `bookings` tables.
+This creates database `ecodrive_db` with users, bookings, products, and chat tables.
 
 ## 3) Configure Environment Variables
 
@@ -58,6 +68,8 @@ Use values from `.env.example` (or create `api/.env`):
 - `DB_USER`
 - `DB_PASSWORD`
 - `DB_NAME`
+- `ADMIN_LOGIN_ID` (required if `api/admin-credentials.json` does not exist)
+- `ADMIN_PASSWORD` (required if `api/admin-credentials.json` does not exist)
 
 Optional OTP delivery config:
 
@@ -76,7 +88,12 @@ Optional auth/OTP behavior:
 
 - `AUTH_SESSION_TTL_MS` (default: `86400000` / 24h)
 - `ALLOW_DEMO_OTP=true` only for local development fallback OTP
-- If `ALLOW_DEMO_OTP` is not `true`, SMTP/SMS provider must be configured for forgot-password OTP.
+- If `ALLOW_DEMO_OTP` is not `true`, SMTP/SMS provider must be configured for forgot-password and signup OTP.
+- `CORS_ALLOWED_ORIGINS` comma-separated origin allowlist (example: `http://127.0.0.1:5500,http://localhost:5500`)
+- `RATE_LIMIT_WINDOW_MS` (default `900000`)
+- `LOGIN_RATE_LIMIT_MAX` (default `10`)
+- `OTP_SEND_RATE_LIMIT_MAX` (default `6`)
+- `OTP_VERIFY_RATE_LIMIT_MAX` (default `10`)
 
 ## 4) Run API
 
@@ -84,7 +101,7 @@ Optional auth/OTP behavior:
 node kyc-server.js
 ```
 
-On startup, the server tries to auto-load `api/.env` and auto-create missing DB schema pieces (`users.avatar_data_url`, `bookings` table).
+On startup, the server tries to auto-load `api/.env` and auto-create missing DB schema pieces (users, bookings, products, and chat tables/columns).
 
 Default URL:
 
@@ -123,15 +140,25 @@ Optional server log label:
 
 ## Notes
 
-- Admin login credential in current frontend/API:
-  - username: `echodrive`
-  - password: `echodriveadmin123`
+- No default admin password is exposed anymore. Initialize admin credentials using either:
+  - `ADMIN_LOGIN_ID` + `ADMIN_PASSWORD` in `api/.env` before first run, or
+  - a generated `api/admin-credentials.json` file.
+- `ALLOW_DEMO_OTP=true` is ignored when `NODE_ENV=production`.
 - Passwords in MySQL are stored as `scrypt` hashes (`password_hash` column).
 - `POST /api/login` and `POST /api/signup` now return:
   - `token` (Bearer token)
   - `expiresInMs`
   - `expiresAt`
+- Bookings now include `paymentStatus`:
+  - `awaiting_payment_confirmation`
+  - `pending_cod`
+  - `installment_review`
+  - `paid`
+  - `failed`
+  - `refunded`
+  - `not_applicable`
 - Protected endpoints require `Authorization: Bearer <token>`:
   - `/api/admin/*`
+  - `/api/chat/*`
   - `/api/profile/*`
   - `/api/bookings*`

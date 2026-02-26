@@ -12,6 +12,8 @@
     const fullNameInput = document.getElementById("full-name");
     const emailInput = document.getElementById("email");
     const phoneInput = document.getElementById("phone");
+    const scheduleDateInput = document.getElementById("schedule-date");
+    const scheduleTimeInput = document.getElementById("schedule-time");
     const shipAddressInput = document.getElementById("ship-address");
     const shipLabel = document.querySelector("label[for='ship-address']");
     const shipMapPanel = document.getElementById("ship-map-panel");
@@ -38,12 +40,32 @@
     const qrOpenApp = document.getElementById("payment-open-app");
     const qrOpenBrowser = document.getElementById("payment-open-browser");
     const qrDone = document.getElementById("payment-qr-done");
+    const logoutLink = document.getElementById("booking-logout-link");
+
+    if (logoutLink) {
+        logoutLink.addEventListener("click", function (event) {
+            event.preventDefault();
+
+            if (window.EcodriveSession && typeof window.EcodriveSession.logout === "function") {
+                window.EcodriveSession.logout("../../frontpage.html");
+                return;
+            }
+
+            ["ecodrive_auth_token", "ecodrive_auth_user", "ecodrive_auth_expires_at", "ecodrive_current_user_email"].forEach(function (key) {
+                localStorage.removeItem(key);
+                sessionStorage.removeItem(key);
+            });
+            window.location.href = "../../frontpage.html";
+        });
+    }
 
     if (
         !formError ||
         !fullNameInput ||
         !emailInput ||
         !phoneInput ||
+        !scheduleDateInput ||
+        !scheduleTimeInput ||
         !shipAddressInput ||
         !summaryModel ||
         !summarySubtitle ||
@@ -92,6 +114,7 @@
     const DEFAULT_MAP_COORDS = { lat: 14.5995, lng: 120.9842 };
     const PICKUP_SHOP_ADDRESS = "Poblacion Baliuag beside Southstar Drugs and Xaviery near St. Marys College";
     const PICKUP_SHOP_FALLBACK_COORDS = { lat: 14.9547, lng: 120.9009 };
+    const MAX_BOOKINGS_PER_DAY = 5;
 
     let selectedService = "Delivery";
     let selectedPayment = "GCASH";
@@ -108,6 +131,10 @@
     };
     let pickupCoordsResolved = false;
     let pickupLookupPromise = null;
+    let scheduleDateAvailabilityRequestId = 0;
+    let bookingSubmitInFlight = false;
+    const confirmBtnDefaultLabel = confirmBtn.textContent;
+    const qrDoneDefaultLabel = qrDone.textContent;
 
     if (profileBtn && dropdown) {
         profileBtn.addEventListener("click", function (event) {
@@ -136,6 +163,17 @@
         return API_BASE ? `${API_BASE}${path}` : path;
     }
 
+    function buildApiHeaders(baseHeaders) {
+        const headers = Object.assign({}, baseHeaders || {});
+        const token = (window.EcodriveSession && typeof window.EcodriveSession.getToken === "function")
+            ? String(window.EcodriveSession.getToken() || "").trim()
+            : "";
+        if (token) {
+            headers.Authorization = "Bearer " + token;
+        }
+        return headers;
+    }
+
     function formatPeso(amount) {
         const value = Number(amount || 0);
         return "&#8369;" + value.toLocaleString("en-PH", {
@@ -153,6 +191,193 @@
             return "0" + cleaned.slice(2);
         }
         return cleaned;
+    }
+
+    function padNumber(value) {
+        return String(Number(value) || 0).padStart(2, "0");
+    }
+
+    function formatLocalDateInputValue(date) {
+        const value = date instanceof Date ? date : new Date();
+        const year = value.getFullYear();
+        const month = padNumber(value.getMonth() + 1);
+        const day = padNumber(value.getDate());
+        return `${year}-${month}-${day}`;
+    }
+
+    function parseScheduleDateTime(dateValue, timeValue) {
+        const dateText = String(dateValue || "").trim();
+        const timeText = String(timeValue || "").trim();
+        if (!dateText || !timeText) {
+            return null;
+        }
+
+        const scheduleDate = new Date(`${dateText}T${timeText}:00`);
+        if (Number.isNaN(scheduleDate.getTime())) {
+            return null;
+        }
+        return scheduleDate;
+    }
+
+    function formatScheduleLabel(dateValue, timeValue) {
+        const scheduleDate = parseScheduleDateTime(dateValue, timeValue);
+        if (!scheduleDate) {
+            return "";
+        }
+
+        return scheduleDate.toLocaleString("en-PH", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true
+        });
+    }
+
+    function initializeScheduleInputs() {
+        const now = new Date();
+        const minimumDateValue = formatLocalDateInputValue(now);
+        scheduleDateInput.min = minimumDateValue;
+
+        if (!scheduleDateInput.value) {
+            const defaultDate = new Date(now);
+            defaultDate.setDate(defaultDate.getDate() + 1);
+            scheduleDateInput.value = formatLocalDateInputValue(defaultDate);
+        }
+
+        if (!scheduleTimeInput.value) {
+            scheduleTimeInput.value = "09:00";
+        }
+    }
+
+    function formatScheduleDateDisplay(dateValue) {
+        const normalized = String(dateValue || "").trim();
+        if (!normalized) {
+            return "the selected date";
+        }
+
+        const parsed = new Date(`${normalized}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return normalized;
+        }
+        return parsed.toLocaleDateString("en-PH", {
+            month: "long",
+            day: "numeric",
+            year: "numeric"
+        });
+    }
+
+    function buildDateLimitMessage(dateValue, maxBookingsPerDay) {
+        const maxPerDay = Number(maxBookingsPerDay || MAX_BOOKINGS_PER_DAY);
+        return `Maximum booking limit reached for ${formatScheduleDateDisplay(dateValue)} (${maxPerDay} per day). Please choose another date.`;
+    }
+
+    async function fetchScheduleDateAvailability(dateValue) {
+        const normalizedDate = String(dateValue || "").trim();
+        if (!normalizedDate) {
+            return {
+                success: true,
+                available: true,
+                currentBookings: 0,
+                maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+                message: ""
+            };
+        }
+
+        try {
+            const response = await fetch(getApiUrl(`/api/bookings/availability?date=${encodeURIComponent(normalizedDate)}`), {
+                method: "GET",
+                headers: buildApiHeaders({
+                    "Accept": "application/json"
+                })
+            });
+
+            if (response.status === 404 || response.status === 405) {
+                return {
+                    success: true,
+                    available: true,
+                    currentBookings: 0,
+                    maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+                    message: ""
+                };
+            }
+
+            if (response.status === 401 || response.status === 403) {
+                return {
+                    success: false,
+                    available: true,
+                    message: "Your session has expired. Please log in again."
+                };
+            }
+
+            const payload = await response.json().catch(function () {
+                return {};
+            });
+
+            if (!response.ok || !payload || payload.success !== true) {
+                return {
+                    success: false,
+                    available: true,
+                    message: String((payload && payload.message) || "Unable to check booking availability right now.")
+                };
+            }
+
+            const maxPerDay = Number(payload.maxBookingsPerDay || MAX_BOOKINGS_PER_DAY);
+            const currentBookings = Number(payload.currentBookings || 0);
+            const available = payload.available !== false && currentBookings < maxPerDay;
+            return {
+                success: true,
+                available: available,
+                currentBookings: currentBookings,
+                maxBookingsPerDay: maxPerDay,
+                message: String(payload.message || "")
+            };
+        } catch (_error) {
+            return {
+                success: false,
+                available: true,
+                message: "Unable to check booking availability right now."
+            };
+        }
+    }
+
+    async function ensureScheduleDateAvailable(options) {
+        const settings = (options && typeof options === "object") ? options : {};
+        const dateValue = String((settings.dateValue !== undefined ? settings.dateValue : scheduleDateInput.value) || "").trim();
+        if (!dateValue) {
+            return true;
+        }
+
+        const requestId = ++scheduleDateAvailabilityRequestId;
+        const result = await fetchScheduleDateAvailability(dateValue);
+        if (requestId !== scheduleDateAvailabilityRequestId) {
+            return true;
+        }
+
+        if (!result.success) {
+            if (settings.showErrors) {
+                showError(scheduleDateInput, result.message || "Unable to check booking availability right now.");
+            }
+            return false;
+        }
+
+        if (!result.available) {
+            if (settings.resetDateOnLimit) {
+                scheduleDateInput.value = "";
+            }
+            showError(
+                scheduleDateInput,
+                result.message || buildDateLimitMessage(dateValue, result.maxBookingsPerDay)
+            );
+            if (settings.focusInput) {
+                scheduleDateInput.focus();
+            }
+            return false;
+        }
+
+        scheduleDateInput.classList.remove("invalid");
+        return true;
     }
 
     function getCurrentUserEmail() {
@@ -656,7 +881,7 @@
 
     function clearError() {
         formError.textContent = "";
-        [fullNameInput, emailInput, phoneInput, shipAddressInput].forEach(function (input) {
+        [fullNameInput, emailInput, phoneInput, scheduleDateInput, scheduleTimeInput, shipAddressInput].forEach(function (input) {
             input.classList.remove("invalid");
         });
     }
@@ -715,42 +940,132 @@
         setActiveButton(paymentButtons, null);
     }
 
+    function setBookingSubmitState(inFlight) {
+        bookingSubmitInFlight = Boolean(inFlight);
+        confirmBtn.disabled = bookingSubmitInFlight;
+        qrDone.disabled = bookingSubmitInFlight;
+        confirmBtn.textContent = bookingSubmitInFlight ? "Saving..." : confirmBtnDefaultLabel;
+        qrDone.textContent = bookingSubmitInFlight ? "Saving..." : qrDoneDefaultLabel;
+    }
+
     function appendRecordToStorage(storageKey, record) {
         const parsed = safeParse(localStorage.getItem(storageKey));
         const list = Array.isArray(parsed) ? parsed : [];
+        const incomingOrderId = String((record && (record.orderId || record.id)) || "")
+            .trim()
+            .toLowerCase();
+
+        if (incomingOrderId) {
+            const existingIndex = list.findIndex(function (item) {
+                const itemOrderId = String((item && (item.orderId || item.id)) || "")
+                    .trim()
+                    .toLowerCase();
+                return itemOrderId === incomingOrderId;
+            });
+
+            if (existingIndex >= 0) {
+                list[existingIndex] = Object.assign({}, list[existingIndex], record);
+                localStorage.setItem(storageKey, JSON.stringify(list));
+                return;
+            }
+        }
+
         list.push(record);
         localStorage.setItem(storageKey, JSON.stringify(list));
+    }
+
+    function removeRecordsByOrderIds(storageKey, orderIds) {
+        const ids = Array.isArray(orderIds)
+            ? orderIds
+                .map(function (value) {
+                    return String(value || "").trim().toLowerCase();
+                })
+                .filter(Boolean)
+            : [];
+        if (!ids.length) {
+            return;
+        }
+
+        const parsed = safeParse(localStorage.getItem(storageKey));
+        if (!Array.isArray(parsed)) {
+            return;
+        }
+
+        const next = parsed.filter(function (item) {
+            const itemOrderId = String((item && (item.orderId || item.id)) || "")
+                .trim()
+                .toLowerCase();
+            return !itemOrderId || !ids.includes(itemOrderId);
+        });
+        localStorage.setItem(storageKey, JSON.stringify(next));
     }
 
     async function saveBookingToApi(record) {
         try {
             const response = await fetch(getApiUrl("/api/bookings"), {
                 method: "POST",
-                headers: {
+                headers: buildApiHeaders({
                     "Content-Type": "application/json"
-                },
+                }),
                 body: JSON.stringify(record)
             });
 
             if (response.status === 404 || response.status === 405) {
-                return false;
+                return {
+                    success: false,
+                    message: "Booking service is currently unavailable."
+                };
+            }
+
+            if (response.status === 401 || response.status === 403) {
+                return {
+                    success: false,
+                    message: "Your session has expired. Please log in again."
+                };
             }
 
             const payload = await response.json().catch(function () {
                 return {};
             });
-            return response.ok && payload && payload.success === true;
+            if (!response.ok || !payload || payload.success !== true) {
+                return {
+                    success: false,
+                    message: String((payload && payload.message) || "Unable to sync booking to server.")
+                };
+            }
+
+            return {
+                success: true,
+                message: "",
+                booking: payload.booking && typeof payload.booking === "object"
+                    ? payload.booking
+                    : null
+            };
         } catch (_error) {
-            return false;
+            return {
+                success: false,
+                message: "Network error while saving booking. Please try again."
+            };
         }
     }
 
     async function saveBooking(record) {
-        await saveBookingToApi(record);
+        const apiResult = await saveBookingToApi(record);
+        if (!apiResult || apiResult.success !== true) {
+            return apiResult || { success: false, message: "Unable to sync booking to server." };
+        }
+
+        const persistedRecord = apiResult.booking && typeof apiResult.booking === "object"
+            ? Object.assign({}, record, apiResult.booking)
+            : Object.assign({}, record);
+        const removeOrderIds = [record && record.orderId, persistedRecord && persistedRecord.orderId];
+
         bookingStorageKeys.forEach(function (key) {
-            appendRecordToStorage(key, record);
+            removeRecordsByOrderIds(key, removeOrderIds);
+            appendRecordToStorage(key, persistedRecord);
         });
-        localStorage.setItem("latestBooking", JSON.stringify(record));
+        localStorage.setItem("latestBooking", JSON.stringify(persistedRecord));
+        return { success: true, message: "", booking: persistedRecord };
     }
 
     function buildOrderDraft() {
@@ -758,6 +1073,9 @@
         const shippingFee = selectedService === "Delivery" ? 250 : 0;
         const orderId = "EC-" + Date.now();
         const isInstallmentPayment = selectedPayment === "INSTALLMENT";
+        const scheduleDate = (scheduleDateInput.value || "").trim();
+        const scheduleTime = (scheduleTimeInput.value || "").trim();
+        const scheduleDateTime = parseScheduleDateTime(scheduleDate, scheduleTime);
         const hasDeliveryCoordinates = selectedService === "Delivery"
             && shippingCoords
             && Number.isFinite(shippingCoords.lat)
@@ -787,6 +1105,14 @@
             fulfillmentStatus: isInstallmentPayment
                 ? "Under Review"
                 : (selectedService === "Pick Up" ? "Ready to Pick up" : "In Process"),
+            scheduleDate: scheduleDate,
+            scheduleTime: scheduleTime,
+            bookingDate: scheduleDate,
+            bookingTime: scheduleTime,
+            date: scheduleDate,
+            time: scheduleTime,
+            scheduledAt: scheduleDateTime ? scheduleDateTime.toISOString() : "",
+            scheduleLabel: formatScheduleLabel(scheduleDate, scheduleTime),
             shippingAddress: shippingAddress,
             shippingCoordinates: hasShippingCoordinates ? { lat: shippingCoords.lat, lng: shippingCoords.lng } : null,
             shippingMapEmbedUrl: hasShippingCoordinates ? getMapEmbedUrl(shippingCoords.lat, shippingCoords.lng) : "",
@@ -801,6 +1127,8 @@
         const name = (fullNameInput.value || "").trim();
         const email = (emailInput.value || "").trim();
         const phone = normalizePhoneValue(phoneInput.value || "");
+        const scheduleDate = (scheduleDateInput.value || "").trim();
+        const scheduleTime = (scheduleTimeInput.value || "").trim();
 
         if (!name) {
             showError(fullNameInput, "Please enter your full name.");
@@ -818,6 +1146,25 @@
             showError(phoneInput, "Please enter a valid mobile number.");
             return false;
         }
+        if (!scheduleDate) {
+            showError(scheduleDateInput, "Please select your preferred booking date.");
+            return false;
+        }
+        if (!scheduleTime) {
+            showError(scheduleTimeInput, "Please select your preferred booking time.");
+            return false;
+        }
+
+        const scheduleDateTime = parseScheduleDateTime(scheduleDate, scheduleTime);
+        if (!scheduleDateTime) {
+            showError(scheduleTimeInput, "Please provide a valid booking schedule.");
+            return false;
+        }
+        if (scheduleDateTime.getTime() < Date.now()) {
+            showError(scheduleTimeInput, "Please select a future date and time for your booking.");
+            return false;
+        }
+
         if (selectedService === "Delivery") {
             const address = (shipAddressInput.value || "").trim();
             if (!address) {
@@ -1038,6 +1385,19 @@
         });
     });
 
+    scheduleDateInput.addEventListener("change", async function () {
+        const selectedDate = (scheduleDateInput.value || "").trim();
+        if (!selectedDate) {
+            return;
+        }
+        await ensureScheduleDateAvailable({
+            dateValue: selectedDate,
+            showErrors: true,
+            resetDateOnLimit: true,
+            focusInput: true
+        });
+    });
+
     shipAddressInput.addEventListener("input", function () {
         if (selectedService !== "Delivery") {
             return;
@@ -1128,40 +1488,61 @@
     });
 
     confirmBtn.addEventListener("click", async function () {
-        if (!validateInputs()) {
+        if (bookingSubmitInFlight) {
             return;
         }
-        if (selectedService === "Pick Up" && selectedPayment === "CASH ON DELIVERY") {
-            syncPaymentAvailability();
-            showError(null, "Cash on Delivery is not available for Pick up.");
-            return;
-        }
-
-        if (selectedService === "Delivery" && !shippingCoords) {
-            const resolved = await geocodeAddress(shipAddressInput.value, { silent: false });
-            if (!resolved) {
-                showError(shipAddressInput, "Please select a valid shipping location from the map.");
+        setBookingSubmitState(true);
+        try {
+            if (!validateInputs()) {
                 return;
             }
+            if (selectedService === "Pick Up" && selectedPayment === "CASH ON DELIVERY") {
+                syncPaymentAvailability();
+                showError(null, "Cash on Delivery is not available for Pick up.");
+                return;
+            }
+
+            const isDateAvailable = await ensureScheduleDateAvailable({
+                showErrors: true,
+                resetDateOnLimit: true,
+                focusInput: true
+            });
+            if (!isDateAvailable) {
+                return;
+            }
+
+            if (selectedService === "Delivery" && !shippingCoords) {
+                const resolved = await geocodeAddress(shipAddressInput.value, { silent: false });
+                if (!resolved) {
+                    showError(shipAddressInput, "Please select a valid shipping location from the map.");
+                    return;
+                }
+            }
+
+            const order = buildOrderDraft();
+
+            if (String(order.payment || "").toLowerCase().includes("installment")) {
+                localStorage.setItem(INSTALLMENT_CHECKOUT_KEY, JSON.stringify(order));
+                localStorage.removeItem(INSTALLMENT_FORM_KEY);
+                window.location.href = "../installment/installment-step1.html";
+                return;
+            }
+
+            if (order.payment === "CASH ON DELIVERY") {
+                const saveResult = await saveBooking(order);
+                if (!saveResult || saveResult.success !== true) {
+                    showError(null, (saveResult && saveResult.message) || "Unable to save booking. Please try again.");
+                    return;
+                }
+                window.location.href = "success.html";
+                return;
+            }
+
+            pendingOrder = order;
+            openQrModal(order.payment, order.total, order);
+        } finally {
+            setBookingSubmitState(false);
         }
-
-        const order = buildOrderDraft();
-
-        if (String(order.payment || "").toLowerCase().includes("installment")) {
-            localStorage.setItem(INSTALLMENT_CHECKOUT_KEY, JSON.stringify(order));
-            localStorage.removeItem(INSTALLMENT_FORM_KEY);
-            window.location.href = "../installment/installment-step1.html";
-            return;
-        }
-
-        if (order.payment === "CASH ON DELIVERY") {
-            await saveBooking(order);
-            window.location.href = "success.html";
-            return;
-        }
-
-        pendingOrder = order;
-        openQrModal(order.payment, order.total, order);
     });
 
     qrClose.addEventListener("click", closeQrModal);
@@ -1176,15 +1557,28 @@
     });
 
     qrDone.addEventListener("click", async function () {
+        if (bookingSubmitInFlight) {
+            return;
+        }
         if (!pendingOrder) {
             closeQrModal();
             return;
         }
 
-        await saveBooking(pendingOrder);
-        pendingOrder = null;
-        closeQrModal();
-        window.location.href = "success.html";
+        setBookingSubmitState(true);
+        try {
+            const saveResult = await saveBooking(pendingOrder);
+            if (!saveResult || saveResult.success !== true) {
+                showError(null, (saveResult && saveResult.message) || "Unable to save booking. Please try again.");
+                return;
+            }
+            pendingOrder = null;
+            closeQrModal();
+            window.location.href = "success.html";
+            return;
+        } finally {
+            setBookingSubmitState(false);
+        }
     });
 
     document.addEventListener("keydown", function (event) {
@@ -1194,6 +1588,7 @@
     });
 
     seedCustomerInfo();
+    initializeScheduleInputs();
     renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
     if (shipAddressInput.value) {
         geocodeAddress(shipAddressInput.value, { silent: true });

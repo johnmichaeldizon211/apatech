@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -30,7 +30,7 @@
                 <div class="dropdown">
                     <a href="../../Usersetting.html/settings.html">Account</a>
                     <a href="../../Usersetting.html/settings.html#orderSection">Order Status</a>
-                    <a href="../../log in.html">Log Out</a>
+                    <a class="logout-btn" href="../../frontpage.html">Log Out</a>
                 </div>
             </div>
         </div>
@@ -76,7 +76,7 @@
     </section>
 
     <script src="../../session.js"></script>
-    <script src="../chatbot-brain.js"></script>
+    <script src="../chatbot-brain.js?v=20260225c"></script>
     <script>
         (function () {
             const profileBtn = document.querySelector(".profile-menu .profile-btn");
@@ -107,6 +107,7 @@
             const smartReply = (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.createResponder === "function")
                 ? window.EcodriveChatbotBrain.createResponder()
                 : null;
+            let liveChatRuntime = null;
             let chatMessages = [];
 
             try {
@@ -152,6 +153,9 @@
                 chatPanel.setAttribute("aria-hidden", "false");
                 renderMessages();
                 if (chatInput) chatInput.focus();
+                if (liveChatRuntime) {
+                    void liveChatRuntime.refreshFromServer();
+                }
             }
 
             function closeChat() {
@@ -179,8 +183,14 @@
                     if (!text) return;
 
                     chatMessages.push({ from: "user", text: text });
-                    chatMessages.push({ from: "bot", text: getBotReply(text) });
+                    const allowBotReply = !liveChatRuntime || liveChatRuntime.canBotReply();
+                    if (allowBotReply) {
+                        chatMessages.push({ from: "bot", text: getBotReply(text) });
+                    }
                     saveMessages();
+                    if (liveChatRuntime) {
+                        void liveChatRuntime.notifyLocalMessagesUpdated();
+                    }
                     renderMessages();
 
                     if (chatInput) {
@@ -190,6 +200,20 @@
                 });
             }
 
+            if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === "function") {
+                liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+                    getMessages: function () {
+                        return chatMessages;
+                    },
+                    setMessages: function (nextMessages) {
+                        chatMessages = Array.isArray(nextMessages) ? nextMessages : [];
+                        saveMessages();
+                        renderMessages();
+                    }
+                });
+                void liveChatRuntime.notifyLocalMessagesUpdated();
+            }
+
             document.addEventListener("keydown", function (event) {
                 if (event.key === "Escape") closeChat();
             });
@@ -197,5 +221,7 @@
     </script>
 </body>
 </html>
+
+
 
 

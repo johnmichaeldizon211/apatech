@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -35,7 +35,7 @@
                 <div class="dropdown">
                     <a href="../../Usersetting.html/settings.html">Account</a>
                     <a href="../../Usersetting.html/settings.html#orderSection">Order Status</a>
-                    <a href="../../log in.html">Log Out</a>
+                    <a class="logout-btn" href="../../frontpage.html">Log Out</a>
                 </div>
             </div>
         </div>
@@ -45,11 +45,12 @@
         <section class="bookings-table" aria-label="User bookings table">
             <header class="table-head row-grid">
                 <span>Product</span>
-                <span>Date</span>
-                <span>Status</span>
+                <span>Booked On</span>
+                <span>Schedule</span>
+                <span>Order Status</span>
                 <span>Total</span>
                 <span>Service</span>
-                <span>Status</span>
+                <span>Fulfillment</span>
                 <span>Action</span>
             </header>
 
@@ -72,7 +73,7 @@
     </section>
 
     <script src="../../session.js"></script>
-    <script src="../chatbot-brain.js"></script>
+    <script src="../chatbot-brain.js?v=20260225c"></script>
     <script>
         (function () {
             const navbar = document.querySelector(".navbar");
@@ -92,9 +93,16 @@
             )
                 .trim()
                 .replace(/\/+$/, "");
-            const BOOKING_REFRESH_INTERVAL_MS = 7000;
+            const BOOKING_REFRESH_INTERVAL_MS = 3000;
+            const REJECTED_NOTIFIED_KEY_PREFIX = "ecodrive_rejected_booking_notif_seen::";
+            const RECEIPT_PDF_SCRIPT_SOURCES = [
+                "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+                "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"
+            ];
             let bookingRefreshTimerId = null;
             let bookingRefreshInFlight = false;
+            let latestRenderedBookingItems = [];
+            let receiptPdfLibPromise = null;
 
             function isMobileMenuLayout() {
                 return window.matchMedia("(max-width: 980px)").matches;
@@ -221,6 +229,66 @@
                 return merged;
             }
 
+            function getSourceOrderId(record) {
+                return String((record && (record.orderId || record.id)) || "")
+                    .trim()
+                    .toLowerCase();
+            }
+
+            function getSourceFallbackKey(record) {
+                if (!record || typeof record !== "object") {
+                    return "";
+                }
+
+                const model = String(record.model || record.productName || record.itemName || "")
+                    .trim()
+                    .toLowerCase();
+                const createdAt = String(record.createdAt || record.updatedAt || "").trim();
+                const total = Number(record.total || record.subtotal || 0).toFixed(2);
+                const userEmail = String(record.email || record.userEmail || "")
+                    .trim()
+                    .toLowerCase();
+
+                if (!model && !createdAt && total === "0.00") {
+                    return "";
+                }
+
+                return [model, createdAt, total, userEmail].join("|");
+            }
+
+            function getSourceIdentityKey(record) {
+                const orderId = getSourceOrderId(record);
+                if (orderId) {
+                    return "id:" + orderId;
+                }
+
+                const fallback = getSourceFallbackKey(record);
+                return fallback ? "fallback:" + fallback : "";
+            }
+
+            function mergeApiAndLocalRows(apiRows, localRows) {
+                const apiList = Array.isArray(apiRows) ? apiRows : [];
+                const localList = Array.isArray(localRows) ? localRows : [];
+                const merged = apiList.slice();
+                const seen = new Set();
+
+                apiList.forEach(function (record) {
+                    const key = getSourceIdentityKey(record);
+                    if (key) {
+                        seen.add(key);
+                    }
+                });
+
+                localList.forEach(function (record) {
+                    const key = getSourceIdentityKey(record);
+                    if (!key || !seen.has(key)) {
+                        merged.push(record);
+                    }
+                });
+
+                return merged;
+            }
+
             async function fetchBookingsFromApi() {
                 const email = getCurrentUserEmail();
                 if (!email) {
@@ -254,15 +322,45 @@
                 if (mergedStatus.includes("cancel")) {
                     return false;
                 }
+                if (mergedStatus.includes("reject")) {
+                    return false;
+                }
                 if (mergedStatus.includes("completed") || mergedStatus.includes("delivered")) {
                     return false;
                 }
                 return true;
             }
 
+            function canPrintReceiptStatus(statusValue, fulfillmentValue) {
+                const mergedStatus = (String(statusValue || "") + " " + String(fulfillmentValue || "")).toLowerCase();
+                if (mergedStatus.includes("cancel") || mergedStatus.includes("reject")) {
+                    return false;
+                }
+                return (
+                    mergedStatus.includes("approve")
+                    || mergedStatus.includes("deliver")
+                    || mergedStatus.includes("complete")
+                    || mergedStatus.includes("picked up")
+                    || mergedStatus.includes("released")
+                );
+            }
+
             function isCancelledBookingStatus(statusValue, fulfillmentValue) {
                 const mergedStatus = (String(statusValue || "") + " " + String(fulfillmentValue || "")).toLowerCase();
                 return mergedStatus.includes("cancel");
+            }
+
+            function isRejectedBookingStatus(statusValue, fulfillmentValue) {
+                const mergedStatus = (String(statusValue || "") + " " + String(fulfillmentValue || "")).toLowerCase();
+                if (mergedStatus.includes("cancel")) {
+                    return false;
+                }
+                return mergedStatus.includes("reject");
+            }
+
+            function isHiddenBookingStatus(statusValue, fulfillmentValue) {
+                return isCancelledBookingStatus(statusValue, fulfillmentValue)
+                    || isRejectedBookingStatus(statusValue, fulfillmentValue);
             }
 
             function getRecordEmail(record) {
@@ -276,8 +374,92 @@
                 return getRecordEmail(record) === currentEmail;
             }
 
-            function cleanupCancelledBookings() {
+            function getRejectedNotifiedStorageKey() {
+                const email = getCurrentUserEmail();
+                return REJECTED_NOTIFIED_KEY_PREFIX + (email || "guest");
+            }
+
+            function readRejectedNotifiedIds() {
+                const parsed = safeParse(localStorage.getItem(getRejectedNotifiedStorageKey()));
+                if (!Array.isArray(parsed)) {
+                    return [];
+                }
+                return parsed
+                    .map(function (item) {
+                        return String(item || "").trim();
+                    })
+                    .filter(Boolean);
+            }
+
+            function saveRejectedNotifiedIds(ids) {
+                localStorage.setItem(getRejectedNotifiedStorageKey(), JSON.stringify(Array.from(ids)));
+            }
+
+            function getRejectedNotificationId(record) {
+                const identityKey = getSourceIdentityKey(record);
+                if (identityKey) {
+                    return identityKey;
+                }
+                const orderId = getRecordOrderId(record).toLowerCase();
+                return orderId ? "id:" + orderId : "";
+            }
+
+            function getBookingModelLabel(record) {
+                return String((record && (record.model || record.productName || record.itemName)) || "your booking").trim();
+            }
+
+            function captureRejectedBookingNotifications(records) {
+                const rows = Array.isArray(records) ? records : [];
                 const currentEmail = getCurrentUserEmail();
+                const seenIds = new Set(readRejectedNotifiedIds());
+                let seenChanged = false;
+                const newlyRejected = [];
+                const rejectedOrderIds = new Set();
+
+                rows.forEach(function (record) {
+                    if (!record || typeof record !== "object") {
+                        return;
+                    }
+                    if (!isRecordForCurrentUser(record, currentEmail)) {
+                        return;
+                    }
+
+                    const status = String(record.status || "");
+                    const fulfillmentStatus = String(record.fulfillmentStatus || "");
+                    if (!isRejectedBookingStatus(status, fulfillmentStatus)) {
+                        return;
+                    }
+
+                    const recordOrderId = getRecordOrderId(record).toLowerCase();
+                    if (recordOrderId) {
+                        rejectedOrderIds.add(recordOrderId);
+                    }
+
+                    const notificationId = getRejectedNotificationId(record);
+                    if (!notificationId || seenIds.has(notificationId)) {
+                        return;
+                    }
+
+                    seenIds.add(notificationId);
+                    seenChanged = true;
+                    newlyRejected.push(record);
+                });
+
+                if (seenChanged) {
+                    saveRejectedNotifiedIds(seenIds);
+                }
+
+                return {
+                    newlyRejected: newlyRejected,
+                    rejectedOrderIds: rejectedOrderIds
+                };
+            }
+
+            function cleanupCancelledBookings(rejectedOrderIdsInput) {
+                const currentEmail = getCurrentUserEmail();
+                const rejectedOrderIds = rejectedOrderIdsInput instanceof Set
+                    ? rejectedOrderIdsInput
+                    : new Set();
                 let changed = false;
 
                 bookingStorageKeys.forEach(function (key) {
@@ -293,7 +475,12 @@
 
                         const status = String(record.status || "");
                         const fulfillmentStatus = String(record.fulfillmentStatus || "");
-                        if (!isCancelledBookingStatus(status, fulfillmentStatus)) {
+                        const recordOrderId = getRecordOrderId(record).toLowerCase();
+                        if (recordOrderId && rejectedOrderIds.has(recordOrderId) && isRecordForCurrentUser(record, currentEmail)) {
+                            return false;
+                        }
+
+                        if (!isHiddenBookingStatus(status, fulfillmentStatus)) {
                             return true;
                         }
 
@@ -310,7 +497,10 @@
                 if (latest && typeof latest === "object") {
                     const latestStatus = String(latest.status || "");
                     const latestFulfillmentStatus = String(latest.fulfillmentStatus || "");
-                    if (isCancelledBookingStatus(latestStatus, latestFulfillmentStatus) && isRecordForCurrentUser(latest, currentEmail)) {
+                    const latestOrderId = getRecordOrderId(latest).toLowerCase();
+                    const shouldRemoveByOrderId = latestOrderId && rejectedOrderIds.has(latestOrderId) && isRecordForCurrentUser(latest, currentEmail);
+                    const shouldRemoveByStatus = isHiddenBookingStatus(latestStatus, latestFulfillmentStatus) && isRecordForCurrentUser(latest, currentEmail);
+                    if (shouldRemoveByOrderId || shouldRemoveByStatus) {
                         localStorage.removeItem("latestBooking");
                         changed = true;
                     }
@@ -337,18 +527,29 @@
                         const service = String(item.service || item.deliveryOption || "Delivery");
                         const status = String(item.status || "Preparing");
                         const fulfillmentStatus = String(item.fulfillmentStatus || (service === "Pick Up" ? "Ready to Pick up" : "In Process"));
-                        if (isCancelledBookingStatus(status, fulfillmentStatus)) {
+                        if (isHiddenBookingStatus(status, fulfillmentStatus)) {
                             return null;
                         }
 
+                        const rawOrderId = String(item.orderId || item.id || "").trim();
                         return {
-                            orderId: String(item.orderId || item.id || ("#EC-" + (1000 + index))),
+                            orderId: String(rawOrderId || ("#EC-" + (1000 + index))),
+                            dedupeOrderId: rawOrderId.toLowerCase(),
+                            fullName: String(item.fullName || item.name || ""),
+                            email: String(item.email || item.userEmail || ""),
                             model: String(item.model || item.productName || item.itemName || "Ecodrive Ebike"),
                             createdAt: createdAt,
+                            schedule: formatSchedule(item),
                             status: status,
                             total: Number(item.total || 0),
                             service: service,
+                            payment: String(item.payment || item.paymentMethod || "Unspecified"),
+                            shippingAddress: String(item.shippingAddress || ""),
                             fulfillmentStatus: fulfillmentStatus,
+                            receiptNumber: String(item.receiptNumber || item.receipt_number || ""),
+                            receiptIssuedAt: item.receiptIssuedAt || item.receipt_issued_at || "",
+                            trackingEta: String(item.trackingEta || item.eta || ""),
+                            trackingLocation: String(item.trackingLocation || item.locationNote || item.location || ""),
                             canCancel: canCancelBookingStatus(status, fulfillmentStatus)
                         };
                     })
@@ -360,7 +561,12 @@
                 const deduped = [];
                 const seen = new Set();
                 normalized.forEach(function (item) {
-                    const key = item.orderId + "|" + item.createdAt;
+                    const key = item.dedupeOrderId
+                        ? "id:" + item.dedupeOrderId
+                        : "fallback:" + String(item.model || "").toLowerCase()
+                            + "|" + String(item.createdAt || "")
+                            + "|" + Number(item.total || 0).toFixed(2)
+                            + "|" + String(item.service || "").toLowerCase();
                     if (!seen.has(key)) {
                         seen.add(key);
                         deduped.push(item);
@@ -368,6 +574,26 @@
                 });
 
                 return deduped;
+            }
+
+            function buildLocalDateFromParts(dateValue, timeValue) {
+                const dateText = String(dateValue || "").trim();
+                const dateMatch = dateText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!dateMatch) {
+                    return null;
+                }
+
+                const hoursMatch = String(timeValue || "").trim().match(/^(\d{2}):(\d{2})/);
+                const year = Number(dateMatch[1]);
+                const month = Number(dateMatch[2]) - 1;
+                const day = Number(dateMatch[3]);
+                const hours = hoursMatch ? Number(hoursMatch[1]) : 0;
+                const minutes = hoursMatch ? Number(hoursMatch[2]) : 0;
+                const value = new Date(year, month, day, hours, minutes, 0, 0);
+                if (Number.isNaN(value.getTime())) {
+                    return null;
+                }
+                return value;
             }
 
             function formatDate(dateValue) {
@@ -383,11 +609,347 @@
                 });
             }
 
+            function formatSchedule(item) {
+                if (!item || typeof item !== "object") {
+                    return "-";
+                }
+
+                const explicitLabel = String(item.scheduleLabel || "").trim();
+                if (explicitLabel) {
+                    return explicitLabel;
+                }
+
+                const scheduleDate = item.scheduleDate || item.bookingDate || "";
+                const scheduleTime = item.scheduleTime || item.bookingTime || "";
+                const localSchedule = buildLocalDateFromParts(scheduleDate, scheduleTime);
+                if (localSchedule) {
+                    return localSchedule.toLocaleString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true
+                    });
+                }
+
+                const scheduledAt = new Date(item.scheduledAt || item.scheduleAt || "");
+                if (!Number.isNaN(scheduledAt.getTime())) {
+                    return scheduledAt.toLocaleString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true
+                    });
+                }
+
+                return "-";
+            }
+
             function formatPeso(amount) {
                 const value = Number(amount || 0);
                 return "&#8369;" + value.toLocaleString("en-PH", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
+                });
+            }
+
+            function formatReceiptAmountText(amount) {
+                const value = Number(amount || 0);
+                return "PHP " + value.toLocaleString("en-PH", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            }
+
+            function formatReceiptIssuedDate(value) {
+                const date = new Date(value || "");
+                if (Number.isNaN(date.getTime())) {
+                    return "Date unavailable";
+                }
+                return date.toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                });
+            }
+
+            function getReceiptNumber(item) {
+                const existing = String(item && item.receiptNumber || "").trim();
+                if (existing) {
+                    return existing;
+                }
+                const orderId = String(item && item.orderId || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                const dateBase = new Date(item && (item.receiptIssuedAt || item.createdAt) || "");
+                const sourceDate = Number.isNaN(dateBase.getTime()) ? new Date() : dateBase;
+                const year = sourceDate.getFullYear();
+                const month = String(sourceDate.getMonth() + 1).padStart(2, "0");
+                const day = String(sourceDate.getDate()).padStart(2, "0");
+                const suffix = orderId.slice(-8) || "PENDING";
+                return "ECR-" + year + month + day + "-" + suffix;
+            }
+
+            function buildPrintableReceiptHtml(item) {
+                const receiptNumber = getReceiptNumber(item);
+                const issuedAt = formatReceiptIssuedDate(item.receiptIssuedAt || item.createdAt);
+                const printedAt = new Date().toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                });
+                const customer = escapeHtml(String(item.fullName || "Customer"));
+                const email = escapeHtml(String(item.email || "-"));
+                const orderId = escapeHtml(String(item.orderId || "-"));
+                const model = escapeHtml(String(item.model || "Ecodrive E-Bike"));
+                const service = escapeHtml(String(item.service || "-"));
+                const payment = escapeHtml(String(item.payment || "-"));
+                const schedule = escapeHtml(String(item.schedule || "-"));
+                const status = escapeHtml(String(item.status || "-"));
+                const fulfillment = escapeHtml(String(item.fulfillmentStatus || "-"));
+                const trackingEta = escapeHtml(String(item.trackingEta || "Not set"));
+                const trackingLocation = escapeHtml(String(item.trackingLocation || "Not set"));
+                const shippingAddress = escapeHtml(String(item.shippingAddress || "-"));
+                const total = formatPeso(item.total || 0);
+                const serviceLine = String(item.service || "").toLowerCase().includes("delivery")
+                    ? "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
+                    : "";
+
+                return "<!DOCTYPE html>"
+                    + "<html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+                    + "<title>Ecodrive Receipt " + escapeHtml(receiptNumber) + "</title>"
+                    + "<style>"
+                    + "*{box-sizing:border-box}"
+                    + "body{margin:0;padding:14px;background:#e9edf2;font-family:'Courier New',Consolas,monospace;color:#111}"
+                    + ".sheet{width:78mm;max-width:100%;margin:0 auto;background:#fff;border:1px dashed #a4abb5;padding:10px 9px}"
+                    + ".center{text-align:center}.brand{font-size:16px;font-weight:700;letter-spacing:1px}.muted{font-size:9px;line-height:1.3}"
+                    + ".hr{border-top:1px dashed #111;margin:6px 0}.row{display:flex;justify-content:space-between;gap:8px;font-size:10px;line-height:1.35}"
+                    + ".label{flex:0 0 40%}.value{flex:1;text-align:right;word-break:break-word}"
+                    + ".items-head,.item{display:flex;justify-content:space-between;gap:6px;font-size:10px;line-height:1.35}"
+                    + ".item-name{flex:1;word-break:break-word}.item-qty{width:24px;text-align:center}.item-amount{width:74px;text-align:right}"
+                    + ".totals{margin-top:4px}.strong{font-weight:700}.foot{margin-top:8px;text-align:center;font-size:9px;line-height:1.4}"
+                    + ".print{margin-top:10px;text-align:center}.print button{border:1px solid #111;background:#fff;padding:6px 10px;font:inherit;font-size:10px;cursor:pointer}"
+                    + "@media print{@page{size:80mm auto;margin:4mm}body{background:#fff;padding:0}.sheet{width:100%;max-width:none;border:none;padding:0}.print{display:none}}"
+                    + "</style></head><body><div class=\"sheet\">"
+                    + "<div class=\"center brand\">ECODRIVE</div>"
+                    + "<div class=\"center muted\">Official Booking Receipt</div>"
+                    + "<div class=\"center muted\">" + escapeHtml(issuedAt) + "</div>"
+                    + "<div class=\"hr\"></div>"
+                    + "<div class=\"row\"><span class=\"label\">Receipt No</span><span class=\"value\">" + escapeHtml(receiptNumber) + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Order ID</span><span class=\"value\">" + orderId + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Customer</span><span class=\"value\">" + customer + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Email</span><span class=\"value\">" + email + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Service</span><span class=\"value\">" + service + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Payment</span><span class=\"value\">" + payment + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
+                    + serviceLine
+                    + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + status + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
+                    + "<div class=\"hr\"></div>"
+                    + "<div class=\"items-head strong\"><span class=\"item-name\">Item</span><span class=\"item-qty\">Qty</span><span class=\"item-amount\">Amount</span></div>"
+                    + "<div class=\"item\"><span class=\"item-name\">" + model + "</span><span class=\"item-qty\">1</span><span class=\"item-amount\">" + total + "</span></div>"
+                    + "<div class=\"hr\"></div>"
+                    + "<div class=\"totals\">"
+                    + "<div class=\"row\"><span class=\"label\">Subtotal</span><span class=\"value\">" + total + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Discount</span><span class=\"value\">" + formatPeso(0) + "</span></div>"
+                    + "<div class=\"row strong\"><span class=\"label\">TOTAL</span><span class=\"value\">" + total + "</span></div>"
+                    + "</div>"
+                    + "<div class=\"hr\"></div>"
+                    + "<div class=\"foot\">Printed: " + escapeHtml(printedAt) + "<br>Generated by User Portal<br>THANK YOU</div>"
+                    + "<div class=\"print\"><button onclick=\"window.print()\">Print Receipt</button></div>"
+                    + "</div></bo" + "dy></ht" + "ml>";
+            }
+
+            function getReceiptDownloadFileName(item) {
+                const fallbackDate = new Date().toISOString().slice(0, 10);
+                const token = getReceiptNumber(item).replace(/[^a-zA-Z0-9_-]/g, "");
+                return "Ecodrive-Receipt-" + (token || fallbackDate) + ".pdf";
+            }
+
+            function loadExternalScript(src) {
+                return new Promise(function (resolve, reject) {
+                    const existing = document.querySelector("script[data-receipt-pdf][src=\"" + src + "\"]");
+                    if (existing) {
+                        if (existing.dataset.loaded === "true") {
+                            resolve();
+                            return;
+                        }
+                        existing.addEventListener("load", function () {
+                            resolve();
+                        }, { once: true });
+                        existing.addEventListener("error", function () {
+                            reject(new Error("Unable to load " + src));
+                        }, { once: true });
+                        return;
+                    }
+
+                    const script = document.createElement("script");
+                    script.src = src;
+                    script.async = true;
+                    script.setAttribute("data-receipt-pdf", "1");
+                    script.addEventListener("load", function () {
+                        script.dataset.loaded = "true";
+                        resolve();
+                    }, { once: true });
+                    script.addEventListener("error", function () {
+                        reject(new Error("Unable to load " + src));
+                    }, { once: true });
+                    document.head.appendChild(script);
+                });
+            }
+
+            function ensureReceiptPdfLib() {
+                if (window.jspdf && typeof window.jspdf.jsPDF === "function") {
+                    return Promise.resolve(window.jspdf.jsPDF);
+                }
+                if (receiptPdfLibPromise) {
+                    return receiptPdfLibPromise;
+                }
+
+                receiptPdfLibPromise = (async function () {
+                    let lastError = new Error("Unable to load PDF library.");
+                    for (const src of RECEIPT_PDF_SCRIPT_SOURCES) {
+                        try {
+                            await loadExternalScript(src);
+                            if (window.jspdf && typeof window.jspdf.jsPDF === "function") {
+                                return window.jspdf.jsPDF;
+                            }
+                        } catch (error) {
+                            lastError = error;
+                        }
+                    }
+                    receiptPdfLibPromise = null;
+                    throw lastError;
+                })();
+
+                return receiptPdfLibPromise;
+            }
+
+            function drawReceiptPdf(item, JsPdfCtor) {
+                const pageWidth = 226.77;
+                const pageHeight = 640;
+                const doc = new JsPdfCtor({ unit: "pt", format: [pageWidth, pageHeight] });
+                const marginX = 11;
+                const lineHeight = 12;
+                const bottomMargin = 16;
+                const contentWidth = pageWidth - (marginX * 2);
+                const receiptNumber = getReceiptNumber(item);
+                const issuedAt = formatReceiptIssuedDate(item.receiptIssuedAt || item.createdAt);
+                const generatedAt = formatReceiptIssuedDate(new Date().toISOString());
+                const amountLabel = formatReceiptAmountText(item.total || 0);
+                const deliveryAddress = String(item.service || "").toLowerCase().includes("delivery")
+                    ? String(item.shippingAddress || "-")
+                    : "";
+
+                let y = 20;
+
+                function writeCenter(text, size, weight) {
+                    if (y > pageHeight - bottomMargin) {
+                        doc.addPage([pageWidth, pageHeight]);
+                        y = 20;
+                    }
+                    doc.setFont("courier", weight || "normal");
+                    doc.setFontSize(size);
+                    doc.text(String(text || ""), pageWidth / 2, y, { align: "center" });
+                    y += lineHeight;
+                }
+
+                function writeRule() {
+                    writeCenter("--------------------------------", 9, "normal");
+                }
+
+                function writeLine(text, weight) {
+                    doc.setFont("courier", weight || "normal");
+                    doc.setFontSize(9);
+                    const wrapped = doc.splitTextToSize(String(text || ""), contentWidth);
+                    wrapped.forEach(function (part) {
+                        if (y > pageHeight - bottomMargin) {
+                            doc.addPage([pageWidth, pageHeight]);
+                            y = 20;
+                        }
+                        doc.text(part, marginX, y);
+                        y += lineHeight;
+                    });
+                }
+
+                writeCenter("ECODRIVE", 13, "bold");
+                writeCenter("OFFICIAL BOOKING RECEIPT", 9, "normal");
+                writeCenter(issuedAt, 8, "normal");
+                writeRule();
+                writeLine("Receipt No: " + receiptNumber);
+                writeLine("Order ID: " + String(item.orderId || "-"));
+                writeLine("Customer: " + String(item.fullName || "Customer"));
+                writeLine("Email: " + String(item.email || "-"));
+                writeLine("Service: " + String(item.service || "-"));
+                writeLine("Payment: " + String(item.payment || "-"));
+                writeLine("Schedule: " + String(item.schedule || "-"));
+                if (deliveryAddress) {
+                    writeLine("Address: " + deliveryAddress);
+                }
+                writeLine("Status: " + String(item.status || "-"));
+                writeLine("Progress: " + String(item.fulfillmentStatus || "-"));
+                writeLine("ETA: " + String(item.trackingEta || "Not set"));
+                writeLine("Location: " + String(item.trackingLocation || "Not set"));
+                writeRule();
+                writeLine("1 x " + String(item.model || "Ecodrive E-Bike"));
+                writeLine("Amount: " + amountLabel);
+                writeRule();
+                writeLine("Subtotal: " + amountLabel, "bold");
+                writeLine("Discount: " + formatReceiptAmountText(0));
+                writeLine("TOTAL: " + amountLabel, "bold");
+                writeRule();
+                writeCenter("Generated: " + generatedAt, 8, "normal");
+                writeCenter("Generated by User Portal", 8, "normal");
+                writeCenter("THANK YOU", 9, "bold");
+
+                return doc;
+            }
+
+            async function downloadReceiptPdf(item, triggerButton) {
+                const button = triggerButton instanceof HTMLElement ? triggerButton : null;
+                const originalLabel = button ? button.textContent : "";
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = "Preparing...";
+                }
+
+                try {
+                    const JsPdfCtor = await ensureReceiptPdfLib();
+                    const doc = drawReceiptPdf(item, JsPdfCtor);
+                    doc.save(getReceiptDownloadFileName(item));
+                } catch (error) {
+                    console.error("Failed to generate receipt PDF", error);
+                    window.alert("Unable to download PDF right now. Opening print view instead.");
+                    openReceiptPrint(item);
+                } finally {
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = originalLabel || "Download PDF";
+                    }
+                }
+            }
+
+            function openReceiptPrint(item) {
+                const popup = window.open("", "_blank", "noopener,noreferrer,width=430,height=760");
+                if (!popup) {
+                    window.alert("Please allow pop-ups to print your receipt.");
+                    return;
+                }
+                popup.document.open();
+                popup.document.write(buildPrintableReceiptHtml(item));
+                popup.document.close();
+                popup.focus();
+                popup.addEventListener("load", function () {
+                    popup.print();
                 });
             }
 
@@ -482,33 +1044,71 @@
                     return;
                 }
 
-                cleanupCancelledBookings();
                 const apiRows = await fetchBookingsFromApi();
                 const localRows = readBookings();
-                const sourceRows = apiRows.length > 0 ? apiRows.concat(localRows) : localRows;
+                const sourceRows = apiRows.length > 0 ? mergeApiAndLocalRows(apiRows, localRows) : localRows;
+                const rejectedSummary = captureRejectedBookingNotifications(sourceRows);
+                cleanupCancelledBookings(rejectedSummary.rejectedOrderIds);
                 const items = normalizeBookings(sourceRows);
+                latestRenderedBookingItems = items.slice();
                 const maxRows = 6;
                 const htmlParts = [];
 
                 items.slice(0, maxRows).forEach(function (item) {
-                    const actionHtml = item.canCancel
+                    const canPrintReceipt = canPrintReceiptStatus(item.status, item.fulfillmentStatus);
+                    const pdfBtnHtml = canPrintReceipt
+                        ? "<button type=\"button\" class=\"receipt-action-btn receipt-pdf-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Download PDF</button>"
+                        : "";
+                    const printBtnHtml = canPrintReceipt
+                        ? "<button type=\"button\" class=\"receipt-action-btn print-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Generate Receipt</button>"
+                        : "";
+                    const cancelBtnHtml = item.canCancel
                         ? "<button type=\"button\" class=\"cancel-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Cancel</button>"
+                        : "";
+                    const actionHtml = (pdfBtnHtml || printBtnHtml || cancelBtnHtml)
+                        ? "<div class=\"action-stack\">" + pdfBtnHtml + printBtnHtml + cancelBtnHtml + "</div>"
                         : "<span class=\"cancelled-note\">N/A</span>";
+                    const trackingEtaHtml = item.trackingEta
+                        ? "<small class=\"fulfillment-eta\">ETA: " + escapeHtml(item.trackingEta) + "</small>"
+                        : "";
+                    const trackingLocationHtml = item.trackingLocation
+                        ? "<small class=\"fulfillment-loc\">Loc: " + escapeHtml(item.trackingLocation) + "</small>"
+                        : "";
+                    const fulfillmentHtml = "<span class=\"fulfillment-main\">"
+                        + escapeHtml(item.fulfillmentStatus)
+                        + "</span>"
+                        + trackingEtaHtml
+                        + trackingLocationHtml;
 
                     htmlParts.push(
                         "<article class=\"table-row row-grid\">" +
                             "<span class=\"product\">" + escapeHtml(item.model.toUpperCase()) + "</span>" +
                             "<span>" + escapeHtml(formatDate(item.createdAt)) + "</span>" +
+                            "<span>" + escapeHtml(item.schedule) + "</span>" +
                             "<span>" + escapeHtml(item.status) + "</span>" +
                             "<span class=\"total\">" + formatPeso(item.total) + "</span>" +
                             "<span><span class=\"service-pill\">" + escapeHtml(item.service) + "</span></span>" +
-                            "<span>" + escapeHtml(item.fulfillmentStatus) + "</span>" +
+                            "<span class=\"fulfillment-wrap\">" + fulfillmentHtml + "</span>" +
                             "<span>" + actionHtml + "</span>" +
                         "</article>"
                     );
                 });
 
                 bookingRows.innerHTML = htmlParts.join("");
+
+                if (rejectedSummary.newlyRejected.length > 0) {
+                    if (rejectedSummary.newlyRejected.length === 1) {
+                        const rejected = rejectedSummary.newlyRejected[0];
+                        window.alert(
+                            "Booking rejected by admin: " + getBookingModelLabel(rejected) + ". Inalis na ito sa iyong bookings."
+                        );
+                    } else {
+                        window.alert(
+                            String(rejectedSummary.newlyRejected.length)
+                            + " booking requests were rejected by admin and removed from your bookings."
+                        );
+                    }
+                }
             }
 
             async function refreshBookings(force) {
@@ -546,6 +1146,26 @@
 
             if (bookingRows) {
                 bookingRows.addEventListener("click", async function (event) {
+                    const receiptBtn = event.target.closest(".receipt-pdf-btn, .print-btn");
+                    if (receiptBtn) {
+                        const orderId = decodeToken(receiptBtn.getAttribute("data-order-id"));
+                        const createdAt = decodeToken(receiptBtn.getAttribute("data-created-at"));
+                        const targetItem = latestRenderedBookingItems.find(function (item) {
+                            return String(item.orderId || "") === String(orderId || "")
+                                && String(item.createdAt || "") === String(createdAt || "");
+                        });
+                        if (!targetItem) {
+                            window.alert("Receipt details are unavailable. Please refresh and try again.");
+                            return;
+                        }
+                        if (receiptBtn.classList.contains("receipt-pdf-btn")) {
+                            await downloadReceiptPdf(targetItem, receiptBtn);
+                            return;
+                        }
+                        openReceiptPrint(targetItem);
+                        return;
+                    }
+
                     const cancelBtn = event.target.closest(".cancel-btn");
                     if (!cancelBtn) {
                         return;
@@ -595,6 +1215,7 @@
             const smartReply = (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.createResponder === "function")
                 ? window.EcodriveChatbotBrain.createResponder()
                 : null;
+            let liveChatRuntime = null;
             const bikeCatalog = [
                 { model: "BLITZ 2000", price: 68000, category: "2-Wheel", aliases: ["blitz 2000"] },
                 { model: "BLITZ 1200", price: 45000, category: "2-Wheel", aliases: ["blitz 1200"] },
@@ -880,6 +1501,9 @@
                 chatPanel.setAttribute("aria-hidden", "false");
                 renderMessages();
                 if (chatInput) chatInput.focus();
+                if (liveChatRuntime) {
+                    void liveChatRuntime.refreshFromServer();
+                }
             }
 
             function closeChat() {
@@ -907,8 +1531,14 @@
                     if (!text) return;
 
                     addChatMessage("user", text);
-                    addChatMessage("bot", smartReply ? smartReply(text) : getBotReply(text));
+                    const allowBotReply = !liveChatRuntime || liveChatRuntime.canBotReply();
+                    if (allowBotReply) {
+                        addChatMessage("bot", smartReply ? smartReply(text) : getBotReply(text));
+                    }
                     saveMessages();
+                    if (liveChatRuntime) {
+                        void liveChatRuntime.notifyLocalMessagesUpdated();
+                    }
                     renderMessages();
 
                     if (chatInput) {
@@ -916,6 +1546,20 @@
                         chatInput.focus();
                     }
                 });
+            }
+
+            if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === "function") {
+                liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+                    getMessages: function () {
+                        return chatMessages;
+                    },
+                    setMessages: function (nextMessages) {
+                        chatMessages = Array.isArray(nextMessages) ? nextMessages : [];
+                        saveMessages();
+                        renderMessages();
+                    }
+                });
+                void liveChatRuntime.notifyLocalMessagesUpdated();
             }
 
             document.addEventListener("keydown", function (event) {
@@ -931,5 +1575,7 @@
     </script>
 </body>
 </html>
+
+
 
 

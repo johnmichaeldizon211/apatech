@@ -17,6 +17,7 @@ body {
     font-family: 'Poppins', sans-serif;
     background: #ffffff;
     color: #1b1b1b;
+    overflow-x: hidden;
 }
 
 .login-container {
@@ -28,6 +29,7 @@ body {
 .left,
 .right {
     width: 50%;
+    min-width: 0;
 }
 
 .left {
@@ -39,8 +41,8 @@ body {
 }
 
 .left img {
-    width: 96%;
-    height: 96%;
+    width: min(100%, 720px);
+    height: min(96%, 900px);
     object-fit: cover;
     display: block;
     border-radius: 12px;
@@ -99,6 +101,7 @@ input {
     border: 1px solid #ccc;
     border-radius: 6px;
     font: inherit;
+    font-size: 16px;
 }
 
 .extras {
@@ -175,24 +178,29 @@ input {
     }
 
     .left {
-        min-height: 210px;
-        max-height: 30dvh;
+        min-height: clamp(170px, 30dvh, 260px);
+        padding: 10px 14px 0;
     }
 
     .right {
         padding: 24px 18px 26px;
         justify-content: flex-start;
+        overflow-y: visible;
     }
 
     form {
         width: min(100%, 500px);
     }
+
+    .left img {
+        width: 100%;
+        height: 100%;
+    }
 }
 
 @media (max-width: 600px) {
     .left {
-        min-height: 170px;
-        max-height: 24dvh;
+        min-height: clamp(150px, 25dvh, 220px);
     }
 
     .logo {
@@ -206,5 +214,19 @@ input {
 
     .signin-btn {
         font-size: 14px;
+    }
+}
+
+@media (max-width: 420px) {
+    .right {
+        padding: 18px 12px 22px;
+    }
+
+    .sub,
+    .welcome,
+    .signup,
+    label,
+    .extras a {
+        font-size: 12px;
     }
 }

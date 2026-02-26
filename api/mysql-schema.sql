@@ -37,9 +37,16 @@ CREATE TABLE IF NOT EXISTS bookings (
   shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   payment_method VARCHAR(80) NOT NULL,
+  payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation',
   service_type VARCHAR(40) NOT NULL,
+  schedule_date DATE NULL,
+  schedule_time TIME NULL,
   status VARCHAR(80) NOT NULL DEFAULT 'Pending review',
   fulfillment_status VARCHAR(80) NOT NULL DEFAULT 'In Process',
+  tracking_eta VARCHAR(80) NULL,
+  tracking_location VARCHAR(120) NULL,
+  receipt_number VARCHAR(40) NULL,
+  receipt_issued_at TIMESTAMP NULL DEFAULT NULL,
   shipping_address VARCHAR(255) NULL,
   shipping_lat DECIMAL(10,6) NULL,
   shipping_lng DECIMAL(10,6) NULL,
@@ -54,6 +61,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   UNIQUE KEY uq_bookings_order_id (order_id),
   KEY idx_bookings_email (email),
   KEY idx_bookings_user_email (user_email),
+  KEY idx_bookings_payment_status (payment_status),
   KEY idx_bookings_review_decision (review_decision),
   KEY idx_bookings_created_at (created_at),
   CONSTRAINT fk_bookings_user_id
@@ -61,6 +69,27 @@ CREATE TABLE IF NOT EXISTS bookings (
     REFERENCES users(id)
     ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE bookings
+  ADD COLUMN schedule_date DATE NULL AFTER service_type;
+
+ALTER TABLE bookings
+  ADD COLUMN payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation' AFTER payment_method;
+
+ALTER TABLE bookings
+  ADD COLUMN schedule_time TIME NULL AFTER schedule_date;
+
+ALTER TABLE bookings
+  ADD COLUMN tracking_eta VARCHAR(80) NULL AFTER fulfillment_status;
+
+ALTER TABLE bookings
+  ADD COLUMN tracking_location VARCHAR(120) NULL AFTER tracking_eta;
+
+ALTER TABLE bookings
+  ADD COLUMN receipt_number VARCHAR(40) NULL AFTER tracking_location;
+
+ALTER TABLE bookings
+  ADD COLUMN receipt_issued_at TIMESTAMP NULL DEFAULT NULL AFTER receipt_number;
 
 CREATE TABLE IF NOT EXISTS products (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -99,3 +128,56 @@ INSERT IGNORE INTO products (model, price, category, product_info, image_url, de
   ('E-CAB MAX 1500', 130000.00, '4-Wheel', NULL, '/Userhomefolder/image 14.png', '/Userhomefolder/Ebikes/ebike14.0.html', 1),
   ('E-CAB 1000', 75000.00, '4-Wheel', NULL, '/Userhomefolder/image 15.png', '/Userhomefolder/Ebikes/ebike15.0.html', 1),
   ('ECONO 800 MP', 100000.00, '4-Wheel', NULL, '/Userhomefolder/image 16.png', '/Userhomefolder/Ebikes/ebike16.0.html', 1);
+
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NULL,
+  user_email VARCHAR(190) NOT NULL,
+  mode ENUM('bot', 'admin') NOT NULL DEFAULT 'bot',
+  takeover_by_admin_id BIGINT UNSIGNED NULL,
+  takeover_by_admin_email VARCHAR(190) NULL,
+  takeover_started_at TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_chat_threads_user_email (user_email),
+  KEY idx_chat_threads_mode (mode),
+  KEY idx_chat_threads_user_id (user_id),
+  KEY idx_chat_threads_updated_at (updated_at),
+  CONSTRAINT fk_chat_threads_user_id
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE chat_threads
+  ADD COLUMN mode ENUM('bot', 'admin') NOT NULL DEFAULT 'bot' AFTER user_email;
+
+ALTER TABLE chat_threads
+  ADD COLUMN takeover_by_admin_id BIGINT UNSIGNED NULL AFTER mode;
+
+ALTER TABLE chat_threads
+  ADD COLUMN takeover_by_admin_email VARCHAR(190) NULL AFTER takeover_by_admin_id;
+
+ALTER TABLE chat_threads
+  ADD COLUMN takeover_started_at TIMESTAMP NULL DEFAULT NULL AFTER takeover_by_admin_email;
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  thread_id BIGINT UNSIGNED NOT NULL,
+  sender_role ENUM('user', 'bot', 'admin', 'system') NOT NULL,
+  sender_label VARCHAR(80) NULL,
+  message_text TEXT NOT NULL,
+  client_message_id VARCHAR(120) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_chat_messages_thread_created (thread_id, created_at, id),
+  UNIQUE KEY uq_chat_messages_thread_client_id (thread_id, client_message_id),
+  CONSTRAINT fk_chat_messages_thread_id
+    FOREIGN KEY (thread_id)
+    REFERENCES chat_threads(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE chat_messages
+  ADD COLUMN client_message_id VARCHAR(120) NULL AFTER message_text;

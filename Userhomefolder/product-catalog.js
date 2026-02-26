@@ -2,6 +2,9 @@
     "use strict";
 
     const STORAGE_KEY = "ecodrive_product_catalog";
+    const ROOT = document.documentElement;
+    const CURRENT_FILE = String((window.location.pathname || "").split("/").pop() || "").toLowerCase();
+    const IS_USERHOME_CATALOG_PAGE = CURRENT_FILE.startsWith("userhome2");
     const API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
         || localStorage.getItem("ecodrive_kyc_api_base")
@@ -11,6 +14,9 @@
     )
         .trim()
         .replace(/\/+$/, "");
+    if (IS_USERHOME_CATALOG_PAGE) {
+        ROOT.classList.add("catalog-loading");
+    }
 
     const DEFAULT_PRODUCTS = [
         { id: 1, model: "BLITZ 2000", price: 68000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 1.png", detailUrl: "/Userhomefolder/Ebikes/ebike1.0.html", isActive: true },
@@ -30,6 +36,13 @@
         { id: 15, model: "E-CAB 1000", price: 75000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html", isActive: true },
         { id: 16, model: "ECONO 800 MP", price: 100000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
     ];
+    const DEFAULT_IMAGE_BY_MODEL = DEFAULT_PRODUCTS.reduce(function (map, item) {
+        const key = String(item && item.model || "").trim().toLowerCase();
+        if (key && item && item.imageUrl) {
+            map[key] = String(item.imageUrl);
+        }
+        return map;
+    }, {});
 
     function safeParse(raw) {
         try {
@@ -98,8 +111,8 @@
             price: parsePrice(source.price),
             category: normalizeCategory(source.category),
             info: info,
-            imageUrl: imageUrl || "/Userhomefolder/image 1.png",
-            detailUrl: detailUrl,
+            imageUrl: resolveAssetPath(imageUrl || getDefaultImageForModel(model)),
+            detailUrl: resolveAssetPath(detailUrl),
             isActive: toIsActive(source.isActive)
         };
     }
@@ -141,6 +154,55 @@
 
     function getApiUrl(path) {
         return API_BASE ? `${API_BASE}${path}` : path;
+    }
+
+    function getDefaultImageForModel(model) {
+        const key = String(model || "").trim().toLowerCase();
+        const fromModel = key ? DEFAULT_IMAGE_BY_MODEL[key] : "";
+        return fromModel || "/Userhomefolder/image 1.png";
+    }
+
+    function getAppBasePath() {
+        const pathname = String(window.location.pathname || "").replace(/\\/g, "/");
+        const userhomeIndex = pathname.toLowerCase().lastIndexOf("/userhomefolder/");
+        if (userhomeIndex > 0) {
+            return pathname.slice(0, userhomeIndex);
+        }
+        return "";
+    }
+
+    function resolveAssetPath(path) {
+        const raw = String(path || "").trim();
+        if (!raw) {
+            return "";
+        }
+
+        if (/^(?:https?:)?\/\//i.test(raw) || /^data:/i.test(raw) || /^blob:/i.test(raw)) {
+            return raw;
+        }
+
+        const normalized = raw.replace(/\\/g, "/");
+        const appBase = getAppBasePath();
+
+        if (normalized.startsWith("/")) {
+            if (!appBase) {
+                return normalized;
+            }
+            if (normalized.toLowerCase().startsWith(`${appBase.toLowerCase()}/`)) {
+                return normalized;
+            }
+            return `${appBase}${normalized}`;
+        }
+
+        if (normalized.startsWith("../")) {
+            return resolveAssetPath(`/Userhomefolder/${normalized.slice(3)}`);
+        }
+
+        if (normalized.startsWith("./")) {
+            return normalized.slice(2);
+        }
+
+        return normalized;
     }
 
     async function fetchCatalogFromApi() {
@@ -196,16 +258,16 @@
         const params = new URLSearchParams();
         params.set("model", product.model || "Ecodrive E-Bike");
         params.set("price", String(Number(product.price || 0)));
-        params.set("image", product.imageUrl || "/Userhomefolder/image 1.png");
+        params.set("image", resolveAssetPath(product.imageUrl || getDefaultImageForModel(product.model)));
         params.set("subtitle", product.category || "E-Bike");
         params.set("info", product.info || "");
-        return "/Userhomefolder/payment/booking.html?" + params.toString();
+        return resolveAssetPath("/Userhomefolder/payment/booking.html") + "?" + params.toString();
     }
 
     function getProductActionUrl(product) {
         const detailUrl = String(product.detailUrl || "").trim();
         if (detailUrl) {
-            return detailUrl;
+            return resolveAssetPath(detailUrl);
         }
         return buildBookingUrl(product);
     }
@@ -217,8 +279,14 @@
         const imageWrap = document.createElement("div");
         imageWrap.className = "img-wrap";
         const image = document.createElement("img");
-        image.src = product.imageUrl || "/Userhomefolder/image 1.png";
+        const fallbackImage = resolveAssetPath(getDefaultImageForModel(product.model));
+        image.src = resolveAssetPath(product.imageUrl || fallbackImage);
         image.alt = product.model || "E-Bike";
+        image.onerror = function () {
+            if (image.src !== fallbackImage) {
+                image.src = fallbackImage;
+            }
+        };
         imageWrap.appendChild(image);
         card.appendChild(imageWrap);
 
@@ -309,13 +377,18 @@
             : document.querySelector("section.products");
 
         if (!container) {
+            clearCatalogLoading();
             return [];
         }
 
-        const catalog = await loadCatalog();
-        const categoryFilter = opts.category || detectCategoryFromPage();
-        renderProducts(container, catalog, categoryFilter);
-        return catalog;
+        try {
+            const catalog = await loadCatalog();
+            const categoryFilter = opts.category || detectCategoryFromPage();
+            renderProducts(container, catalog, categoryFilter);
+            return catalog;
+        } finally {
+            clearCatalogLoading();
+        }
     }
 
     function getCachedCatalog() {
@@ -326,9 +399,15 @@
         return sanitizeCatalog(DEFAULT_PRODUCTS);
     }
 
+    function clearCatalogLoading() {
+        if (!IS_USERHOME_CATALOG_PAGE) {
+            return;
+        }
+        ROOT.classList.remove("catalog-loading");
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
-        const fileName = String(window.location.pathname.split("/").pop() || "").toLowerCase();
-        if (!fileName.startsWith("userhome2")) {
+        if (!IS_USERHOME_CATALOG_PAGE) {
             return;
         }
         void renderPageProducts();
@@ -338,8 +417,7 @@
         if (event.key !== STORAGE_KEY) {
             return;
         }
-        const fileName = String(window.location.pathname.split("/").pop() || "").toLowerCase();
-        if (!fileName.startsWith("userhome2")) {
+        if (!IS_USERHOME_CATALOG_PAGE) {
             return;
         }
         void renderPageProducts();

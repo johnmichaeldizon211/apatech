@@ -380,6 +380,70 @@ body {
   color: #1e376d;
 }
 
+.order-tracking-line {
+  font-weight: 700;
+  color: #184696;
+  background: #eef4ff;
+  border: 1px solid #cfddff;
+  border-radius: 7px;
+  padding: 4px 7px;
+}
+
+.order-tracking-meta {
+  font-weight: 700;
+  color: #1b4d99;
+}
+
+.order-receipt-line {
+  font-weight: 700;
+  color: #1f3f8d;
+}
+
+.order-actions {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.order-action-btn {
+  height: 28px;
+  border: 1px solid #224896;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.order-pdf-btn {
+  background: #1f3f8d;
+  color: #ffffff;
+}
+
+.order-pdf-btn:hover {
+  background: #183472;
+}
+
+.order-print-btn {
+  background: #ffffff;
+  color: #1f3f8d;
+}
+
+.order-print-btn:hover {
+  background: #edf3ff;
+}
+
+.order-action-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.order-schedule {
+  font-weight: 700;
+  color: #21438f;
+}
+
 .order-meta {
   margin-top: 6px !important;
   display: flex;

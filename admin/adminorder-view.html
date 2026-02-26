@@ -55,9 +55,13 @@
                         <div class="detail-item"><span class="label">Email</span><span id="detailEmail" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Model</span><span id="detailModel" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Service</span><span id="detailService" class="value">-</span></div>
+                        <div class="detail-item"><span class="label">Schedule</span><span id="detailSchedule" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Plan</span><span id="detailPlan" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Payment</span><span id="detailPayment" class="value">-</span></div>
+                        <div class="detail-item"><span class="label">Payment Status</span><span id="detailPaymentStatus" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Status</span><span id="detailStatus" class="value">-</span></div>
+                        <div class="detail-item"><span class="label">Tracking ETA</span><span id="detailTrackingEta" class="value">-</span></div>
+                        <div class="detail-item"><span class="label">Tracked Location</span><span id="detailTrackingLocation" class="value">-</span></div>
                         <div class="detail-item"><span class="label">Total</span><span id="detailTotal" class="value">-</span></div>
                     </article>
 
@@ -65,11 +69,55 @@
                         <span class="label">Shipping Address</span>
                         <span id="detailAddress" class="value">-</span>
                     </article>
+
+                    <article class="detail-item wide payment-status-editor">
+                        <span class="label">Update Payment Status</span>
+                        <div class="payment-status-controls">
+                            <select id="paymentStatusSelect" class="payment-status-select" aria-label="Payment status">
+                                <option value="awaiting_payment_confirmation">Awaiting Payment Confirmation</option>
+                                <option value="pending_cod">Pending COD</option>
+                                <option value="installment_review">Installment Review</option>
+                                <option value="paid">Paid</option>
+                                <option value="failed">Failed</option>
+                                <option value="refunded">Refunded</option>
+                                <option value="not_applicable">Not Applicable</option>
+                            </select>
+                            <button id="savePaymentStatusBtn" type="button" class="action-btn payment-save">Save Payment Status</button>
+                        </div>
+                        <span id="paymentStatusFeedback" class="payment-status-feedback" aria-live="polite"></span>
+                    </article>
+
+                    <article class="detail-item wide fulfillment-status-editor">
+                        <span class="label">Update Fulfillment Progress</span>
+                        <div class="fulfillment-status-controls">
+                            <select id="fulfillmentStatusSelect" class="fulfillment-status-select" aria-label="Fulfillment status"></select>
+                            <input
+                                id="fulfillmentEtaInput"
+                                class="fulfillment-eta-input"
+                                type="text"
+                                maxlength="80"
+                                placeholder="ETA (e.g. 20 mins / Today 3:45 PM)"
+                                aria-label="ETA update"
+                            >
+                            <input
+                                id="fulfillmentLocationInput"
+                                class="fulfillment-location-input"
+                                type="text"
+                                maxlength="120"
+                                placeholder="Optional location update (e.g. Near Baliwag Plaza)"
+                                aria-label="Optional location note"
+                            >
+                            <button id="saveFulfillmentStatusBtn" type="button" class="action-btn fulfillment-save">Save Fulfillment Status</button>
+                        </div>
+                        <span id="fulfillmentStatusFeedback" class="fulfillment-status-feedback" aria-live="polite"></span>
+                    </article>
                 </div>
 
                 <div class="action-row">
                     <button id="approveBtn" type="button" class="action-btn approve">Approve</button>
                     <button id="rejectBtn" type="button" class="action-btn reject">Reject</button>
+                    <button id="adminGenerateReceiptBtn" type="button" class="action-btn receipt-print">Generate Receipt</button>
+                    <button id="adminDownloadReceiptBtn" type="button" class="action-btn receipt-pdf">Download PDF</button>
                     <a href="adminorder.html" class="action-btn back">Back to Requests</a>
                 </div>
             </section>

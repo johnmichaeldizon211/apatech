@@ -24,6 +24,7 @@ if (profileBtn && dropdown) {
     const smartReply = (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.createResponder === "function")
         ? window.EcodriveChatbotBrain.createResponder()
         : null;
+    let liveChatRuntime = null;
 
     if (!(toggle && panel && closeBtn && form && input && body)) {
         return;
@@ -47,13 +48,17 @@ if (profileBtn && dropdown) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     }
 
-    function appendMessage(msg) {
+    function appendMessage(msg, options) {
+        const opts = options && typeof options === "object" ? options : {};
         messages.push(msg);
         if (messages.length > MAX_MESSAGES) {
             messages = messages.slice(messages.length - MAX_MESSAGES);
         }
         save();
         renderMessage(msg);
+        if (!opts.skipSync && liveChatRuntime) {
+            void liveChatRuntime.notifyLocalMessagesUpdated();
+        }
     }
 
     function renderMessage(msg) {
@@ -70,6 +75,9 @@ if (profileBtn && dropdown) {
     }
 
     function botReply(text) {
+        if (liveChatRuntime && !liveChatRuntime.canBotReply()) {
+            return;
+        }
         const reply = smartReply
             ? smartReply(text)
             : "I can help with ebike models, prices, booking status, payment, installment, delivery, and repair.";
@@ -77,6 +85,9 @@ if (profileBtn && dropdown) {
         renderTyping();
         setTimeout(function () {
             removeTyping();
+            if (liveChatRuntime && !liveChatRuntime.canBotReply()) {
+                return;
+            }
             appendMessage({ from: "bot", text: reply, time: Date.now() });
         }, 700 + Math.random() * 450);
     }
@@ -100,6 +111,9 @@ if (profileBtn && dropdown) {
         panel.setAttribute("aria-hidden", "false");
         input.focus();
         renderAll();
+        if (liveChatRuntime) {
+            void liveChatRuntime.refreshFromServer();
+        }
     }
 
     function closePanel() {
@@ -135,5 +149,21 @@ if (profileBtn && dropdown) {
     if (messages.length === 0) {
         messages = [{ from: "bot", text: "Hi! I'm Ecodrive Bot. Ask me about Ecodrive ebikes, prices, booking status, payment, or repair.", time: Date.now() }];
         save();
+    }
+
+    if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === "function") {
+        liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+            getMessages: function () {
+                return messages;
+            },
+            setMessages: function (nextMessages) {
+                messages = Array.isArray(nextMessages) ? nextMessages : [];
+                save();
+                if (panel.classList.contains("open")) {
+                    renderAll();
+                }
+            }
+        });
+        void liveChatRuntime.notifyLocalMessagesUpdated();
     }
 })();

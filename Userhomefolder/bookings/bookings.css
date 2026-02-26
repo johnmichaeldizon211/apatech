@@ -188,7 +188,7 @@ body {
 
 .row-grid {
     display: grid;
-    grid-template-columns: 1.2fr 1.1fr 0.9fr 0.95fr 1fr 1fr 0.8fr;
+    grid-template-columns: 1.15fr 0.95fr 1.25fr 0.9fr 0.9fr 0.9fr 0.95fr 0.8fr;
     column-gap: 12px;
     align-items: center;
 }
@@ -234,6 +234,23 @@ body {
     padding: 0 10px;
 }
 
+.fulfillment-wrap {
+    display: grid;
+    gap: 1px;
+}
+
+.fulfillment-main {
+    font-weight: 700;
+}
+
+.fulfillment-eta,
+.fulfillment-loc {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    color: #1f4c98;
+}
+
 .cancel-btn {
     height: 26px;
     min-width: 72px;
@@ -249,6 +266,47 @@ body {
 
 .cancel-btn:hover {
     filter: brightness(0.95);
+}
+
+.receipt-action-btn {
+    height: 26px;
+    min-width: 96px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 10px;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid #1f4a92;
+}
+
+.receipt-pdf-btn {
+    background: #1f4a92;
+    color: #ffffff;
+}
+
+.receipt-pdf-btn:hover {
+    background: #16386f;
+}
+
+.print-btn {
+    background: #ffffff;
+    color: #1f4a92;
+}
+
+.print-btn:hover {
+    background: #ebf2ff;
+}
+
+.receipt-action-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.action-stack {
+    display: inline-flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 .cancelled-note {
@@ -386,7 +444,7 @@ body {
     }
 
     .row-grid {
-        grid-template-columns: 1.25fr 1fr 0.95fr 0.95fr 0.95fr 1fr 0.85fr;
+        grid-template-columns: 1.2fr 0.9fr 1.2fr 0.88fr 0.88fr 0.85fr 0.95fr 0.82fr;
         column-gap: 10px;
     }
 
@@ -493,12 +551,13 @@ body {
     }
 
     .table-row > span:nth-child(1)::before { content: "Product"; }
-    .table-row > span:nth-child(2)::before { content: "Date"; }
-    .table-row > span:nth-child(3)::before { content: "Status"; }
-    .table-row > span:nth-child(4)::before { content: "Total"; }
-    .table-row > span:nth-child(5)::before { content: "Service"; }
-    .table-row > span:nth-child(6)::before { content: "Fulfillment"; }
-    .table-row > span:nth-child(7)::before { content: "Action"; }
+    .table-row > span:nth-child(2)::before { content: "Booked On"; }
+    .table-row > span:nth-child(3)::before { content: "Schedule"; }
+    .table-row > span:nth-child(4)::before { content: "Order Status"; }
+    .table-row > span:nth-child(5)::before { content: "Total"; }
+    .table-row > span:nth-child(6)::before { content: "Service"; }
+    .table-row > span:nth-child(7)::before { content: "Fulfillment"; }
+    .table-row > span:nth-child(8)::before { content: "Action"; }
 
     .table-row > span:last-child {
         align-items: start;

@@ -25,6 +25,11 @@
     var CURRENT_USER_KEY = "ecodrive_current_user_email";
     var LEGACY_CHAT_STORAGE_KEY = "ecodrive_chat_messages_v1";
     var SCOPED_CHAT_STORAGE_PREFIX = "ecodrive_chat_messages_v2::";
+    var CHAT_THREAD_MODE_BOT = "bot";
+    var CHAT_THREAD_MODE_ADMIN = "admin";
+    var CHAT_SYNC_INTERVAL_MS = 3000;
+    var CHAT_MAX_LOCAL_MESSAGES = 180;
+    var CHAT_MAX_PUSH_BATCH = 60;
     var API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
         || localStorage.getItem("ecodrive_kyc_api_base")
@@ -159,10 +164,30 @@
             clearBtn.textContent = "Delete Chat";
             clearBtn.setAttribute("aria-label", "Delete chatbot conversation");
 
-            clearBtn.addEventListener("click", function () {
+            clearBtn.addEventListener("click", async function () {
                 if (!global.confirm("Delete this chatbot conversation?")) {
                     return;
                 }
+
+                if (typeof fetch === "function") {
+                    try {
+                        var response = await fetch(getApiUrl("/api/chat/thread/clear"), {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({})
+                        });
+                        if (response && response.ok) {
+                            await response.json().catch(function () {
+                                return {};
+                            });
+                        }
+                    } catch (_error) {
+                        // fallback to local clear below
+                    }
+                }
+
                 try {
                     global.localStorage.removeItem(LEGACY_CHAT_STORAGE_KEY);
                     global.localStorage.removeItem(getScopedChatStorageKey());
@@ -475,6 +500,357 @@
         return String(sessionStorage.getItem(CURRENT_USER_KEY) || "").trim().toLowerCase();
     }
 
+    function normalizeChatMode(value) {
+        var mode = String(value || "").trim().toLowerCase();
+        return mode === CHAT_THREAD_MODE_ADMIN ? CHAT_THREAD_MODE_ADMIN : CHAT_THREAD_MODE_BOT;
+    }
+
+    function normalizeChatFrom(value) {
+        var from = String(value || "").trim().toLowerCase();
+        if (from === "user" || from === "bot" || from === "admin" || from === "system") {
+            return from;
+        }
+        return "bot";
+    }
+
+    function normalizeMessageText(value) {
+        return String(value || "")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function normalizeLocalChatMessage(entry) {
+        var source = entry && typeof entry === "object" ? entry : {};
+        var text = normalizeMessageText(source.text || source.message || "");
+        if (!text) {
+            return null;
+        }
+
+        var createdAt = source.createdAt || source.created_at || "";
+        var normalizedCreatedAt = String(createdAt || "").trim();
+        if (!normalizedCreatedAt) {
+            normalizedCreatedAt = new Date().toISOString();
+        }
+
+        var serverMessageId = Number(source.serverMessageId || source.server_message_id || source.id || 0);
+        if (!Number.isFinite(serverMessageId) || serverMessageId < 1) {
+            serverMessageId = 0;
+        } else {
+            serverMessageId = Math.floor(serverMessageId);
+        }
+
+        var clientMessageId = String(source.clientMessageId || source.client_message_id || "").trim().slice(0, 120);
+
+        return {
+            from: normalizeChatFrom(source.from),
+            text: text,
+            createdAt: normalizedCreatedAt,
+            clientMessageId: clientMessageId,
+            serverMessageId: serverMessageId
+        };
+    }
+
+    function normalizeLocalChatMessages(input) {
+        var source = Array.isArray(input) ? input : [];
+        var normalized = source
+            .map(normalizeLocalChatMessage)
+            .filter(Boolean);
+        if (normalized.length > CHAT_MAX_LOCAL_MESSAGES) {
+            normalized = normalized.slice(normalized.length - CHAT_MAX_LOCAL_MESSAGES);
+        }
+        return normalized;
+    }
+
+    function buildChatClientMessageId(from, index) {
+        var role = normalizeChatFrom(from);
+        var random = Math.random().toString(16).slice(2, 10);
+        return "msg_" + role + "_" + Date.now() + "_" + String(index || 0) + "_" + random;
+    }
+
+    function mapServerRoleToLocalFrom(role) {
+        var normalizedRole = String(role || "").trim().toLowerCase();
+        if (normalizedRole === "user") {
+            return "user";
+        }
+        if (normalizedRole === "admin") {
+            return "admin";
+        }
+        if (normalizedRole === "system") {
+            return "system";
+        }
+        return "bot";
+    }
+
+    function mapServerMessageToLocal(serverMessage) {
+        var source = serverMessage && typeof serverMessage === "object" ? serverMessage : {};
+        var role = String(source.role || source.senderRole || "").trim().toLowerCase();
+        var from = mapServerRoleToLocalFrom(role);
+        var text = normalizeMessageText(source.text || source.message || source.messageText || source.message_text || "");
+        if (!text) {
+            return null;
+        }
+
+        var displayText = text;
+        if (from === "admin" && displayText.indexOf("Admin: ") !== 0) {
+            displayText = "Admin: " + displayText;
+        }
+
+        return normalizeLocalChatMessage({
+            from: from,
+            text: displayText,
+            createdAt: source.createdAt || source.created_at || new Date().toISOString(),
+            clientMessageId: source.clientMessageId || source.client_message_id || "",
+            serverMessageId: source.id || source.serverMessageId || 0
+        });
+    }
+
+    function mergeServerMessages(localMessages, serverMessages) {
+        var nextMessages = normalizeLocalChatMessages(localMessages);
+        var changed = false;
+        var serverIdMap = {};
+        var clientIdMap = {};
+
+        nextMessages.forEach(function (entry, index) {
+            if (entry.serverMessageId > 0) {
+                serverIdMap[String(entry.serverMessageId)] = index;
+            }
+            if (entry.clientMessageId) {
+                clientIdMap[entry.clientMessageId] = index;
+            }
+        });
+
+        (Array.isArray(serverMessages) ? serverMessages : [])
+            .map(mapServerMessageToLocal)
+            .filter(Boolean)
+            .forEach(function (entry) {
+                var serverKey = entry.serverMessageId > 0 ? String(entry.serverMessageId) : "";
+                var clientKey = entry.clientMessageId;
+
+                if (clientKey && Object.prototype.hasOwnProperty.call(clientIdMap, clientKey)) {
+                    var existingByClient = nextMessages[clientIdMap[clientKey]];
+                    if (existingByClient.serverMessageId !== entry.serverMessageId && entry.serverMessageId > 0) {
+                        existingByClient.serverMessageId = entry.serverMessageId;
+                        changed = true;
+                    }
+                    if (existingByClient.from !== entry.from && (entry.from === "admin" || entry.from === "system" || entry.from === "user")) {
+                        existingByClient.from = entry.from;
+                        changed = true;
+                    }
+                    return;
+                }
+
+                if (serverKey && Object.prototype.hasOwnProperty.call(serverIdMap, serverKey)) {
+                    return;
+                }
+
+                nextMessages.push(entry);
+                changed = true;
+                if (serverKey) {
+                    serverIdMap[serverKey] = nextMessages.length - 1;
+                }
+                if (clientKey) {
+                    clientIdMap[clientKey] = nextMessages.length - 1;
+                }
+            });
+
+        return {
+            changed: changed,
+            messages: normalizeLocalChatMessages(nextMessages)
+        };
+    }
+
+    function attachLiveChat(options) {
+        var opts = options && typeof options === "object" ? options : {};
+        var getMessages = typeof opts.getMessages === "function"
+            ? opts.getMessages
+            : function () { return []; };
+        var setMessages = typeof opts.setMessages === "function"
+            ? opts.setMessages
+            : function () {};
+        var syncIntervalMs = Number(opts.syncIntervalMs);
+        if (!Number.isFinite(syncIntervalMs) || syncIntervalMs < 1500) {
+            syncIntervalMs = CHAT_SYNC_INTERVAL_MS;
+        }
+
+        var currentMode = CHAT_THREAD_MODE_BOT;
+        var pushInFlight = false;
+        var pullInFlight = false;
+        var destroyed = false;
+        var pollTimer = null;
+        var initialPullDone = false;
+
+        function readLocalMessages() {
+            var messages = [];
+            try {
+                messages = getMessages();
+            } catch (_error) {
+                messages = [];
+            }
+            return normalizeLocalChatMessages(messages);
+        }
+
+        function writeLocalMessages(nextMessages) {
+            var normalized = normalizeLocalChatMessages(nextMessages);
+            try {
+                setMessages(normalized);
+            } catch (_error) {
+                // caller-controlled renderer/storage
+            }
+        }
+
+        async function refreshFromServer() {
+            if (destroyed || pullInFlight || typeof fetch !== "function") {
+                return;
+            }
+            var currentEmail = getCurrentUserEmail();
+            if (!currentEmail) {
+                return;
+            }
+
+            pullInFlight = true;
+            try {
+                var response = await fetch(getApiUrl("/api/chat/thread?limit=" + String(CHAT_MAX_LOCAL_MESSAGES)), {
+                    method: "GET"
+                });
+                if (!response.ok) {
+                    return;
+                }
+
+                var payload = await response.json().catch(function () {
+                    return {};
+                });
+                if (!payload || payload.success !== true) {
+                    return;
+                }
+
+                currentMode = normalizeChatMode(payload.thread && payload.thread.mode);
+
+                var localMessages = readLocalMessages();
+                var merged = mergeServerMessages(localMessages, payload.messages);
+                if (merged.changed) {
+                    writeLocalMessages(merged.messages);
+                }
+
+                initialPullDone = true;
+            } catch (_error) {
+                // keep local chat usable offline
+            } finally {
+                pullInFlight = false;
+            }
+        }
+
+        async function notifyLocalMessagesUpdated() {
+            if (destroyed || pushInFlight || typeof fetch !== "function") {
+                return;
+            }
+            var currentEmail = getCurrentUserEmail();
+            if (!currentEmail) {
+                return;
+            }
+
+            var localMessages = readLocalMessages();
+            var changed = false;
+            var outboundEntries = [];
+
+            localMessages = localMessages.filter(function (entry, index) {
+                if (!entry.clientMessageId && (entry.from === "user" || entry.from === "bot")) {
+                    entry.clientMessageId = buildChatClientMessageId(entry.from, index);
+                    changed = true;
+                }
+
+                if (currentMode === CHAT_THREAD_MODE_ADMIN && entry.from === "bot" && !entry.serverMessageId) {
+                    changed = true;
+                    return false;
+                }
+
+                if ((entry.from === "user" || entry.from === "bot") && !entry.serverMessageId) {
+                    outboundEntries.push({
+                        role: entry.from,
+                        text: entry.text,
+                        clientMessageId: entry.clientMessageId,
+                        createdAt: entry.createdAt
+                    });
+                }
+
+                return true;
+            });
+
+            if (changed) {
+                writeLocalMessages(localMessages);
+            }
+
+            if (!outboundEntries.length) {
+                if (!initialPullDone) {
+                    await refreshFromServer();
+                }
+                return;
+            }
+
+            pushInFlight = true;
+            try {
+                var response = await fetch(getApiUrl("/api/chat/messages"), {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        entries: outboundEntries.slice(-CHAT_MAX_PUSH_BATCH)
+                    })
+                });
+                if (!response.ok) {
+                    return;
+                }
+
+                var payload = await response.json().catch(function () {
+                    return {};
+                });
+                if (!payload || payload.success !== true) {
+                    return;
+                }
+
+                currentMode = normalizeChatMode(payload.thread && payload.thread.mode);
+                var mergedAfterPush = mergeServerMessages(readLocalMessages(), payload.messages);
+                if (mergedAfterPush.changed) {
+                    writeLocalMessages(mergedAfterPush.messages);
+                }
+
+                await refreshFromServer();
+            } catch (_error) {
+                // keep local queue and retry later
+            } finally {
+                pushInFlight = false;
+            }
+        }
+
+        function canBotReply() {
+            return currentMode !== CHAT_THREAD_MODE_ADMIN;
+        }
+
+        function stop() {
+            destroyed = true;
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        pollTimer = setInterval(function () {
+            void refreshFromServer();
+        }, syncIntervalMs);
+
+        void refreshFromServer();
+
+        return {
+            canBotReply: canBotReply,
+            refreshFromServer: refreshFromServer,
+            notifyLocalMessagesUpdated: notifyLocalMessagesUpdated,
+            stop: stop,
+            getMode: function () {
+                return currentMode;
+            }
+        };
+    }
+
     function isCancelled(statusValue, fulfillmentValue) {
         var merged = (String(statusValue || "") + " " + String(fulfillmentValue || "")).toLowerCase();
         return merged.indexOf("cancel") >= 0;
@@ -695,6 +1071,7 @@
         getReply: function (text, state) {
             return getReply(text, state || { awaitingPriceModel: false });
         },
+        attachLiveChat: attachLiveChat,
         getScopedStorageKey: getScopedChatStorageKey,
         getSuggestionQuestions: getSuggestionQuestions
     };

@@ -26,30 +26,27 @@
         );
     }
 
+    function isLocalApiBase(baseInput) {
+        var base = trimSlashes(baseInput);
+        if (!base) {
+            return false;
+        }
+        try {
+            var parsed = new URL(base);
+            return isLocalHost(parsed.hostname);
+        } catch (_error) {
+            return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(base);
+        }
+    }
+
     function detectDefaultApiBase() {
         var fromWindow = trimSlashes(global.ECODRIVE_API_BASE || global.__ECODRIVE_API_BASE || "");
         if (fromWindow) {
             return fromWindow;
         }
-
-        if (!global.location) {
+        if (global.location && isLocalHost(global.location.hostname)) {
             return DEFAULT_LOCAL_API_BASE;
         }
-
-        var origin = trimSlashes(global.location.origin || "");
-        var hostname = String(global.location.hostname || "").trim().toLowerCase();
-        if (!origin || origin === "null" || origin.indexOf("file:") === 0 || isLocalHost(hostname)) {
-            return DEFAULT_LOCAL_API_BASE;
-        }
-
-        if (
-            hostname.endsWith(".onrender.com") ||
-            hostname.endsWith(".up.railway.app") ||
-            hostname.endsWith(".railway.app")
-        ) {
-            return origin;
-        }
-
         return DEFAULT_REMOTE_API_BASE;
     }
 
@@ -137,10 +134,26 @@
     function getApiBase() {
         var base = trimSlashes(getStorageValue(API_BASE_KEY));
         if (base) {
+            if (global.location && isLocalHost(global.location.hostname)) {
+                if (!isLocalApiBase(base)) {
+                    return DEFAULT_LOCAL_API_BASE;
+                }
+                if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
+                    return DEFAULT_LOCAL_API_BASE;
+                }
+            }
             return base;
         }
         base = trimSlashes(getStorageValue(LEGACY_API_BASE_KEY));
         if (base) {
+            if (global.location && isLocalHost(global.location.hostname)) {
+                if (!isLocalApiBase(base)) {
+                    return DEFAULT_LOCAL_API_BASE;
+                }
+                if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
+                    return DEFAULT_LOCAL_API_BASE;
+                }
+            }
             return base;
         }
         return DEFAULT_API_BASE;
@@ -158,64 +171,29 @@
 
     function ensureApiBaseConfig() {
         try {
-            var primary = trimSlashes(getStorageValue(API_BASE_KEY));
-            var legacy = trimSlashes(getStorageValue(LEGACY_API_BASE_KEY));
-            var origin = trimSlashes((global.location && global.location.origin) || "");
-            var host = String((global.location && global.location.hostname) || "").trim().toLowerCase();
-            var primaryHost = "";
-            var legacyHost = "";
-            try {
-                primaryHost = primary ? String(new URL(primary).hostname || "").toLowerCase() : "";
-            } catch (_error) {
-                primaryHost = "";
-            }
-            try {
-                legacyHost = legacy ? String(new URL(legacy).hostname || "").toLowerCase() : "";
-            } catch (_error) {
-                legacyHost = "";
-            }
-
-            var shouldForceRemote = Boolean(
-                origin &&
-                !isLocalHost(host) &&
-                !host.endsWith(".onrender.com") &&
-                !host.endsWith(".up.railway.app") &&
-                !host.endsWith(".railway.app") &&
-                (
-                    primary === origin ||
-                    legacy === origin ||
-                    primaryHost.endsWith(".onrender.com") ||
-                    legacyHost.endsWith(".onrender.com")
-                )
-            );
-
-            if (shouldForceRemote) {
-                localStorage.setItem(API_BASE_KEY, DEFAULT_REMOTE_API_BASE);
-                localStorage.setItem(LEGACY_API_BASE_KEY, DEFAULT_REMOTE_API_BASE);
-                return DEFAULT_REMOTE_API_BASE;
-            }
-
-            if (primary) {
-                if (!trimSlashes(localStorage.getItem(LEGACY_API_BASE_KEY))) {
-                    localStorage.setItem(LEGACY_API_BASE_KEY, primary);
-                }
-                return primary;
-            }
-
-            if (legacy) {
-                localStorage.setItem(API_BASE_KEY, legacy);
-                return legacy;
-            }
-
-            if (!DEFAULT_API_BASE) {
+            var storedBase = trimSlashes(getStorageValue(API_BASE_KEY) || getStorageValue(LEGACY_API_BASE_KEY));
+            var onLocalHost = Boolean(global.location && isLocalHost(global.location.hostname));
+            var preferredBase = trimSlashes(onLocalHost ? DEFAULT_LOCAL_API_BASE : DEFAULT_API_BASE);
+            if (!preferredBase) {
                 return "";
             }
 
-            localStorage.setItem(API_BASE_KEY, DEFAULT_API_BASE);
-            localStorage.setItem(LEGACY_API_BASE_KEY, DEFAULT_API_BASE);
-            return DEFAULT_API_BASE;
+            var shouldUsePreferredBase = (
+                !storedBase ||
+                (onLocalHost && (
+                    !isLocalApiBase(storedBase) ||
+                    trimSlashes(storedBase) !== trimSlashes(DEFAULT_LOCAL_API_BASE)
+                ))
+            );
+            var baseToUse = shouldUsePreferredBase ? preferredBase : storedBase;
+
+            localStorage.setItem(API_BASE_KEY, baseToUse);
+            localStorage.setItem(LEGACY_API_BASE_KEY, baseToUse);
+            sessionStorage.removeItem(API_BASE_KEY);
+            sessionStorage.removeItem(LEGACY_API_BASE_KEY);
+            return baseToUse;
         } catch (_error) {
-            return DEFAULT_API_BASE;
+            return trimSlashes(DEFAULT_API_BASE);
         }
     }
 

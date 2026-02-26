@@ -2,6 +2,7 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const dns = require("dns");
 
 function loadDotEnvFile() {
     const envPath = path.join(__dirname, ".env");
@@ -57,9 +58,15 @@ try {
 const PORT = process.env.KYC_PORT ? Number(process.env.KYC_PORT) : 5050;
 const PUBLIC_API_BASE = String(process.env.PUBLIC_API_BASE || "").trim().replace(/\/+$/, "");
 
+const NODE_ENV = String(process.env.NODE_ENV || "development").trim().toLowerCase();
+const IS_PRODUCTION = NODE_ENV === "production";
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
 const otpSessions = new Map();
+const signupOtpSessions = new Map();
+const EMAIL_DOMAIN_LOOKUP_TTL_MS = 10 * 60 * 1000;
+const emailDomainLookupCache = new Map();
+const dnsPromises = dns && dns.promises ? dns.promises : null;
 const RAW_SESSION_TTL_MS = Number(process.env.AUTH_SESSION_TTL_MS || "");
 const SESSION_TTL_MS = (
     Number.isFinite(RAW_SESSION_TTL_MS) && RAW_SESSION_TTL_MS >= 5 * 60 * 1000
@@ -68,133 +75,24 @@ const SESSION_TTL_MS = (
     : 24 * 60 * 60 * 1000;
 const authSessions = new Map();
 const ALLOW_DEMO_OTP = String(process.env.ALLOW_DEMO_OTP || "").trim().toLowerCase() === "true";
+const DEMO_OTP_ENABLED = ALLOW_DEMO_OTP && !IS_PRODUCTION;
+const CORS_ALLOWED_ORIGINS = buildAllowedCorsOrigins(String(process.env.CORS_ALLOWED_ORIGINS || ""));
+const RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+const LOGIN_RATE_LIMIT_MAX = parsePositiveInt(process.env.LOGIN_RATE_LIMIT_MAX, 10);
+const OTP_SEND_RATE_LIMIT_MAX = parsePositiveInt(process.env.OTP_SEND_RATE_LIMIT_MAX, 6);
+const OTP_VERIFY_RATE_LIMIT_MAX = parsePositiveInt(process.env.OTP_VERIFY_RATE_LIMIT_MAX, 10);
+const rateLimitBuckets = new Map();
 
-const DEFAULT_ADMIN_LOGIN_ID = String(process.env.ADMIN_LOGIN_ID || "echodrive").trim();
-const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "echodriveadmin123");
+const DEFAULT_ADMIN_LOGIN_ID = String(process.env.ADMIN_LOGIN_ID || "").trim();
+const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
 const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
 
-function parseMysqlUrl(rawValue) {
-    const raw = String(rawValue || "").trim();
-    if (!raw) {
-        return null;
-    }
-
-    function safeDecode(value) {
-        const text = String(value || "");
-        if (!text) {
-            return "";
-        }
-        try {
-            return decodeURIComponent(text);
-        } catch (_error) {
-            // Keep raw value when URL component is not percent-encoded cleanly.
-            return text;
-        }
-    }
-
-    try {
-        const parsed = new URL(raw);
-        if (String(parsed.protocol || "").toLowerCase() !== "mysql:") {
-            return null;
-        }
-
-        const pathValue = String(parsed.pathname || "").replace(/^\/+/, "").trim();
-        const portNumber = Number(parsed.port || "3306");
-        return {
-            host: String(parsed.hostname || "").trim(),
-            port: Number.isFinite(portNumber) && portNumber > 0 ? portNumber : 3306,
-            user: safeDecode(String(parsed.username || "")),
-            password: safeDecode(String(parsed.password || "")),
-            database: pathValue
-        };
-    } catch (_error) {
-        return null;
-    }
-}
-
-function resolveDbEnvReference(rawValue) {
-    const raw = String(rawValue || "").trim();
-    if (!raw) {
-        return "";
-    }
-
-    const key = raw.toUpperCase();
-    const references = {
-        MYSQLHOST: process.env.MYSQLHOST,
-        MYSQLPORT: process.env.MYSQLPORT,
-        MYSQLUSER: process.env.MYSQLUSER,
-        MYSQLPASSWORD: process.env.MYSQLPASSWORD,
-        MYSQLDATABASE: process.env.MYSQLDATABASE,
-        MYSQL_URL: process.env.MYSQL_URL,
-        MYSQLURL: process.env.MYSQL_URL,
-        MYSQL_PUBLIC_URL: process.env.MYSQL_PUBLIC_URL,
-        MYSQLPUBLICURL: process.env.MYSQL_PUBLIC_URL
-    };
-
-    if (Object.prototype.hasOwnProperty.call(references, key)) {
-        return String(references[key] || "").trim();
-    }
-
-    return raw;
-}
-
-const MYSQL_URL = resolveDbEnvReference(
-    process.env.MYSQL_URL ||
-    process.env.MYSQL_PUBLIC_URL ||
-    process.env.DATABASE_URL ||
-    ""
-);
-const PARSED_MYSQL_URL = parseMysqlUrl(MYSQL_URL);
-const DB_HOST = String(
-    resolveDbEnvReference(process.env.DB_HOST) ||
-    process.env.MYSQLHOST ||
-    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.host) ||
-    "127.0.0.1"
-).trim();
-const DB_PORT = Number(
-    resolveDbEnvReference(process.env.DB_PORT) ||
-    process.env.MYSQLPORT ||
-    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.port) ||
-    "3306"
-);
-const DB_USER = String(
-    resolveDbEnvReference(process.env.DB_USER || process.env.DB_USE) ||
-    process.env.MYSQLUSER ||
-    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.user) ||
-    "root"
-).trim();
-const DB_PASSWORD = String(
-    resolveDbEnvReference(process.env.DB_PASSWORD) ||
-    process.env.MYSQLPASSWORD ||
-    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.password) ||
-    ""
-).trim();
-const DB_NAME = String(
-    resolveDbEnvReference(process.env.DB_NAME) ||
-    process.env.MYSQLDATABASE ||
-    (PARSED_MYSQL_URL && PARSED_MYSQL_URL.database) ||
-    "ecodrive_db"
-).trim();
-const DB_CONFIG_SOURCE = (
-    process.env.DB_HOST ||
-    process.env.DB_PORT ||
-    process.env.DB_USER ||
-    process.env.DB_PASSWORD ||
-    process.env.DB_NAME
-)
-    ? "DB_*"
-    : (
-        process.env.MYSQLHOST ||
-        process.env.MYSQLPORT ||
-        process.env.MYSQLUSER ||
-        process.env.MYSQLPASSWORD ||
-        process.env.MYSQLDATABASE
-    )
-        ? "MYSQL*"
-        : PARSED_MYSQL_URL
-            ? "MYSQL_URL"
-            : "defaults";
+const DB_HOST = String(process.env.DB_HOST || "127.0.0.1").trim();
+const DB_PORT = Number(process.env.DB_PORT || "3306");
+const DB_USER = String(process.env.DB_USER || "root").trim();
+const DB_PASSWORD = String(process.env.DB_PASSWORD || "").trim();
+const DB_NAME = String(process.env.DB_NAME || "ecodrive_db").trim();
 let dbPool = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
@@ -227,15 +125,199 @@ const DEFAULT_PRODUCT_CATALOG = [
     { model: "ECONO 800 MP", price: 100000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html" }
 ];
 const MAX_PRODUCT_IMAGE_DATA_URL_LENGTH = 3 * 1024 * 1024;
+const MAX_BOOKINGS_PER_DAY = 5;
+const ALLOWED_PAYMENT_STATUSES = new Set([
+    "awaiting_payment_confirmation",
+    "pending_cod",
+    "installment_review",
+    "paid",
+    "failed",
+    "refunded",
+    "not_applicable"
+]);
+const CHAT_THREAD_MODE_BOT = "bot";
+const CHAT_THREAD_MODE_ADMIN = "admin";
+const CHAT_ALLOWED_MESSAGE_ROLES = new Set(["user", "bot", "admin", "system"]);
+const MAX_CHAT_MESSAGE_TEXT_LENGTH = 2000;
+const DEFAULT_CHAT_MESSAGE_LIMIT = 180;
+const MAX_CHAT_MESSAGE_LIMIT = 300;
 
-function sendJson(res, statusCode, payload) {
-    res.writeHead(statusCode, {
+function sendJson(res, statusCode, payload, extraHeaders) {
+    const responseHeaders = {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization"
-    });
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400"
+    };
+    const allowedOrigin = resolveAllowedCorsOrigin(res && res.req);
+    if (allowedOrigin) {
+        responseHeaders["Access-Control-Allow-Origin"] = allowedOrigin;
+        responseHeaders["Vary"] = "Origin";
+    }
+    if (extraHeaders && typeof extraHeaders === "object") {
+        Object.assign(responseHeaders, extraHeaders);
+    }
+    res.writeHead(statusCode, responseHeaders);
     res.end(JSON.stringify(payload));
+}
+
+function parsePositiveInt(rawValue, fallbackValue) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallbackValue;
+    }
+    return Math.floor(parsed);
+}
+
+function extractOrigin(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+        return "";
+    }
+    try {
+        return new URL(raw).origin;
+    } catch (_error) {
+        return "";
+    }
+}
+
+function buildAllowedCorsOrigins(rawInput) {
+    const origins = new Set();
+    const addOrigin = (value) => {
+        const origin = extractOrigin(value);
+        if (!origin) {
+            return;
+        }
+        origins.add(origin);
+    };
+
+    String(rawInput || "")
+        .split(",")
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .forEach(addOrigin);
+
+    addOrigin("http://127.0.0.1:5500");
+    addOrigin("http://localhost:5500");
+    addOrigin("http://127.0.0.1:5050");
+    addOrigin("http://localhost:5050");
+    addOrigin(PUBLIC_API_BASE);
+
+    return origins;
+}
+
+function resolveAllowedCorsOrigin(req) {
+    const requestOrigin = String((req && req.headers && req.headers.origin) || "").trim();
+    if (!requestOrigin) {
+        return "";
+    }
+    const normalizedOrigin = extractOrigin(requestOrigin);
+    if (!normalizedOrigin) {
+        return "";
+    }
+    if (CORS_ALLOWED_ORIGINS.has(normalizedOrigin)) {
+        return normalizedOrigin;
+    }
+    // Allow local frontend dev servers on any port.
+    try {
+        const parsed = new URL(normalizedOrigin);
+        const protocol = String(parsed.protocol || "").toLowerCase();
+        const host = String(parsed.hostname || "").trim().toLowerCase();
+        const isLocalHost = host === "127.0.0.1" || host === "localhost" || host === "0.0.0.0";
+        if ((protocol === "http:" || protocol === "https:") && isLocalHost) {
+            return normalizedOrigin;
+        }
+    } catch (_error) {
+        return "";
+    }
+    return "";
+}
+
+function getRequestIp(req) {
+    const forwarded = String((req && req.headers && req.headers["x-forwarded-for"]) || "").trim();
+    if (forwarded) {
+        const first = forwarded.split(",")[0];
+        const cleaned = String(first || "").trim();
+        if (cleaned) {
+            return cleaned;
+        }
+    }
+    return String((req && req.socket && req.socket.remoteAddress) || "unknown").trim().toLowerCase();
+}
+
+function clearExpiredRateLimitBuckets() {
+    const now = Date.now();
+    for (const [key, bucket] of rateLimitBuckets.entries()) {
+        if (!bucket || Number(bucket.resetAt || 0) <= now) {
+            rateLimitBuckets.delete(key);
+        }
+    }
+}
+
+function consumeRateLimitBucket(key, maxAttempts, windowMs) {
+    clearExpiredRateLimitBuckets();
+    const now = Date.now();
+    const max = parsePositiveInt(maxAttempts, 1);
+    const ttl = parsePositiveInt(windowMs, 60 * 1000);
+    const current = rateLimitBuckets.get(key);
+
+    if (!current || Number(current.resetAt || 0) <= now) {
+        const next = {
+            count: 1,
+            resetAt: now + ttl
+        };
+        rateLimitBuckets.set(key, next);
+        return {
+            allowed: true,
+            remaining: Math.max(0, max - next.count),
+            retryAfterMs: 0
+        };
+    }
+
+    current.count += 1;
+    rateLimitBuckets.set(key, current);
+    if (current.count > max) {
+        return {
+            allowed: false,
+            remaining: 0,
+            retryAfterMs: Math.max(0, Number(current.resetAt || 0) - now)
+        };
+    }
+
+    return {
+        allowed: true,
+        remaining: Math.max(0, max - current.count),
+        retryAfterMs: 0
+    };
+}
+
+function enforceRateLimit(req, res, scope, identity, maxAttempts, windowMs) {
+    const ip = getRequestIp(req);
+    const scopedKey = [
+        String(scope || "general").trim().toLowerCase(),
+        ip,
+        String(identity || "").trim().toLowerCase()
+    ].join("|");
+    const result = consumeRateLimitBucket(scopedKey, maxAttempts, windowMs);
+    if (result.allowed) {
+        return true;
+    }
+
+    const retryAfterSeconds = Math.max(1, Math.ceil(Number(result.retryAfterMs || 0) / 1000));
+    sendJson(
+        res,
+        429,
+        {
+            success: false,
+            code: "RATE_LIMITED",
+            message: "Too many requests. Please wait before trying again.",
+            retryAfterSeconds: retryAfterSeconds
+        },
+        {
+            "Retry-After": String(retryAfterSeconds)
+        }
+    );
+    return false;
 }
 
 function readBody(req) {
@@ -407,11 +489,15 @@ function sanitizeAdminCredentials(rawInput) {
 }
 
 function createDefaultAdminCredentials() {
+    const loginId = normalizeAdminLoginId(DEFAULT_ADMIN_LOGIN_ID);
+    const password = String(DEFAULT_ADMIN_PASSWORD || "");
+    if (!isValidAdminLoginId(loginId) || !password) {
+        return null;
+    }
+
     return {
-        loginId: isValidAdminLoginId(DEFAULT_ADMIN_LOGIN_ID)
-            ? normalizeAdminLoginId(DEFAULT_ADMIN_LOGIN_ID)
-            : "echodrive",
-        passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
+        loginId: loginId,
+        passwordHash: hashPassword(password),
         updatedAt: new Date().toISOString()
     };
 }
@@ -455,17 +541,26 @@ function getAdminCredentials() {
     }
 
     const fallback = createDefaultAdminCredentials();
+    if (!fallback) {
+        return null;
+    }
+
     adminCredentialsCache = fallback;
-    try {
-        writeAdminCredentialsToDisk(fallback);
-    } catch (error) {
-        console.warn("[admin-auth] Unable to persist default admin credentials:", error.message || error);
+    if (!fs.existsSync(ADMIN_CREDENTIALS_PATH)) {
+        try {
+            writeAdminCredentialsToDisk(fallback);
+        } catch (error) {
+            console.warn("[admin-auth] Unable to persist admin credentials:", error.message || error);
+        }
     }
     return adminCredentialsCache;
 }
 
 function saveAdminCredentials(updatesInput) {
     const current = getAdminCredentials();
+    if (!current) {
+        throw new Error("Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or create admin-credentials.json.");
+    }
     const updates = updatesInput && typeof updatesInput === "object" ? updatesInput : {};
     const candidate = {
         loginId: Object.prototype.hasOwnProperty.call(updates, "loginId")
@@ -508,6 +603,142 @@ function clearExpiredOtpSessions() {
             otpSessions.delete(requestId);
         }
     }
+}
+
+function clearExpiredSignupOtpSessions() {
+    const now = Date.now();
+    for (const [requestId, session] of signupOtpSessions.entries()) {
+        if (!session || session.expiresAt <= now) {
+            signupOtpSessions.delete(requestId);
+        }
+    }
+}
+
+function isNegativeDnsError(error) {
+    const code = String((error && error.code) || "").trim().toUpperCase();
+    return code === "ENOTFOUND" || code === "ENODATA" || code === "NXDOMAIN";
+}
+
+function getCachedEmailDomainLookup(domain) {
+    const cached = emailDomainLookupCache.get(domain);
+    if (!cached) {
+        return null;
+    }
+    if (Number(cached.expiresAt || 0) <= Date.now()) {
+        emailDomainLookupCache.delete(domain);
+        return null;
+    }
+    return cached;
+}
+
+function setCachedEmailDomainLookup(domain, exists) {
+    emailDomainLookupCache.set(domain, {
+        exists: Boolean(exists),
+        expiresAt: Date.now() + EMAIL_DOMAIN_LOOKUP_TTL_MS
+    });
+}
+
+async function validateEmailDomainExists(email) {
+    const normalized = normalizeEmail(email);
+    const atIndex = normalized.lastIndexOf("@");
+    const domain = atIndex > 0 ? normalized.slice(atIndex + 1) : "";
+    if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {
+        return { valid: false, uncertain: false };
+    }
+    if (!dnsPromises) {
+        return { valid: true, uncertain: true };
+    }
+
+    const cached = getCachedEmailDomainLookup(domain);
+    if (cached) {
+        return { valid: cached.exists, uncertain: false };
+    }
+
+    let hasMxRecord = false;
+    try {
+        const mx = await dnsPromises.resolveMx(domain);
+        hasMxRecord = Array.isArray(mx) && mx.length > 0;
+    } catch (error) {
+        if (!isNegativeDnsError(error)) {
+            return { valid: true, uncertain: true };
+        }
+    }
+
+    if (hasMxRecord) {
+        setCachedEmailDomainLookup(domain, true);
+        return { valid: true, uncertain: false };
+    }
+
+    let hasIpRecord = false;
+    try {
+        const ipv4 = await dnsPromises.resolve4(domain);
+        hasIpRecord = Array.isArray(ipv4) && ipv4.length > 0;
+    } catch (error) {
+        if (!isNegativeDnsError(error)) {
+            return { valid: true, uncertain: true };
+        }
+    }
+
+    if (!hasIpRecord) {
+        try {
+            const ipv6 = await dnsPromises.resolve6(domain);
+            hasIpRecord = Array.isArray(ipv6) && ipv6.length > 0;
+        } catch (error) {
+            if (!isNegativeDnsError(error)) {
+                return { valid: true, uncertain: true };
+            }
+        }
+    }
+
+    setCachedEmailDomainLookup(domain, hasIpRecord);
+    return { valid: hasIpRecord, uncertain: false };
+}
+
+async function findSignupContactConflict(pool, email, phone) {
+    const [rows] = await pool.execute(
+        `SELECT email, phone
+         FROM users
+         WHERE email = ? OR phone = ?
+         LIMIT 5`,
+        [email, phone]
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return "";
+    }
+
+    for (const row of rows) {
+        if (normalizeMobile(row.phone) === phone) {
+            return "phone";
+        }
+        if (normalizeEmail(row.email) === email) {
+            return "email";
+        }
+    }
+    return "";
+}
+
+function getVerifiedSignupOtpSession(requestId, expectedMethod) {
+    const token = String(requestId || "").trim();
+    if (!token) {
+        return null;
+    }
+
+    const session = signupOtpSessions.get(token);
+    if (!session) {
+        return null;
+    }
+
+    if (!session.verified || session.expiresAt <= Date.now()) {
+        signupOtpSessions.delete(token);
+        return null;
+    }
+
+    if (expectedMethod && session.method !== expectedMethod) {
+        return null;
+    }
+
+    return session;
 }
 
 function clearExpiredAuthSessions() {
@@ -659,30 +890,6 @@ async function ensureDbSchema() {
 
     try {
         const pool = await getDbPool();
-        await pool.execute(
-            `CREATE TABLE IF NOT EXISTS users (
-                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                first_name VARCHAR(100) NOT NULL,
-                middle_initial CHAR(1) NULL,
-                last_name VARCHAR(100) NOT NULL,
-                full_name VARCHAR(220) NOT NULL,
-                email VARCHAR(190) NOT NULL,
-                phone VARCHAR(20) NOT NULL,
-                address VARCHAR(255) NOT NULL,
-                avatar_data_url MEDIUMTEXT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
-                is_blocked TINYINT(1) NOT NULL DEFAULT 0,
-                last_login_at TIMESTAMP NULL DEFAULT NULL,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                UNIQUE KEY uq_users_email (email),
-                UNIQUE KEY uq_users_phone (phone),
-                KEY idx_users_role_blocked_created (role, is_blocked, created_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-        );
-
         try {
             await pool.execute(
                 "ALTER TABLE users ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address"
@@ -705,9 +912,16 @@ async function ensureDbSchema() {
                 shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 payment_method VARCHAR(80) NOT NULL,
+                payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation',
                 service_type VARCHAR(40) NOT NULL,
+                schedule_date DATE NULL,
+                schedule_time TIME NULL,
                 status VARCHAR(80) NOT NULL DEFAULT 'Pending review',
                 fulfillment_status VARCHAR(80) NOT NULL DEFAULT 'In Process',
+                tracking_eta VARCHAR(80) NULL,
+                tracking_location VARCHAR(120) NULL,
+                receipt_number VARCHAR(40) NULL,
+                receipt_issued_at TIMESTAMP NULL DEFAULT NULL,
                 shipping_address VARCHAR(255) NULL,
                 shipping_lat DECIMAL(10,6) NULL,
                 shipping_lng DECIMAL(10,6) NULL,
@@ -722,11 +936,68 @@ async function ensureDbSchema() {
                 UNIQUE KEY uq_bookings_order_id (order_id),
                 KEY idx_bookings_email (email),
                 KEY idx_bookings_user_email (user_email),
+                KEY idx_bookings_payment_status (payment_status),
                 KEY idx_bookings_review_decision (review_decision),
                 KEY idx_bookings_created_at (created_at),
                 CONSTRAINT fk_bookings_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
         );
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN schedule_date DATE NULL AFTER service_type"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.schedule_date automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation' AFTER payment_method"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.payment_status automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN schedule_time TIME NULL AFTER schedule_date"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.schedule_time automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN tracking_eta VARCHAR(80) NULL AFTER fulfillment_status"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.tracking_eta automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN tracking_location VARCHAR(120) NULL AFTER tracking_eta"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.tracking_location automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN receipt_number VARCHAR(40) NULL AFTER tracking_location"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.receipt_number automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN receipt_issued_at TIMESTAMP NULL DEFAULT NULL AFTER receipt_number"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.receipt_issued_at automatically:", alterError.message || alterError);
+        }
 
         await pool.execute(
             `CREATE TABLE IF NOT EXISTS products (
@@ -791,6 +1062,82 @@ async function ensureDbSchema() {
                 values
             );
         }
+
+        await pool.execute(
+            `CREATE TABLE IF NOT EXISTS chat_threads (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                user_id BIGINT UNSIGNED NULL,
+                user_email VARCHAR(190) NOT NULL,
+                mode ENUM('bot', 'admin') NOT NULL DEFAULT 'bot',
+                takeover_by_admin_id BIGINT UNSIGNED NULL,
+                takeover_by_admin_email VARCHAR(190) NULL,
+                takeover_started_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_chat_threads_user_email (user_email),
+                KEY idx_chat_threads_mode (mode),
+                KEY idx_chat_threads_user_id (user_id),
+                KEY idx_chat_threads_updated_at (updated_at),
+                CONSTRAINT fk_chat_threads_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        );
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_threads ADD COLUMN mode ENUM('bot', 'admin') NOT NULL DEFAULT 'bot' AFTER user_email"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_threads.mode automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_threads ADD COLUMN takeover_by_admin_id BIGINT UNSIGNED NULL AFTER mode"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_id automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_threads ADD COLUMN takeover_by_admin_email VARCHAR(190) NULL AFTER takeover_by_admin_id"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_email automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_threads ADD COLUMN takeover_started_at TIMESTAMP NULL DEFAULT NULL AFTER takeover_by_admin_email"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_threads.takeover_started_at automatically:", alterError.message || alterError);
+        }
+
+        await pool.execute(
+            `CREATE TABLE IF NOT EXISTS chat_messages (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                thread_id BIGINT UNSIGNED NOT NULL,
+                sender_role ENUM('user', 'bot', 'admin', 'system') NOT NULL,
+                sender_label VARCHAR(80) NULL,
+                message_text TEXT NOT NULL,
+                client_message_id VARCHAR(120) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_chat_messages_thread_created (thread_id, created_at, id),
+                UNIQUE KEY uq_chat_messages_thread_client_id (thread_id, client_message_id),
+                CONSTRAINT fk_chat_messages_thread_id FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        );
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN client_message_id VARCHAR(120) NULL AFTER message_text"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.client_message_id automatically:", alterError.message || alterError);
+        }
     } catch (error) {
         console.warn("[db-schema] Unable to auto-prepare schema:", error.message || error);
     }
@@ -828,7 +1175,9 @@ function getSmtpTransport() {
     return smtpTransport;
 }
 
-async function sendOtpEmail(email, code) {
+async function sendOtpEmail(email, code, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const subject = String(opts.subject || "Ecodrive verification code").trim() || "Ecodrive verification code";
     const transport = getSmtpTransport();
     if (!transport) {
         return { sent: false, reason: "SMTP is not configured." };
@@ -838,7 +1187,7 @@ async function sendOtpEmail(email, code) {
         await transport.sendMail({
             from: SMTP_FROM,
             to: email,
-            subject: "Ecodrive password reset code",
+            subject: subject,
             text: `Your Ecodrive verification code is ${code}. It expires in 5 minutes.`,
             html: `<p>Your Ecodrive verification code is <strong>${htmlEscape(code)}</strong>.</p><p>This code expires in 5 minutes.</p>`
         });
@@ -846,6 +1195,134 @@ async function sendOtpEmail(email, code) {
     } catch (error) {
         return { sent: false, reason: error.message || "SMTP send failed." };
     }
+}
+
+function buildBookingScheduleLabelForEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    const scheduleDate = formatBookingDateValue(
+        booking.scheduleDate
+        || booking.schedule_date
+        || booking.bookingDate
+        || booking.date
+    );
+    const scheduleTime = formatBookingTimeValue(
+        booking.scheduleTime
+        || booking.schedule_time
+        || booking.bookingTime
+        || booking.time
+    );
+
+    if (!scheduleDate && !scheduleTime) {
+        return "Not specified";
+    }
+
+    const localDate = buildLocalDateTimeFromParts(scheduleDate, scheduleTime);
+    if (localDate) {
+        return localDate.toLocaleString("en-PH", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true
+        });
+    }
+
+    if (scheduleDate && scheduleTime) {
+        return `${scheduleDate} ${scheduleTime.slice(0, 5)}`;
+    }
+    return scheduleDate || scheduleTime;
+}
+
+async function sendBookingRejectedEmail(record, options) {
+    const booking = record && typeof record === "object" ? record : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const recipientEmail = normalizeEmail(booking.email || booking.userEmail);
+    if (!isValidEmail(recipientEmail)) {
+        return { sent: false, reason: "Booking has no valid email recipient." };
+    }
+
+    const transport = getSmtpTransport();
+    if (!transport) {
+        return { sent: false, reason: "SMTP is not configured." };
+    }
+
+    const fullName = normalizeText(booking.fullName || booking.name || "") || "Customer";
+    const orderId = String(booking.orderId || booking.order_id || "").trim() || "N/A";
+    const model = normalizeText(booking.model || booking.productName || booking.itemName || "") || "Ecodrive E-Bike";
+    const service = normalizeText(booking.service || booking.service_type || "") || "Delivery";
+    const scheduleLabel = buildBookingScheduleLabelForEmail(booking);
+    const reasonText = normalizeText(opts.reason || "");
+    const reasonSection = reasonText ? `Reason: ${reasonText}` : "";
+    const subject = `Ecodrive booking update (${orderId})`;
+
+    const textLines = [
+        `Hi ${fullName},`,
+        "",
+        "Your booking request has been rejected by Ecodrive admin.",
+        `Order ID: ${orderId}`,
+        `Model: ${model}`,
+        `Service: ${service}`,
+        `Schedule: ${scheduleLabel}`
+    ];
+    if (reasonSection) {
+        textLines.push(reasonSection);
+    }
+    textLines.push(
+        "",
+        "This booking was removed from your active bookings. You may submit a new booking request anytime.",
+        "",
+        "Ecodrive Team"
+    );
+
+    const reasonHtml = reasonText
+        ? `<p><strong>Reason:</strong> ${htmlEscape(reasonText)}</p>`
+        : "";
+
+    try {
+        await transport.sendMail({
+            from: SMTP_FROM,
+            to: recipientEmail,
+            subject: subject,
+            text: textLines.join("\n"),
+            html: [
+                `<p>Hi ${htmlEscape(fullName)},</p>`,
+                "<p>Your booking request has been <strong>rejected</strong> by Ecodrive admin.</p>",
+                "<ul>",
+                `<li><strong>Order ID:</strong> ${htmlEscape(orderId)}</li>`,
+                `<li><strong>Model:</strong> ${htmlEscape(model)}</li>`,
+                `<li><strong>Service:</strong> ${htmlEscape(service)}</li>`,
+                `<li><strong>Schedule:</strong> ${htmlEscape(scheduleLabel)}</li>`,
+                "</ul>",
+                reasonHtml,
+                "<p>This booking was removed from your active bookings. You may submit a new booking request anytime.</p>",
+                "<p>Ecodrive Team</p>"
+            ].join("")
+        });
+        return { sent: true, provider: "smtp" };
+    } catch (error) {
+        return { sent: false, reason: error.message || "SMTP send failed." };
+    }
+}
+
+function buildLocalDateTimeFromParts(dateValue, timeValue) {
+    const dateText = String(dateValue || "").trim();
+    const dateMatch = dateText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!dateMatch) {
+        return null;
+    }
+
+    const timeMatch = String(timeValue || "").trim().match(/^(\d{2}):(\d{2})/);
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]) - 1;
+    const day = Number(dateMatch[3]);
+    const hours = timeMatch ? Number(timeMatch[1]) : 0;
+    const minutes = timeMatch ? Number(timeMatch[2]) : 0;
+    const value = new Date(year, month, day, hours, minutes, 0, 0);
+    if (Number.isNaN(value.getTime())) {
+        return null;
+    }
+    return value;
 }
 
 async function sendOtpSms(mobile, code) {
@@ -881,9 +1358,9 @@ async function sendOtpSms(mobile, code) {
     }
 }
 
-async function deliverOtp(method, contact, code) {
+async function deliverOtp(method, contact, code, options) {
     if (method === "email") {
-        return sendOtpEmail(contact, code);
+        return sendOtpEmail(contact, code, options);
     }
     if (method === "mobile") {
         return sendOtpSms(contact, code);
@@ -906,15 +1383,81 @@ function normalizeText(value) {
     return String(value || "").trim().replace(/\s+/g, " ");
 }
 
+function normalizeChatMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return mode === CHAT_THREAD_MODE_ADMIN ? CHAT_THREAD_MODE_ADMIN : CHAT_THREAD_MODE_BOT;
+}
+
+function normalizeChatMessageRole(value, fallbackRole) {
+    const fallback = String(fallbackRole || "user").trim().toLowerCase();
+    const role = String(value || fallback).trim().toLowerCase();
+    if (CHAT_ALLOWED_MESSAGE_ROLES.has(role)) {
+        return role;
+    }
+    if (CHAT_ALLOWED_MESSAGE_ROLES.has(fallback)) {
+        return fallback;
+    }
+    return "user";
+}
+
+function normalizeChatMessageText(value) {
+    const text = normalizeText(value);
+    if (!text) {
+        return "";
+    }
+    return text.slice(0, MAX_CHAT_MESSAGE_TEXT_LENGTH);
+}
+
+function normalizeChatClientMessageId(value) {
+    const cleaned = String(value || "").trim().replace(/[^a-zA-Z0-9._\-:]/g, "");
+    if (!cleaned) {
+        return "";
+    }
+    return cleaned.slice(0, 120);
+}
+
+function parseChatMessageLimit(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return DEFAULT_CHAT_MESSAGE_LIMIT;
+    }
+    return Math.min(MAX_CHAT_MESSAGE_LIMIT, Math.floor(parsed));
+}
+
+function parsePositiveId(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return 0;
+    }
+    return Math.floor(parsed);
+}
+
 function normalizeOrderId(value, allowFallback) {
     const cleaned = normalizeText(value).replace(/[^\w\-]/g, "");
     if (cleaned) {
         return cleaned.slice(0, 64);
     }
     if (allowFallback !== false) {
-        return `EC-${Date.now()}`;
+        return generateOrderId();
     }
     return "";
+}
+
+function generateOrderId() {
+    return `EC-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function buildReceiptNumber(orderId, issuedAtInput) {
+    const issuedAt = issuedAtInput instanceof Date && !Number.isNaN(issuedAtInput.getTime())
+        ? issuedAtInput
+        : new Date();
+    const year = issuedAt.getFullYear();
+    const month = String(issuedAt.getMonth() + 1).padStart(2, "0");
+    const day = String(issuedAt.getDate()).padStart(2, "0");
+    const datePart = `${year}${month}${day}`;
+    const normalizedOrderId = normalizeOrderId(orderId, false).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    const suffix = normalizedOrderId.slice(-8) || crypto.randomBytes(4).toString("hex").toUpperCase();
+    return `ECR-${datePart}-${suffix}`.slice(0, 40);
 }
 
 function normalizeServiceType(value) {
@@ -951,6 +1494,31 @@ function normalizeFulfillmentStatus(value, serviceType) {
         return "Under Review";
     }
     return "In Process";
+}
+
+function getDefaultPaymentStatus(paymentMethod, serviceType) {
+    const method = normalizeText(paymentMethod).toLowerCase();
+    const service = normalizeServiceType(serviceType);
+
+    if (method.includes("repair")) {
+        return "not_applicable";
+    }
+    if (method.includes("cash on delivery")) {
+        return "pending_cod";
+    }
+    if (method.includes("installment") || service === "Installment") {
+        return "installment_review";
+    }
+    return "awaiting_payment_confirmation";
+}
+
+function normalizePaymentStatus(value, fallbackValue) {
+    const fallback = String(fallbackValue || "awaiting_payment_confirmation").trim().toLowerCase();
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized && ALLOWED_PAYMENT_STATUSES.has(normalized)) {
+        return normalized;
+    }
+    return ALLOWED_PAYMENT_STATUSES.has(fallback) ? fallback : "awaiting_payment_confirmation";
 }
 
 function parseAmount(value) {
@@ -1045,6 +1613,118 @@ function normalizeOptionalNumber(value) {
     return Number(num.toFixed(6));
 }
 
+function normalizeScheduleDate(value) {
+    const cleaned = String(value || "").trim();
+    if (!cleaned) {
+        return null;
+    }
+
+    const match = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+        return null;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const stamp = Date.UTC(year, month - 1, day);
+    const parsed = new Date(stamp);
+
+    if (
+        !Number.isFinite(stamp)
+        || parsed.getUTCFullYear() !== year
+        || parsed.getUTCMonth() + 1 !== month
+        || parsed.getUTCDate() !== day
+    ) {
+        return null;
+    }
+
+    return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function normalizeScheduleTime(value) {
+    const cleaned = String(value || "").trim();
+    if (!cleaned) {
+        return null;
+    }
+
+    const match = cleaned.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) {
+        return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3] || 0);
+    if (
+        !Number.isInteger(hours)
+        || !Number.isInteger(minutes)
+        || !Number.isInteger(seconds)
+        || hours < 0
+        || hours > 23
+        || minutes < 0
+        || minutes > 59
+        || seconds < 0
+        || seconds > 59
+    ) {
+        return null;
+    }
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatBookingDateValue(value) {
+    if (!value) {
+        return "";
+    }
+    if (value instanceof Date) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, "0");
+        const day = String(value.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) {
+        return "";
+    }
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) {
+        return match[1];
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+        return "";
+    }
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatBookingTimeValue(value) {
+    if (!value) {
+        return "";
+    }
+    if (value instanceof Date) {
+        const hours = String(value.getHours()).padStart(2, "0");
+        const minutes = String(value.getMinutes()).padStart(2, "0");
+        const seconds = String(value.getSeconds()).padStart(2, "0");
+        return `${hours}:${minutes}:${seconds}`;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) {
+        return "";
+    }
+    const match = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (!match) {
+        return "";
+    }
+    return `${match[1]}:${match[2]}:${match[3] || "00"}`;
+}
+
 function getReviewDecisionFromStatus(status, fulfillmentStatus) {
     const merged = `${String(status || "")} ${String(fulfillmentStatus || "")}`.toLowerCase();
     if (merged.includes("reject")) {
@@ -1054,6 +1734,39 @@ function getReviewDecisionFromStatus(status, fulfillmentStatus) {
         return "approved";
     }
     return "none";
+}
+
+async function countActiveBookingsByScheduleDate(pool, scheduleDate, excludeOrderId) {
+    const normalizedDate = normalizeScheduleDate(scheduleDate);
+    if (!normalizedDate) {
+        return 0;
+    }
+
+    const normalizedExcludeOrderId = normalizeOrderId(excludeOrderId, false);
+    const params = [normalizedDate];
+    const excludeClause = normalizedExcludeOrderId
+        ? "AND order_id <> ?"
+        : "";
+    if (normalizedExcludeOrderId) {
+        params.push(normalizedExcludeOrderId);
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT COUNT(*) AS total
+         FROM bookings
+         WHERE schedule_date = ?
+           AND review_decision <> 'rejected'
+           AND LOWER(status) NOT LIKE '%cancel%'
+           AND LOWER(fulfillment_status) NOT LIKE '%cancel%'
+           ${excludeClause}`,
+        params
+    );
+    const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+    return Number((row && row.total) || 0);
+}
+
+function hasReachedDailyBookingLimit(count) {
+    return Number(count || 0) >= MAX_BOOKINGS_PER_DAY;
 }
 
 function mapProductRow(row) {
@@ -1093,9 +1806,19 @@ function mapBookingRow(row) {
         shippingFee: Number(row.shipping_fee || 0),
         total: Number(row.total || 0),
         payment: String(row.payment_method || ""),
+        paymentStatus: normalizePaymentStatus(
+            row.payment_status,
+            getDefaultPaymentStatus(row.payment_method, row.service_type)
+        ),
         service: String(row.service_type || ""),
         status: String(row.status || ""),
         fulfillmentStatus: String(row.fulfillment_status || ""),
+        trackingEta: String(row.tracking_eta || ""),
+        trackingLocation: String(row.tracking_location || ""),
+        receiptNumber: String(row.receipt_number || ""),
+        receiptIssuedAt: row.receipt_issued_at || null,
+        scheduleDate: formatBookingDateValue(row.schedule_date),
+        scheduleTime: formatBookingTimeValue(row.schedule_time),
         shippingAddress: String(row.shipping_address || ""),
         shippingCoordinates: (
             row.shipping_lat !== null &&
@@ -1117,8 +1840,522 @@ function mapBookingRow(row) {
     };
 }
 
+function mapChatThreadRow(row) {
+    return {
+        id: Number(row.id || 0),
+        userId: Number(row.user_id || 0),
+        userEmail: String(row.user_email || ""),
+        mode: normalizeChatMode(row.mode),
+        takeoverByAdminId: Number(row.takeover_by_admin_id || 0),
+        takeoverByAdminEmail: String(row.takeover_by_admin_email || ""),
+        takeoverStartedAt: row.takeover_started_at || null,
+        createdAt: row.created_at || null,
+        updatedAt: row.updated_at || null
+    };
+}
+
+function mapChatMessageRow(row) {
+    return {
+        id: Number(row.id || 0),
+        threadId: Number(row.thread_id || 0),
+        role: normalizeChatMessageRole(row.sender_role, "user"),
+        senderLabel: String(row.sender_label || ""),
+        text: String(row.message_text || ""),
+        clientMessageId: String(row.client_message_id || ""),
+        createdAt: row.created_at || null
+    };
+}
+
+async function findChatUserById(pool, userId) {
+    const parsedId = parsePositiveId(userId);
+    if (!parsedId) {
+        return null;
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT id, full_name, email
+         FROM users
+         WHERE id = ? AND role = 'user'
+         LIMIT 1`,
+        [parsedId]
+    );
+
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+async function findChatUserByEmail(pool, email) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+        return null;
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT id, full_name, email
+         FROM users
+         WHERE email = ? AND role = 'user'
+         LIMIT 1`,
+        [normalizedEmail]
+    );
+
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+async function getOrCreateChatThreadForUser(pool, userRow) {
+    const user = userRow && typeof userRow === "object" ? userRow : {};
+    const userId = parsePositiveId(user.id);
+    const userEmail = normalizeEmail(user.email);
+    if (!userId || !isValidEmail(userEmail)) {
+        return null;
+    }
+
+    const [existingRows] = await pool.execute(
+        `SELECT *
+         FROM chat_threads
+         WHERE user_email = ?
+         LIMIT 1`,
+        [userEmail]
+    );
+
+    if (Array.isArray(existingRows) && existingRows.length) {
+        const existing = existingRows[0];
+        if (Number(existing.user_id || 0) !== userId) {
+            await pool.execute(
+                `UPDATE chat_threads
+                 SET user_id = ?, updated_at = NOW()
+                 WHERE id = ?`,
+                [userId, Number(existing.id || 0)]
+            );
+            const [updatedRows] = await pool.execute(
+                `SELECT *
+                 FROM chat_threads
+                 WHERE id = ?
+                 LIMIT 1`,
+                [Number(existing.id || 0)]
+            );
+            return Array.isArray(updatedRows) && updatedRows.length
+                ? mapChatThreadRow(updatedRows[0])
+                : mapChatThreadRow(existing);
+        }
+        return mapChatThreadRow(existing);
+    }
+
+    await pool.execute(
+        `INSERT INTO chat_threads (
+            user_id,
+            user_email,
+            mode
+        ) VALUES (?, ?, ?)`,
+        [userId, userEmail, CHAT_THREAD_MODE_BOT]
+    );
+
+    const [rows] = await pool.execute(
+        `SELECT *
+         FROM chat_threads
+         WHERE user_email = ?
+         LIMIT 1`,
+        [userEmail]
+    );
+    if (!Array.isArray(rows) || rows.length < 1) {
+        return null;
+    }
+    return mapChatThreadRow(rows[0]);
+}
+
+async function listChatMessagesForThread(pool, threadId, options) {
+    const parsedThreadId = parsePositiveId(threadId);
+    if (!parsedThreadId) {
+        return [];
+    }
+
+    const opts = options && typeof options === "object" ? options : {};
+    const afterId = parsePositiveId(opts.afterId);
+    const limit = parseChatMessageLimit(opts.limit);
+
+    const queryParts = [
+        "SELECT * FROM chat_messages WHERE thread_id = ?"
+    ];
+    const params = [parsedThreadId];
+    if (afterId > 0) {
+        queryParts.push("AND id > ?");
+        params.push(afterId);
+    }
+    queryParts.push("ORDER BY id ASC");
+    queryParts.push("LIMIT ?");
+    params.push(limit);
+
+    const [rows] = await pool.execute(queryParts.join(" "), params);
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+    return rows.map(mapChatMessageRow);
+}
+
+async function listChatMessagesByClientMessageIds(pool, threadId, clientMessageIds) {
+    const parsedThreadId = parsePositiveId(threadId);
+    if (!parsedThreadId) {
+        return [];
+    }
+
+    const normalizedIds = Array.isArray(clientMessageIds)
+        ? clientMessageIds
+            .map((value) => normalizeChatClientMessageId(value))
+            .filter(Boolean)
+        : [];
+    if (!normalizedIds.length) {
+        return [];
+    }
+
+    const placeholders = normalizedIds.map(() => "?").join(", ");
+    const [rows] = await pool.execute(
+        `SELECT *
+         FROM chat_messages
+         WHERE thread_id = ?
+           AND client_message_id IN (${placeholders})
+         ORDER BY id ASC`,
+        [parsedThreadId].concat(normalizedIds)
+    );
+
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+    return rows.map(mapChatMessageRow);
+}
+
+async function setChatThreadMode(pool, threadId, mode, adminSession) {
+    const parsedThreadId = parsePositiveId(threadId);
+    const normalizedMode = normalizeChatMode(mode);
+    if (!parsedThreadId) {
+        return null;
+    }
+
+    const admin = adminSession && typeof adminSession === "object" ? adminSession : null;
+    const takeoverAdminId = admin ? parsePositiveId(admin.userId) : 0;
+    const takeoverAdminEmail = admin ? normalizeEmail(admin.email) : "";
+
+    if (normalizedMode === CHAT_THREAD_MODE_ADMIN) {
+        await pool.execute(
+            `UPDATE chat_threads
+             SET mode = ?,
+                 takeover_by_admin_id = ?,
+                 takeover_by_admin_email = ?,
+                 takeover_started_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [
+                CHAT_THREAD_MODE_ADMIN,
+                takeoverAdminId || null,
+                takeoverAdminEmail || null,
+                parsedThreadId
+            ]
+        );
+    } else {
+        await pool.execute(
+            `UPDATE chat_threads
+             SET mode = ?,
+                 takeover_by_admin_id = NULL,
+                 takeover_by_admin_email = NULL,
+                 takeover_started_at = NULL,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [CHAT_THREAD_MODE_BOT, parsedThreadId]
+        );
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT *
+         FROM chat_threads
+         WHERE id = ?
+         LIMIT 1`,
+        [parsedThreadId]
+    );
+    if (!Array.isArray(rows) || rows.length < 1) {
+        return null;
+    }
+    return mapChatThreadRow(rows[0]);
+}
+
+async function insertChatMessage(pool, threadId, role, text, options) {
+    const parsedThreadId = parsePositiveId(threadId);
+    if (!parsedThreadId) {
+        return null;
+    }
+
+    const opts = options && typeof options === "object" ? options : {};
+    const senderRole = normalizeChatMessageRole(role, "user");
+    const messageText = normalizeChatMessageText(text);
+    if (!messageText) {
+        return null;
+    }
+
+    const senderLabel = normalizeText(opts.senderLabel || "").slice(0, 80) || null;
+    const clientMessageId = normalizeChatClientMessageId(opts.clientMessageId || "");
+
+    const [result] = await pool.execute(
+        `INSERT IGNORE INTO chat_messages (
+            thread_id,
+            sender_role,
+            sender_label,
+            message_text,
+            client_message_id
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [
+            parsedThreadId,
+            senderRole,
+            senderLabel,
+            messageText,
+            clientMessageId || null
+        ]
+    );
+
+    if (result && Number(result.affectedRows || 0) > 0) {
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM chat_messages
+             WHERE id = ?
+             LIMIT 1`,
+            [Number(result.insertId || 0)]
+        );
+        if (Array.isArray(rows) && rows.length) {
+            return mapChatMessageRow(rows[0]);
+        }
+    }
+
+    if (clientMessageId) {
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM chat_messages
+             WHERE thread_id = ?
+               AND client_message_id = ?
+             LIMIT 1`,
+            [parsedThreadId, clientMessageId]
+        );
+        if (Array.isArray(rows) && rows.length) {
+            return mapChatMessageRow(rows[0]);
+        }
+    }
+
+    return null;
+}
+
+async function handleSignupSendCode(req, res) {
+    try {
+        clearExpiredSignupOtpSessions();
+        const body = await readBody(req);
+
+        const method = String(body.method || "").trim().toLowerCase();
+        const email = normalizeEmail(body.email);
+        const phone = normalizeMobile(body.phone);
+
+        if (method !== "email" && method !== "mobile") {
+            sendJson(res, 400, { success: false, message: "Method must be email or mobile." });
+            return;
+        }
+        if (!isValidEmail(email)) {
+            sendJson(res, 400, { success: false, message: "Please enter a valid email address." });
+            return;
+        }
+        if (!isValidMobile(phone)) {
+            sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
+            return;
+        }
+        const signupContact = method === "mobile" ? phone : email;
+        if (!enforceRateLimit(
+            req,
+            res,
+            "signup-send-otp",
+            signupContact,
+            OTP_SEND_RATE_LIMIT_MAX,
+            RATE_LIMIT_WINDOW_MS
+        )) {
+            return;
+        }
+
+        const emailDomainCheck = await validateEmailDomainExists(email);
+        if (!emailDomainCheck.valid && !emailDomainCheck.uncertain) {
+            sendJson(res, 400, {
+                success: false,
+                message: "This email domain cannot receive email. Use another email."
+            });
+            return;
+        }
+
+        if (!isDbConfigured()) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Signup verification is unavailable. Database is not configured."
+            });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const conflict = await findSignupContactConflict(pool, email, phone);
+        if (conflict === "phone") {
+            sendJson(res, 409, { success: false, message: "This mobile number is already in use." });
+            return;
+        }
+        if (conflict === "email") {
+            sendJson(res, 409, { success: false, message: "An account with this email already exists." });
+            return;
+        }
+
+        const contact = method === "mobile" ? phone : email;
+        const requestId = createVerificationToken("signupotp");
+        const code = generateOtpCode();
+        signupOtpSessions.set(requestId, {
+            code: code,
+            method: method,
+            contact: contact,
+            email: email,
+            phone: phone,
+            expiresAt: Date.now() + OTP_TTL_MS,
+            verified: false,
+            attempts: 0
+        });
+
+        const delivery = await deliverOtp(
+            method,
+            contact,
+            code,
+            { subject: "Ecodrive signup verification code" }
+        );
+        const isDemoMode = !delivery.sent;
+        if (isDemoMode && !DEMO_OTP_ENABLED) {
+            signupOtpSessions.delete(requestId);
+            sendJson(res, 503, {
+                success: false,
+                message: "OTP delivery is unavailable. Configure SMTP or SMS provider first."
+            });
+            return;
+        }
+
+        const responsePayload = {
+            success: true,
+            message: isDemoMode ? "Verification code generated in demo mode." : "Verification code sent.",
+            requestId: requestId,
+            expiresInMs: OTP_TTL_MS,
+            delivery: {
+                method: method,
+                mode: isDemoMode ? "demo" : "provider",
+                provider: isDemoMode ? "local-demo" : String(delivery.provider || "configured-provider")
+            }
+        };
+
+        if (isDemoMode && DEMO_OTP_ENABLED) {
+            responsePayload.demoCode = code;
+            responsePayload.deliveryReason = String(delivery.reason || "No provider configured.");
+        }
+
+        const codeLog = isDemoMode ? ` code=${code}` : "";
+        console.log(`[signup-otp] ${method}:${contact} requestId=${requestId} mode=${responsePayload.delivery.mode}${codeLog}`);
+        sendJson(res, 200, responsePayload);
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to send signup verification code." });
+    }
+}
+
+async function handleSignupVerifyCode(req, res) {
+    try {
+        clearExpiredSignupOtpSessions();
+        const body = await readBody(req);
+
+        const requestId = String(body.requestId || "").trim();
+        const method = String(body.method || "").trim().toLowerCase();
+        const code = String(body.code || "").trim();
+        const email = normalizeEmail(body.email);
+        const phone = normalizeMobile(body.phone);
+
+        if (!enforceRateLimit(
+            req,
+            res,
+            "signup-verify-otp",
+            requestId || email || phone,
+            OTP_VERIFY_RATE_LIMIT_MAX,
+            RATE_LIMIT_WINDOW_MS
+        )) {
+            return;
+        }
+
+        if (!requestId || !/^\d{4}$/.test(code)) {
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "requestId and 4-digit code are required."
+            });
+            return;
+        }
+
+        const session = signupOtpSessions.get(requestId);
+        if (!session) {
+            sendJson(res, 200, { success: true, verified: false, message: "Code expired or not found." });
+            return;
+        }
+
+        if (method && method !== session.method) {
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "Verification method does not match this request."
+            });
+            return;
+        }
+
+        if (isValidEmail(email) && session.email !== email) {
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "Email does not match the verification request."
+            });
+            return;
+        }
+
+        if (isValidMobile(phone) && session.phone !== phone) {
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "Mobile number does not match the verification request."
+            });
+            return;
+        }
+
+        if (session.expiresAt <= Date.now()) {
+            signupOtpSessions.delete(requestId);
+            sendJson(res, 200, { success: true, verified: false, message: "Code expired. Request a new code." });
+            return;
+        }
+
+        session.attempts += 1;
+        if (session.code !== code) {
+            if (session.attempts >= MAX_OTP_ATTEMPTS) {
+                signupOtpSessions.delete(requestId);
+                sendJson(res, 200, {
+                    success: true,
+                    verified: false,
+                    message: "Too many failed attempts. Request a new code."
+                });
+                return;
+            }
+            signupOtpSessions.set(requestId, session);
+            sendJson(res, 200, { success: true, verified: false, message: "Invalid verification code." });
+            return;
+        }
+
+        session.verified = true;
+        signupOtpSessions.set(requestId, session);
+        sendJson(res, 200, {
+            success: true,
+            verified: true,
+            message: "Code verified.",
+            requestId: requestId,
+            method: session.method
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, verified: false, message: error.message || "Verification failed." });
+    }
+}
+
 async function handleSignup(req, res) {
     try {
+        clearExpiredSignupOtpSessions();
         const body = await readBody(req);
 
         const firstName = normalizeNamePart(body.firstName);
@@ -1129,6 +2366,10 @@ async function handleSignup(req, res) {
         const phone = normalizeMobile(body.phone);
         const address = normalizeNamePart(body.address);
         const password = String(body.password || "");
+        const verificationRequestId = String(body.verificationRequestId || "").trim();
+        const verificationMethod = String(body.verificationMethod || "").trim().toLowerCase();
+        const emailVerificationRequestId = String(body.emailVerificationRequestId || "").trim();
+        const phoneVerificationRequestId = String(body.phoneVerificationRequestId || "").trim();
 
         if (firstName.length < 2) {
             sendJson(res, 400, { success: false, message: "First name is required." });
@@ -1154,6 +2395,88 @@ async function handleSignup(req, res) {
             sendJson(res, 400, {
                 success: false,
                 message: "Password must be 8+ chars with upper, lower, number, and symbol."
+            });
+            return;
+        }
+
+        const emailDomainCheck = await validateEmailDomainExists(email);
+        if (!emailDomainCheck.valid && !emailDomainCheck.uncertain) {
+            sendJson(res, 400, {
+                success: false,
+                message: "This email domain cannot receive email. Use another email."
+            });
+            return;
+        }
+
+        let verifiedSession = null;
+        const consumedRequestIds = [];
+
+        if (verificationRequestId) {
+            const expectedMethod = (
+                verificationMethod === "email" ||
+                verificationMethod === "mobile"
+            )
+                ? verificationMethod
+                : "";
+            verifiedSession = getVerifiedSignupOtpSession(verificationRequestId, expectedMethod);
+            if (!verifiedSession) {
+                sendJson(res, 400, {
+                    success: false,
+                    message: "Email or mobile verification is required before signup."
+                });
+                return;
+            }
+            consumedRequestIds.push(verificationRequestId);
+        } else {
+            const emailSession = emailVerificationRequestId
+                ? getVerifiedSignupOtpSession(emailVerificationRequestId, "email")
+                : null;
+            const phoneSession = phoneVerificationRequestId
+                ? getVerifiedSignupOtpSession(phoneVerificationRequestId, "mobile")
+                : null;
+
+            verifiedSession = phoneSession || emailSession;
+            if (!verifiedSession) {
+                sendJson(res, 400, {
+                    success: false,
+                    message: "Email or mobile verification is required before signup."
+                });
+                return;
+            }
+            if (emailSession && emailVerificationRequestId) {
+                consumedRequestIds.push(emailVerificationRequestId);
+            }
+            if (phoneSession && phoneVerificationRequestId) {
+                consumedRequestIds.push(phoneVerificationRequestId);
+            }
+        }
+
+        if (!verifiedSession) {
+            sendJson(res, 400, {
+                success: false,
+                message: "Email or mobile verification is required before signup."
+            });
+            return;
+        }
+
+        if (
+            verifiedSession.email !== email ||
+            verifiedSession.phone !== phone
+        ) {
+            sendJson(res, 400, {
+                success: false,
+                message: "Verified contact does not match your signup details."
+            });
+            return;
+        }
+
+        if (
+            (verifiedSession.method === "email" && verifiedSession.contact !== email) ||
+            (verifiedSession.method === "mobile" && verifiedSession.contact !== phone)
+        ) {
+            sendJson(res, 400, {
+                success: false,
+                message: "Verified contact does not match your signup details."
             });
             return;
         }
@@ -1189,6 +2512,12 @@ async function handleSignup(req, res) {
         ];
 
         const [result] = await pool.execute(sql, values);
+
+        for (const requestId of consumedRequestIds) {
+            if (requestId) {
+                signupOtpSessions.delete(requestId);
+            }
+        }
 
         const safeUser = {
             id: Number(result.insertId || 0),
@@ -1235,7 +2564,11 @@ async function handleLogin(req, res) {
         }
 
         const adminCredentials = getAdminCredentials();
+        if (!enforceRateLimit(req, res, "login", loginId, LOGIN_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+            return;
+        }
         if (
+            adminCredentials &&
             loginId === adminCredentials.loginId &&
             verifyPassword(password, adminCredentials.passwordHash)
         ) {
@@ -1251,6 +2584,14 @@ async function handleLogin(req, res) {
                 success: true,
                 user: adminUser,
                 ...getAuthResponse(authSession)
+            });
+            return;
+        }
+
+        if (!adminCredentials && !isValidEmail(loginId)) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
             });
             return;
         }
@@ -1350,12 +2691,47 @@ async function handleAdminUsers(req, res) {
         }
 
         const pool = await getDbPool();
-        const [userRows] = await pool.execute(
-            `SELECT id, full_name, email, role, is_blocked, created_at
-             FROM users
-             WHERE role = 'user'
-             ORDER BY created_at DESC`
-        );
+        let userRows = [];
+        try {
+            const [joinedRows] = await pool.execute(
+                `SELECT
+                    u.id,
+                    u.full_name,
+                    u.email,
+                    u.role,
+                    u.is_blocked,
+                    u.created_at,
+                    COALESCE(ct.mode, 'bot') AS chat_mode,
+                    ct.updated_at AS chat_updated_at
+                 FROM users u
+                 LEFT JOIN chat_threads ct
+                   ON ct.user_email = u.email
+                 WHERE u.role = 'user'
+                 ORDER BY u.created_at DESC`
+            );
+            userRows = Array.isArray(joinedRows) ? joinedRows : [];
+        } catch (queryError) {
+            const [fallbackRows] = await pool.execute(
+                `SELECT
+                    id,
+                    full_name,
+                    email,
+                    role,
+                    is_blocked,
+                    created_at
+                 FROM users
+                 WHERE role = 'user'
+                 ORDER BY created_at DESC`
+            );
+            userRows = Array.isArray(fallbackRows)
+                ? fallbackRows.map((row) => ({
+                    ...row,
+                    chat_mode: CHAT_THREAD_MODE_BOT,
+                    chat_updated_at: null
+                }))
+                : [];
+            console.warn("[chat] Falling back to users query without chat thread join:", queryError.message || queryError);
+        }
 
         const [statRows] = await pool.execute(
             `SELECT
@@ -1382,7 +2758,9 @@ async function handleAdminUsers(req, res) {
                 email: String(row.email || ""),
                 role: String(row.role || "user"),
                 status: Number(row.is_blocked) === 1 ? "blocked" : "active",
-                createdAt: row.created_at || null
+                createdAt: row.created_at || null,
+                chatMode: normalizeChatMode(row.chat_mode),
+                chatUpdatedAt: row.chat_updated_at || null
             }))
         };
 
@@ -1634,6 +3012,412 @@ async function handleBlockToggle(req, res, userId, action) {
     }
 }
 
+async function resolveChatTargetUserFromEmail(pool, authSession, requestedEmailInput) {
+    const requestedEmail = normalizeEmail(requestedEmailInput);
+    const sessionEmail = normalizeEmail(authSession && authSession.email);
+    const targetEmail = isValidEmail(requestedEmail) ? requestedEmail : sessionEmail;
+
+    if (!isValidEmail(targetEmail)) {
+        return { ok: false, statusCode: 400, message: "A valid email is required." };
+    }
+    if (!canAccessEmail(authSession, targetEmail)) {
+        return { ok: false, statusCode: 403, message: "You can only access your own chat thread." };
+    }
+
+    const user = await findChatUserByEmail(pool, targetEmail);
+    if (!user) {
+        return { ok: false, statusCode: 404, message: "User not found." };
+    }
+
+    return { ok: true, user: user };
+}
+
+function toChatUserPayload(userRow) {
+    const user = userRow && typeof userRow === "object" ? userRow : {};
+    return {
+        id: Number(user.id || 0),
+        name: String(user.full_name || ""),
+        email: String(user.email || "")
+    };
+}
+
+async function handleChatThreadGet(req, res, parsedUrl) {
+    try {
+        const authSession = requireAuthSession(req, res);
+        if (!authSession) {
+            return;
+        }
+
+        const pool = await getDbPool();
+        const target = await resolveChatTargetUserFromEmail(
+            pool,
+            authSession,
+            parsedUrl.searchParams.get("email")
+        );
+        if (!target.ok) {
+            sendJson(res, target.statusCode, { success: false, message: target.message });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, target.user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const messages = await listChatMessagesForThread(pool, thread.id, {
+            afterId: parsedUrl.searchParams.get("afterId"),
+            limit: parsedUrl.searchParams.get("limit")
+        });
+
+        sendJson(res, 200, {
+            success: true,
+            user: toChatUserPayload(target.user),
+            thread: thread,
+            messages: messages
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load chat thread." });
+    }
+}
+
+function parseIncomingChatEntries(bodyInput) {
+    const body = bodyInput && typeof bodyInput === "object" ? bodyInput : {};
+    if (Array.isArray(body.entries)) {
+        return body.entries;
+    }
+    if (body.entry && typeof body.entry === "object") {
+        return [body.entry];
+    }
+    if (body.message || body.text) {
+        return [body];
+    }
+    return [];
+}
+
+async function handleChatMessagesPost(req, res) {
+    try {
+        const authSession = requireAuthSession(req, res);
+        if (!authSession) {
+            return;
+        }
+
+        const body = await readBody(req);
+        const entries = parseIncomingChatEntries(body);
+        if (!entries.length) {
+            sendJson(res, 400, { success: false, message: "At least one chat message is required." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const target = await resolveChatTargetUserFromEmail(
+            pool,
+            authSession,
+            body.email || body.userEmail
+        );
+        if (!target.ok) {
+            sendJson(res, target.statusCode, { success: false, message: target.message });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, target.user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const submittedClientIds = [];
+        for (const rawEntry of entries) {
+            const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+            const role = normalizeChatMessageRole(
+                entry.role || entry.from || entry.senderRole,
+                authSession.role === "admin" ? "admin" : "user"
+            );
+            if (role !== "user" && role !== "bot" && role !== "admin") {
+                continue;
+            }
+            if (role === "admin" && authSession.role !== "admin") {
+                continue;
+            }
+            if (thread.mode === CHAT_THREAD_MODE_ADMIN && role === "bot") {
+                continue;
+            }
+
+            const text = normalizeChatMessageText(entry.text || entry.message || entry.messageText);
+            if (!text) {
+                continue;
+            }
+
+            const clientMessageId = normalizeChatClientMessageId(entry.clientMessageId || entry.client_message_id);
+            const senderLabel = role === "user"
+                ? normalizeText(target.user.full_name || target.user.email || "User")
+                : (role === "admin"
+                    ? normalizeText(authSession.name || authSession.email || "Admin")
+                    : "Ecodrive Bot");
+
+            const inserted = await insertChatMessage(pool, thread.id, role, text, {
+                senderLabel: senderLabel,
+                clientMessageId: clientMessageId
+            });
+            if (inserted && inserted.clientMessageId) {
+                submittedClientIds.push(inserted.clientMessageId);
+            } else if (clientMessageId) {
+                submittedClientIds.push(clientMessageId);
+            }
+        }
+
+        let persistedMessages = [];
+        if (submittedClientIds.length) {
+            persistedMessages = await listChatMessagesByClientMessageIds(pool, thread.id, submittedClientIds);
+        } else {
+            persistedMessages = await listChatMessagesForThread(pool, thread.id, { limit: 20 });
+        }
+
+        const [threadRows] = await pool.execute(
+            `SELECT *
+             FROM chat_threads
+             WHERE id = ?
+             LIMIT 1`,
+            [thread.id]
+        );
+        const latestThread = Array.isArray(threadRows) && threadRows.length
+            ? mapChatThreadRow(threadRows[0])
+            : thread;
+
+        sendJson(res, 200, {
+            success: true,
+            user: toChatUserPayload(target.user),
+            thread: latestThread,
+            messages: persistedMessages
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to save chat messages." });
+    }
+}
+
+async function handleChatThreadClear(req, res) {
+    try {
+        const authSession = requireAuthSession(req, res);
+        if (!authSession) {
+            return;
+        }
+
+        const body = await readBody(req);
+        const pool = await getDbPool();
+        const target = await resolveChatTargetUserFromEmail(
+            pool,
+            authSession,
+            body.email || body.userEmail
+        );
+        if (!target.ok) {
+            sendJson(res, target.statusCode, { success: false, message: target.message });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, target.user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        await pool.execute(
+            `DELETE FROM chat_messages
+             WHERE thread_id = ?`,
+            [thread.id]
+        );
+
+        // Reset thread back to bot mode when user clears conversation.
+        let latestThread = thread;
+        if (normalizeUserRole(authSession.role) !== "admin") {
+            const resetThread = await setChatThreadMode(pool, thread.id, CHAT_THREAD_MODE_BOT, null);
+            if (resetThread) {
+                latestThread = resetThread;
+            }
+        } else {
+            const [rows] = await pool.execute(
+                `SELECT *
+                 FROM chat_threads
+                 WHERE id = ?
+                 LIMIT 1`,
+                [thread.id]
+            );
+            if (Array.isArray(rows) && rows.length) {
+                latestThread = mapChatThreadRow(rows[0]);
+            }
+        }
+
+        sendJson(res, 200, {
+            success: true,
+            message: "Chat conversation deleted.",
+            user: toChatUserPayload(target.user),
+            thread: latestThread,
+            messages: []
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to clear chat thread." });
+    }
+}
+
+async function resolveAdminChatUser(pool, userId) {
+    const user = await findChatUserById(pool, userId);
+    if (!user) {
+        return null;
+    }
+    return user;
+}
+
+async function handleAdminChatThreadGet(req, res, parsedUrl, userId) {
+    try {
+        const authSession = requireAuthSession(req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const pool = await getDbPool();
+        const user = await resolveAdminChatUser(pool, userId);
+        if (!user) {
+            sendJson(res, 404, { success: false, message: "User not found." });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const messages = await listChatMessagesForThread(pool, thread.id, {
+            afterId: parsedUrl.searchParams.get("afterId"),
+            limit: parsedUrl.searchParams.get("limit")
+        });
+
+        sendJson(res, 200, {
+            success: true,
+            user: toChatUserPayload(user),
+            thread: thread,
+            messages: messages
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load admin chat thread." });
+    }
+}
+
+async function handleAdminChatTakeover(req, res, userId) {
+    try {
+        const authSession = requireAuthSession(req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const pool = await getDbPool();
+        const user = await resolveAdminChatUser(pool, userId);
+        if (!user) {
+            sendJson(res, 404, { success: false, message: "User not found." });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const updatedThread = await setChatThreadMode(pool, thread.id, CHAT_THREAD_MODE_ADMIN, authSession);
+        await insertChatMessage(pool, thread.id, "system", "Admin connected. Chatbot replies are paused.", {
+            senderLabel: "System"
+        });
+
+        sendJson(res, 200, {
+            success: true,
+            message: "Admin takeover enabled.",
+            user: toChatUserPayload(user),
+            thread: updatedThread || thread
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to enable admin takeover." });
+    }
+}
+
+async function handleAdminChatRelease(req, res, userId) {
+    try {
+        const authSession = requireAuthSession(req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const pool = await getDbPool();
+        const user = await resolveAdminChatUser(pool, userId);
+        if (!user) {
+            sendJson(res, 404, { success: false, message: "User not found." });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const updatedThread = await setChatThreadMode(pool, thread.id, CHAT_THREAD_MODE_BOT, authSession);
+        await insertChatMessage(pool, thread.id, "system", "Admin ended the takeover. Chatbot replies are active again.", {
+            senderLabel: "System"
+        });
+
+        sendJson(res, 200, {
+            success: true,
+            message: "Chatbot mode restored.",
+            user: toChatUserPayload(user),
+            thread: updatedThread || thread
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to release chat takeover." });
+    }
+}
+
+async function handleAdminChatSendMessage(req, res, userId) {
+    try {
+        const authSession = requireAuthSession(req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const body = await readBody(req);
+        const messageText = normalizeChatMessageText(body.message || body.text || body.messageText);
+        if (!messageText) {
+            sendJson(res, 400, { success: false, message: "Message text is required." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const user = await resolveAdminChatUser(pool, userId);
+        if (!user) {
+            sendJson(res, 404, { success: false, message: "User not found." });
+            return;
+        }
+
+        const thread = await getOrCreateChatThreadForUser(pool, user);
+        if (!thread) {
+            sendJson(res, 500, { success: false, message: "Unable to open chat thread." });
+            return;
+        }
+
+        const updatedThread = await setChatThreadMode(pool, thread.id, CHAT_THREAD_MODE_ADMIN, authSession);
+        const message = await insertChatMessage(pool, thread.id, "admin", messageText, {
+            senderLabel: normalizeText(authSession.name || authSession.email || "Admin"),
+            clientMessageId: normalizeChatClientMessageId(body.clientMessageId || body.client_message_id)
+        });
+
+        sendJson(res, 200, {
+            success: true,
+            user: toChatUserPayload(user),
+            thread: updatedThread || thread,
+            message: message
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to send admin chat message." });
+    }
+}
+
 async function handleAdminSettingsGet(req, res) {
     try {
         const authSession = requireAuthSession(req, res, { role: "admin" });
@@ -1642,6 +3426,13 @@ async function handleAdminSettingsGet(req, res) {
         }
 
         const adminCredentials = getAdminCredentials();
+        if (!adminCredentials) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
+            });
+            return;
+        }
         sendJson(res, 200, {
             success: true,
             settings: {
@@ -1680,6 +3471,13 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
         }
 
         const adminCredentials = getAdminCredentials();
+        if (!adminCredentials) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
+            });
+            return;
+        }
         if (!verifyPassword(currentPassword, adminCredentials.passwordHash)) {
             sendJson(res, 401, { success: false, message: "Current password is incorrect." });
             return;
@@ -1727,6 +3525,13 @@ async function handleAdminSettingsUpdatePassword(req, res) {
         }
 
         const adminCredentials = getAdminCredentials();
+        if (!adminCredentials) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
+            });
+            return;
+        }
         if (!verifyPassword(currentPassword, adminCredentials.passwordHash)) {
             sendJson(res, 401, { success: false, message: "Current password is incorrect." });
             return;
@@ -1969,7 +3774,10 @@ async function handleCreateBooking(req, res) {
 
         const body = await readBody(req);
 
-        const orderId = normalizeOrderId(body.orderId);
+        const isAdminRequest = authSession.role === "admin";
+        const orderId = isAdminRequest
+            ? normalizeOrderId(body.orderId)
+            : generateOrderId();
         let email = normalizeEmail(body.email || body.userEmail);
         let userEmail = normalizeEmail(body.userEmail || body.email);
         const fullName = normalizeText(body.fullName || body.name);
@@ -1978,8 +3786,24 @@ async function handleCreateBooking(req, res) {
         const bikeImage = normalizeText(body.bikeImage || body.image || body.img);
         const serviceType = normalizeServiceType(body.service);
         const paymentMethod = normalizeText(body.payment || "CASH ON DELIVERY").slice(0, 80);
-        const status = normalizeOrderStatus(body.status, serviceType);
-        const fulfillmentStatus = normalizeFulfillmentStatus(body.fulfillmentStatus, serviceType);
+        const scheduleDateInput = body.scheduleDate || body.bookingDate || body.date;
+        const scheduleTimeInput = body.scheduleTime || body.bookingTime || body.time;
+        const scheduleDate = normalizeScheduleDate(scheduleDateInput);
+        const scheduleTime = normalizeScheduleTime(scheduleTimeInput);
+        let status = normalizeOrderStatus(body.status, serviceType);
+        let fulfillmentStatus = normalizeFulfillmentStatus(body.fulfillmentStatus, serviceType);
+        let trackingEta = normalizeText(body.trackingEta || body.eta).slice(0, 80);
+        let trackingLocation = normalizeText(
+            body.trackingLocation
+            || body.locationNote
+            || body.location
+        ).slice(0, 120);
+        let receiptNumber = normalizeText(body.receiptNumber).slice(0, 40);
+        let receiptIssuedAt = null;
+        let paymentStatus = normalizePaymentStatus(
+            body.paymentStatus,
+            getDefaultPaymentStatus(paymentMethod, serviceType)
+        );
         const shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
         const shippingMapEmbedUrl = String(body.shippingMapEmbedUrl || "").trim().slice(0, 3000);
         const shippingCoordinates = body.shippingCoordinates && typeof body.shippingCoordinates === "object"
@@ -1992,15 +3816,28 @@ async function handleCreateBooking(req, res) {
         const total = parseAmount(body.total || (subtotal + shippingFee));
         const reviewDecision = getReviewDecisionFromStatus(status, fulfillmentStatus);
         const reviewedAt = reviewDecision === "none" ? null : new Date();
+        if (reviewDecision === "approved") {
+            if (!receiptNumber) {
+                receiptNumber = buildReceiptNumber(orderId, reviewedAt || new Date());
+            }
+            receiptIssuedAt = reviewedAt || new Date();
+        }
         const sessionEmail = normalizeEmail(authSession.email);
 
-        if (authSession.role !== "admin") {
+        if (!isAdminRequest) {
             if ((isValidEmail(email) && email !== sessionEmail) || (isValidEmail(userEmail) && userEmail !== sessionEmail)) {
                 sendJson(res, 403, { success: false, message: "You can only create bookings for your own account." });
                 return;
             }
             email = sessionEmail;
             userEmail = sessionEmail;
+            status = normalizeOrderStatus("", serviceType);
+            fulfillmentStatus = normalizeFulfillmentStatus("", serviceType);
+            trackingEta = "";
+            trackingLocation = "";
+            receiptNumber = "";
+            receiptIssuedAt = null;
+            paymentStatus = getDefaultPaymentStatus(paymentMethod, serviceType);
         }
 
         let installmentPayload = null;
@@ -2020,6 +3857,10 @@ async function handleCreateBooking(req, res) {
             sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
             return;
         }
+        if ((scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
+            sendJson(res, 400, { success: false, message: "Provide a valid schedule date and time." });
+            return;
+        }
 
         const pool = await getDbPool();
 
@@ -2030,6 +3871,21 @@ async function handleCreateBooking(req, res) {
         );
         if (Array.isArray(userRows) && userRows.length > 0) {
             userId = Number(userRows[0].id || 0) || null;
+        }
+
+        if (scheduleDate) {
+            const activeBookingsForDate = await countActiveBookingsByScheduleDate(pool, scheduleDate, orderId);
+            if (hasReachedDailyBookingLimit(activeBookingsForDate)) {
+                sendJson(res, 409, {
+                    success: false,
+                    code: "MAX_BOOKINGS_REACHED",
+                    date: scheduleDate,
+                    maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+                    currentBookings: activeBookingsForDate,
+                    message: `Maximum booking limit reached for ${scheduleDate}. Please choose another date.`
+                });
+                return;
+            }
         }
 
         await pool.execute(
@@ -2045,9 +3901,16 @@ async function handleCreateBooking(req, res) {
                 shipping_fee,
                 total,
                 payment_method,
+                payment_status,
                 service_type,
+                schedule_date,
+                schedule_time,
                 status,
                 fulfillment_status,
+                tracking_eta,
+                tracking_location,
+                receipt_number,
+                receipt_issued_at,
                 shipping_address,
                 shipping_lat,
                 shipping_lng,
@@ -2057,30 +3920,7 @@ async function handleCreateBooking(req, res) {
                 review_decision,
                 reviewed_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                user_id = VALUES(user_id),
-                full_name = VALUES(full_name),
-                email = VALUES(email),
-                phone = VALUES(phone),
-                model = VALUES(model),
-                bike_image = VALUES(bike_image),
-                subtotal = VALUES(subtotal),
-                shipping_fee = VALUES(shipping_fee),
-                total = VALUES(total),
-                payment_method = VALUES(payment_method),
-                service_type = VALUES(service_type),
-                status = VALUES(status),
-                fulfillment_status = VALUES(fulfillment_status),
-                shipping_address = VALUES(shipping_address),
-                shipping_lat = VALUES(shipping_lat),
-                shipping_lng = VALUES(shipping_lng),
-                shipping_map_embed_url = VALUES(shipping_map_embed_url),
-                user_email = VALUES(user_email),
-                installment_payload = VALUES(installment_payload),
-                review_decision = VALUES(review_decision),
-                reviewed_at = VALUES(reviewed_at),
-                updated_at = NOW()`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 orderId,
                 userId,
@@ -2093,9 +3933,16 @@ async function handleCreateBooking(req, res) {
                 shippingFee,
                 total,
                 paymentMethod,
+                paymentStatus,
                 serviceType,
+                scheduleDate,
+                scheduleTime,
                 status,
                 fulfillmentStatus,
+                trackingEta || null,
+                trackingLocation || null,
+                receiptNumber || null,
+                receiptIssuedAt,
                 shippingAddress || null,
                 shippingLat,
                 shippingLng,
@@ -2118,7 +3965,47 @@ async function handleCreateBooking(req, res) {
 
         sendJson(res, 201, { success: true, booking: booking });
     } catch (error) {
+        if (error && error.code === "ER_DUP_ENTRY") {
+            sendJson(res, 409, {
+                success: false,
+                message: "Duplicate booking reference detected. Please submit the booking again."
+            });
+            return;
+        }
         sendJson(res, 500, { success: false, message: error.message || "Unable to save booking." });
+    }
+}
+
+async function handleBookingDateAvailability(req, res, parsedUrl) {
+    try {
+        const authSession = requireAuthSession(req, res);
+        if (!authSession) {
+            return;
+        }
+
+        const dateInput = parsedUrl.searchParams.get("date") || parsedUrl.searchParams.get("scheduleDate");
+        const scheduleDate = normalizeScheduleDate(dateInput);
+        if (!scheduleDate) {
+            sendJson(res, 400, { success: false, message: "A valid date query parameter is required." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const currentBookings = await countActiveBookingsByScheduleDate(pool, scheduleDate, "");
+        const available = !hasReachedDailyBookingLimit(currentBookings);
+
+        sendJson(res, 200, {
+            success: true,
+            date: scheduleDate,
+            maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+            currentBookings: currentBookings,
+            available: available,
+            message: available
+                ? ""
+                : `Maximum booking limit reached for ${scheduleDate}. Please choose another date.`
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to check booking availability." });
     }
 }
 
@@ -2291,21 +4178,53 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
         }
         const normalizedAction = String(action || "").toLowerCase() === "approve" ? "approve" : "reject";
         const pool = await getDbPool();
+        const [beforeRows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+        const beforeRow = beforeRows[0];
+        const beforeMergedStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
+        const wasAlreadyRejected = String(beforeRow.review_decision || "").toLowerCase() === "rejected"
+            || beforeMergedStatus.includes("reject")
+            || beforeMergedStatus.includes("cancel");
+        const existingReceiptNumber = normalizeText(beforeRow.receipt_number).slice(0, 40);
+        const ensuredReceiptNumber = existingReceiptNumber || buildReceiptNumber(normalizedOrderId, new Date());
 
         if (normalizedAction === "approve") {
             await pool.execute(
                 `UPDATE bookings
                  SET status = 'Approved',
                      fulfillment_status = CASE
-                        WHEN fulfillment_status IS NULL OR fulfillment_status = '' OR LOWER(fulfillment_status) IN ('pending review', 'under review')
-                            THEN 'In Process'
+                        WHEN fulfillment_status IS NULL
+                            OR fulfillment_status = ''
+                            OR LOWER(fulfillment_status) IN ('pending review', 'under review', 'in process')
+                            THEN CASE
+                                WHEN LOWER(service_type) LIKE '%pick%'
+                                    THEN 'Preparing for Pick up'
+                                WHEN LOWER(service_type) LIKE '%install%'
+                                    THEN 'Application Approved'
+                                ELSE 'Preparing for Dispatch'
+                            END
                         ELSE fulfillment_status
                      END,
+                     receipt_number = CASE
+                        WHEN receipt_number IS NULL OR receipt_number = ''
+                            THEN ?
+                        ELSE receipt_number
+                     END,
+                     receipt_issued_at = COALESCE(receipt_issued_at, NOW()),
                      review_decision = 'approved',
                      reviewed_at = NOW(),
                      updated_at = NOW()
                  WHERE order_id = ?`,
-                [normalizedOrderId]
+                [ensuredReceiptNumber, normalizedOrderId]
             );
         } else {
             await pool.execute(
@@ -2332,9 +4251,196 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             return;
         }
 
-        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+        const booking = mapBookingRow(rows[0]);
+        if (normalizedAction === "reject" && !wasAlreadyRejected) {
+            const notifyResult = await sendBookingRejectedEmail(booking);
+            if (!notifyResult.sent) {
+                console.warn(
+                    "[booking-reject-email] Unable to notify customer:",
+                    notifyResult.reason || "Unknown reason",
+                    "| orderId:",
+                    normalizedOrderId
+                );
+            }
+        }
+
+        sendJson(res, 200, { success: true, booking: booking });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to update booking status." });
+    }
+}
+
+async function handleAdminBookingPaymentStatus(_req, res, orderId) {
+    try {
+        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const normalizedOrderId = normalizeOrderId(orderId, false);
+        if (!normalizedOrderId) {
+            sendJson(res, 400, { success: false, message: "Invalid booking order id." });
+            return;
+        }
+
+        const body = await readBody(_req);
+        const requestedStatus = String(body.paymentStatus || body.status || "").trim().toLowerCase();
+        if (!ALLOWED_PAYMENT_STATUSES.has(requestedStatus)) {
+            sendJson(res, 400, {
+                success: false,
+                message: `paymentStatus must be one of: ${Array.from(ALLOWED_PAYMENT_STATUSES).join(", ")}`
+            });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const [updateResult] = await pool.execute(
+            `UPDATE bookings
+             SET payment_status = ?,
+                 updated_at = NOW()
+             WHERE order_id = ?`,
+            [requestedStatus, normalizedOrderId]
+        );
+        if (!updateResult || Number(updateResult.affectedRows || 0) < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(rows) || rows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to update payment status." });
+    }
+}
+
+async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
+    try {
+        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const normalizedOrderId = normalizeOrderId(orderId, false);
+        if (!normalizedOrderId) {
+            sendJson(res, 400, { success: false, message: "Invalid booking order id." });
+            return;
+        }
+
+        const body = await readBody(_req);
+        const requestedFulfillmentStatus = normalizeText(body.fulfillmentStatus).slice(0, 80);
+        const requestedTrackingEta = normalizeText(body.trackingEta || body.eta).slice(0, 80);
+        const requestedTrackingLocation = normalizeText(
+            body.trackingLocation
+            || body.locationNote
+            || body.location
+        ).slice(0, 120);
+        if (!requestedFulfillmentStatus) {
+            sendJson(res, 400, { success: false, message: "fulfillmentStatus is required." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const [beforeRows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const beforeRow = beforeRows[0];
+        const reviewDecision = String(beforeRow.review_decision || "").trim().toLowerCase();
+        const mergedBeforeStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
+        const isRejectedOrCancelled = reviewDecision === "rejected"
+            || mergedBeforeStatus.includes("reject")
+            || mergedBeforeStatus.includes("cancel");
+        if (isRejectedOrCancelled) {
+            sendJson(res, 409, { success: false, message: "Rejected or cancelled bookings cannot be updated." });
+            return;
+        }
+
+        const isApprovedBooking = reviewDecision === "approved"
+            || mergedBeforeStatus.includes("approve")
+            || mergedBeforeStatus.includes("deliver")
+            || mergedBeforeStatus.includes("complete")
+            || mergedBeforeStatus.includes("picked up")
+            || mergedBeforeStatus.includes("released");
+        if (!isApprovedBooking) {
+            sendJson(res, 409, {
+                success: false,
+                message: "Approve the booking first before updating fulfillment progress."
+            });
+            return;
+        }
+
+        const normalizedFulfillment = requestedFulfillmentStatus
+            .toLowerCase()
+            .replace(/[\-_]+/g, " ");
+        const isCompletionStatus = /\b(delivered|completed|picked up|released)\b/.test(normalizedFulfillment);
+        const nextStatus = isCompletionStatus ? "Completed" : "Approved";
+        const ensuredReceiptNumber = normalizeText(beforeRow.receipt_number).slice(0, 40)
+            || buildReceiptNumber(normalizedOrderId, new Date());
+
+        const [updateResult] = await pool.execute(
+            `UPDATE bookings
+             SET status = ?,
+                 fulfillment_status = ?,
+                 tracking_eta = ?,
+                 tracking_location = ?,
+                 receipt_number = CASE
+                    WHEN receipt_number IS NULL OR receipt_number = ''
+                        THEN ?
+                    ELSE receipt_number
+                 END,
+                 receipt_issued_at = COALESCE(receipt_issued_at, NOW()),
+                 review_decision = 'approved',
+                 reviewed_at = COALESCE(reviewed_at, NOW()),
+                 updated_at = NOW()
+             WHERE order_id = ?`,
+            [
+                nextStatus,
+                requestedFulfillmentStatus,
+                requestedTrackingEta || null,
+                requestedTrackingLocation || null,
+                ensuredReceiptNumber,
+                normalizedOrderId
+            ]
+        );
+        if (!updateResult || Number(updateResult.affectedRows || 0) < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(rows) || rows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to update fulfillment status." });
     }
 }
 
@@ -2615,6 +4721,16 @@ async function handleForgotSendCode(req, res) {
             sendJson(res, 400, { success: false, message: "Invalid mobile number." });
             return;
         }
+        if (!enforceRateLimit(
+            req,
+            res,
+            "forgot-send-otp",
+            `${method}:${contact}`,
+            OTP_SEND_RATE_LIMIT_MAX,
+            RATE_LIMIT_WINDOW_MS
+        )) {
+            return;
+        }
 
         if (!isDbConfigured()) {
             sendJson(res, 503, {
@@ -2675,9 +4791,14 @@ async function handleForgotSendCode(req, res) {
             attempts: 0
         });
 
-        const delivery = await deliverOtp(method, contact, code);
+        const delivery = await deliverOtp(
+            method,
+            contact,
+            code,
+            { subject: "Ecodrive password reset code" }
+        );
         const isDemoMode = !delivery.sent;
-        if (isDemoMode && !ALLOW_DEMO_OTP) {
+        if (isDemoMode && !DEMO_OTP_ENABLED) {
             otpSessions.delete(requestId);
             sendJson(res, 503, {
                 success: false,
@@ -2699,7 +4820,7 @@ async function handleForgotSendCode(req, res) {
             }
         };
 
-        if (isDemoMode && ALLOW_DEMO_OTP) {
+        if (isDemoMode && DEMO_OTP_ENABLED) {
             responsePayload.demoCode = code;
             responsePayload.deliveryReason = String(delivery.reason || "No provider configured.");
         }
@@ -2719,6 +4840,17 @@ async function handleForgotVerifyCode(req, res) {
 
         const requestId = String(body.requestId || "").trim();
         const code = String(body.code || "").trim();
+
+        if (!enforceRateLimit(
+            req,
+            res,
+            "forgot-verify-otp",
+            requestId,
+            OTP_VERIFY_RATE_LIMIT_MAX,
+            RATE_LIMIT_WINDOW_MS
+        )) {
+            return;
+        }
 
         if (!requestId || !/^\d{4}$/.test(code)) {
             sendJson(res, 400, {
@@ -2913,12 +5045,6 @@ const server = http.createServer(async (req, res) => {
             ok: true,
             service: "ecodrive-api",
             dbConfigured: isDbConfigured(),
-            dbConfigSource: DB_CONFIG_SOURCE,
-            dbHost: DB_HOST,
-            dbPort: DB_PORT,
-            dbName: DB_NAME,
-            mysqlUrlPresent: Boolean(MYSQL_URL),
-            mysqlUrlParsed: Boolean(PARSED_MYSQL_URL),
             smtpConfigured: isSmtpConfigured(),
             smsConfigured: Boolean(SMS_WEBHOOK_URL)
         });
@@ -2950,8 +5076,28 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    if (req.method === "GET" && pathname === "/api/chat/thread") {
+        await handleChatThreadGet(req, res, parsedUrl);
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/chat/messages") {
+        await handleChatMessagesPost(req, res);
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/chat/thread/clear") {
+        await handleChatThreadClear(req, res);
+        return;
+    }
+
     if (req.method === "GET" && pathname === "/api/bookings") {
         await handleListBookings(req, res, parsedUrl);
+        return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/bookings/availability") {
+        await handleBookingDateAvailability(req, res, parsedUrl);
         return;
     }
 
@@ -3029,14 +5175,68 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    const adminBookingPaymentStatusMatch = pathname.match(/^\/api\/admin\/bookings\/([^/]+)\/payment-status$/);
+    if (req.method === "POST" && adminBookingPaymentStatusMatch) {
+        await handleAdminBookingPaymentStatus(
+            req,
+            res,
+            decodeURIComponent(adminBookingPaymentStatusMatch[1])
+        );
+        return;
+    }
+
+    const adminBookingFulfillmentStatusMatch = pathname.match(/^\/api\/admin\/bookings\/([^/]+)\/fulfillment-status$/);
+    if (req.method === "POST" && adminBookingFulfillmentStatusMatch) {
+        await handleAdminBookingFulfillmentStatus(
+            req,
+            res,
+            decodeURIComponent(adminBookingFulfillmentStatusMatch[1])
+        );
+        return;
+    }
+
     if (req.method === "GET" && pathname === "/api/admin/users") {
         await handleAdminUsers(req, res);
+        return;
+    }
+
+    const adminChatThreadMatch = pathname.match(/^\/api\/admin\/chat\/users\/(\d+)$/);
+    if (req.method === "GET" && adminChatThreadMatch) {
+        await handleAdminChatThreadGet(req, res, parsedUrl, adminChatThreadMatch[1]);
+        return;
+    }
+
+    const adminChatTakeoverMatch = pathname.match(/^\/api\/admin\/chat\/users\/(\d+)\/takeover$/);
+    if (req.method === "POST" && adminChatTakeoverMatch) {
+        await handleAdminChatTakeover(req, res, adminChatTakeoverMatch[1]);
+        return;
+    }
+
+    const adminChatReleaseMatch = pathname.match(/^\/api\/admin\/chat\/users\/(\d+)\/release$/);
+    if (req.method === "POST" && adminChatReleaseMatch) {
+        await handleAdminChatRelease(req, res, adminChatReleaseMatch[1]);
+        return;
+    }
+
+    const adminChatMessageMatch = pathname.match(/^\/api\/admin\/chat\/users\/(\d+)\/messages$/);
+    if (req.method === "POST" && adminChatMessageMatch) {
+        await handleAdminChatSendMessage(req, res, adminChatMessageMatch[1]);
         return;
     }
 
     const blockMatch = pathname.match(/^\/api\/admin\/users\/(\d+)\/(block|unblock)$/);
     if (req.method === "POST" && blockMatch) {
         await handleBlockToggle(req, res, blockMatch[1], blockMatch[2]);
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/signup/send-code") {
+        await handleSignupSendCode(req, res);
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/signup/verify-code") {
+        await handleSignupVerifyCode(req, res);
         return;
     }
 
@@ -3083,15 +5283,17 @@ server.listen(PORT, () => {
     const dbStatus = isDbConfigured() ? "configured" : "missing-config";
     const smtpStatus = isSmtpConfigured() ? "enabled" : "demo-fallback";
     const smsStatus = SMS_WEBHOOK_URL ? "configured" : "demo-fallback";
-    const otpMode = ALLOW_DEMO_OTP ? "demo-allowed" : "provider-required";
+    const otpMode = DEMO_OTP_ENABLED ? "demo-allowed" : "provider-required";
+    const corsStatus = CORS_ALLOWED_ORIGINS.size > 0 ? `${CORS_ALLOWED_ORIGINS.size}-origins` : "none";
+    const adminStatus = getAdminCredentials() ? "configured" : "missing";
     const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
+    if (ALLOW_DEMO_OTP && IS_PRODUCTION) {
+        console.warn("[security] ALLOW_DEMO_OTP is enabled but ignored in production mode.");
+    }
+    if (adminStatus === "missing") {
+        console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
+    }
     console.log(
-        `[db-config] source=${DB_CONFIG_SOURCE} host=${DB_HOST || "(empty)"} ` +
-        `port=${Number.isFinite(DB_PORT) ? DB_PORT : "(invalid)"} ` +
-        `user=${DB_USER || "(empty)"} db=${DB_NAME || "(empty)"} ` +
-        `mysqlUrlPresent=${MYSQL_URL ? "yes" : "no"} parsedMysqlUrl=${PARSED_MYSQL_URL ? "yes" : "no"}`
-    );
-    console.log(
-        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, OTP: ${otpMode}, SessionTTLms: ${SESSION_TTL_MS})`
+        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
     );
 });

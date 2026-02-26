@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,6 +6,7 @@
     <title>ECODRIVE - 3 Wheel E-Bikes</title>
     <meta name="description" content="3-wheel E-Bikes catalog">
     <link rel="stylesheet" href="userhome2.css">
+    <script>document.documentElement.classList.add("catalog-loading");</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -30,7 +31,7 @@
                 <div class="dropdown">
                     <a href="../Usersetting.html/settings.html">Account</a>
                     <a href="../Usersetting.html/settings.html#orderSection">Order Status</a>
-                    <a href="../log in.html">Log Out</a>
+                    <a class="logout-btn" href="../frontpage.html">Log Out</a>
                 </div>
             </div>
         </div>
@@ -104,7 +105,7 @@
 
     <script src="../session.js"></script>
     <script src="product-catalog.js"></script>
-    <script src="chatbot-brain.js"></script>
+    <script src="chatbot-brain.js?v=20260225c"></script>
     <script>
         (function () {
             const profileBtn = document.querySelector('.profile-menu .profile-btn');
@@ -135,6 +136,7 @@
             const smartReply = (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.createResponder === 'function')
                 ? window.EcodriveChatbotBrain.createResponder()
                 : null;
+            let liveChatRuntime = null;
 
             if (!(toggle && panel && closeBtn && form && input && body)) {
                 return;
@@ -180,6 +182,9 @@
                 panel.setAttribute('aria-hidden', 'false');
                 renderMessages();
                 input.focus();
+                if (liveChatRuntime) {
+                    void liveChatRuntime.refreshFromServer();
+                }
             }
 
             function closePanel() {
@@ -204,8 +209,14 @@
                 if (!text) return;
 
                 messages.push({ from: 'user', text: text });
-                messages.push({ from: 'bot', text: botReply(text) });
+                const allowBotReply = !liveChatRuntime || liveChatRuntime.canBotReply();
+                if (allowBotReply) {
+                    messages.push({ from: 'bot', text: botReply(text) });
+                }
                 saveMessages();
+                if (liveChatRuntime) {
+                    void liveChatRuntime.notifyLocalMessagesUpdated();
+                }
                 renderMessages();
                 input.value = '';
                 input.focus();
@@ -216,10 +227,26 @@
                     closePanel();
                 }
             });
+
+            if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === 'function') {
+                liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+                    getMessages: function () {
+                        return messages;
+                    },
+                    setMessages: function (nextMessages) {
+                        messages = Array.isArray(nextMessages) ? nextMessages : [];
+                        saveMessages();
+                        renderMessages();
+                    }
+                });
+                void liveChatRuntime.notifyLocalMessagesUpdated();
+            }
         })();
     </script>
 </body>
 </html>
+
+
 
 
 

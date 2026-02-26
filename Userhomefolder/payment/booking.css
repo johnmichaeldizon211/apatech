@@ -249,6 +249,30 @@ body {
     background: #fff5f5;
 }
 
+.schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+    gap: 8px 12px;
+    max-width: 425px;
+}
+
+.schedule-field {
+    display: grid;
+    gap: 4px;
+}
+
+.schedule-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #214579;
+    padding-left: 2px;
+}
+
+.schedule-field input[type="date"],
+.schedule-field input[type="time"] {
+    padding-right: 10px;
+}
+
 .form-error {
     min-height: 16px;
     font-size: 11px;
@@ -748,6 +772,10 @@ body {
 
     .line-item.total span:last-child {
         font-size: 24px;
+    }
+
+    .schedule-grid {
+        grid-template-columns: 1fr;
     }
 
     .payment-qr-brand {

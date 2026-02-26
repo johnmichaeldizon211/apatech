@@ -32,7 +32,7 @@
                 <div class="dropdown">
                     <a href="../../Usersetting.html/settings.html">Account</a>
                     <a href="../../Usersetting.html/settings.html#orderSection">Order Status</a>
-                    <a href="../../log in.html">Log Out</a>
+                    <a id="booking-logout-link" class="logout-btn" href="../../frontpage.html">Log Out</a>
                 </div>
             </div>
         </div>
@@ -58,6 +58,18 @@
                         <span class="btn-icon" aria-hidden="true">&#128230;</span>
                         <span>Pick up</span>
                     </button>
+                </div>
+
+                <h2>Schedule</h2>
+                <div class="schedule-grid" role="group" aria-label="Preferred Schedule">
+                    <div class="schedule-field">
+                        <label for="schedule-date">Preferred Date</label>
+                        <input id="schedule-date" type="date" name="schedule_date" required>
+                    </div>
+                    <div class="schedule-field">
+                        <label for="schedule-time">Preferred Time</label>
+                        <input id="schedule-time" type="time" name="schedule_time" step="900" required>
+                    </div>
                 </div>
 
                 <h2>Payment Method</h2>
@@ -571,8 +583,11 @@
         })();
     </script>
     <script src="../../session.js"></script>
-    <script src="booking.js"></script>
+    <script src="booking.js?v=20260225b"></script>
 </body>
 </html>
+
+
+
 
 
