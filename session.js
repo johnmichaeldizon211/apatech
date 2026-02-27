@@ -53,7 +53,7 @@
 
     function shouldPreferCurrentOriginBase(storedBaseInput) {
         var storedBase = trimSlashes(storedBaseInput);
-        if (!storedBase || !global.location || isLocalHost(global.location.hostname)) {
+        if (!storedBase || !global.location) {
             return false;
         }
 
@@ -63,7 +63,16 @@
             return false;
         }
 
-        if (isLocalHost(storedHost) || isDeprecatedApiBase(storedBase)) {
+        if (isDeprecatedApiBase(storedBase)) {
+            return true;
+        }
+
+        // When frontend is opened from local static server, prefer deployed API host.
+        if (isLocalHost(currentHost)) {
+            return isLocalApiBase(storedBase);
+        }
+
+        if (isLocalHost(storedHost)) {
             return true;
         }
 
@@ -94,7 +103,7 @@
             return fromWindow;
         }
         if (global.location && isLocalHost(global.location.hostname)) {
-            return DEFAULT_LOCAL_API_BASE;
+            return DEFAULT_REMOTE_API_BASE;
         }
         return getCurrentOrigin() || DEFAULT_REMOTE_API_BASE;
     }
@@ -103,16 +112,6 @@
         var base = trimSlashes(baseInput);
         if (!base) {
             return "";
-        }
-
-        if (global.location && isLocalHost(global.location.hostname)) {
-            if (!isLocalApiBase(base)) {
-                return DEFAULT_LOCAL_API_BASE;
-            }
-            if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
-                return DEFAULT_LOCAL_API_BASE;
-            }
-            return base;
         }
 
         if (shouldPreferCurrentOriginBase(base)) {
@@ -228,19 +227,14 @@
     function ensureApiBaseConfig() {
         try {
             var storedBase = trimSlashes(getStorageValue(API_BASE_KEY) || getStorageValue(LEGACY_API_BASE_KEY));
-            var onLocalHost = Boolean(global.location && isLocalHost(global.location.hostname));
-            var preferredBase = trimSlashes(onLocalHost ? DEFAULT_LOCAL_API_BASE : DEFAULT_API_BASE);
+            var preferredBase = trimSlashes(DEFAULT_API_BASE);
             if (!preferredBase) {
                 return "";
             }
 
             var shouldUsePreferredBase = (
                 !storedBase ||
-                (onLocalHost && (
-                    !isLocalApiBase(storedBase) ||
-                    trimSlashes(storedBase) !== trimSlashes(DEFAULT_LOCAL_API_BASE)
-                )) ||
-                (!onLocalHost && shouldPreferCurrentOriginBase(storedBase))
+                shouldPreferCurrentOriginBase(storedBase)
             );
             var baseToUse = shouldUsePreferredBase ? preferredBase : storedBase;
 
