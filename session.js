@@ -8,7 +8,7 @@
     var API_BASE_KEY = "ecodrive_api_base";
     var LEGACY_API_BASE_KEY = "ecodrive_kyc_api_base";
     var DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5050";
-    var DEFAULT_REMOTE_API_BASE = "https://apatech-production.up.railway.app";
+    var DEFAULT_REMOTE_API_BASE = getCurrentOrigin() || "https://apatech.onrender.com";
     var DEFAULT_API_BASE = detectDefaultApiBase();
     var originalFetch = typeof global.fetch === "function" ? global.fetch.bind(global) : null;
 
@@ -24,6 +24,55 @@
             host === "0.0.0.0" ||
             host.endsWith(".local")
         );
+    }
+
+    function getCurrentOrigin() {
+        if (!global.location || !global.location.origin) {
+            return "";
+        }
+        return trimSlashes(global.location.origin);
+    }
+
+    function getHostFromApiBase(baseInput) {
+        var base = trimSlashes(baseInput);
+        if (!base) {
+            return "";
+        }
+        try {
+            return String(new URL(base).hostname || "").trim().toLowerCase();
+        } catch (_error) {
+            var match = base.match(/^https?:\/\/([^/:?#]+)/i);
+            return match && match[1] ? String(match[1]).trim().toLowerCase() : "";
+        }
+    }
+
+    function isDeprecatedApiBase(baseInput) {
+        var host = getHostFromApiBase(baseInput);
+        return host === "apatech-production.up.railway.app";
+    }
+
+    function shouldPreferCurrentOriginBase(storedBaseInput) {
+        var storedBase = trimSlashes(storedBaseInput);
+        if (!storedBase || !global.location || isLocalHost(global.location.hostname)) {
+            return false;
+        }
+
+        var currentHost = String(global.location.hostname || "").trim().toLowerCase();
+        var storedHost = getHostFromApiBase(storedBase);
+        if (!storedHost) {
+            return false;
+        }
+
+        if (isLocalHost(storedHost) || isDeprecatedApiBase(storedBase)) {
+            return true;
+        }
+
+        // When frontend is hosted on Render, default to same-origin API host.
+        if (/\.onrender\.com$/i.test(currentHost) && storedHost !== currentHost) {
+            return true;
+        }
+
+        return false;
     }
 
     function isLocalApiBase(baseInput) {
@@ -47,7 +96,30 @@
         if (global.location && isLocalHost(global.location.hostname)) {
             return DEFAULT_LOCAL_API_BASE;
         }
-        return DEFAULT_REMOTE_API_BASE;
+        return getCurrentOrigin() || DEFAULT_REMOTE_API_BASE;
+    }
+
+    function normalizeConfiguredApiBase(baseInput) {
+        var base = trimSlashes(baseInput);
+        if (!base) {
+            return "";
+        }
+
+        if (global.location && isLocalHost(global.location.hostname)) {
+            if (!isLocalApiBase(base)) {
+                return DEFAULT_LOCAL_API_BASE;
+            }
+            if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
+                return DEFAULT_LOCAL_API_BASE;
+            }
+            return base;
+        }
+
+        if (shouldPreferCurrentOriginBase(base)) {
+            return DEFAULT_API_BASE;
+        }
+
+        return base;
     }
 
     function getStorageValue(key) {
@@ -132,28 +204,12 @@
     }
 
     function getApiBase() {
-        var base = trimSlashes(getStorageValue(API_BASE_KEY));
+        var base = normalizeConfiguredApiBase(getStorageValue(API_BASE_KEY));
         if (base) {
-            if (global.location && isLocalHost(global.location.hostname)) {
-                if (!isLocalApiBase(base)) {
-                    return DEFAULT_LOCAL_API_BASE;
-                }
-                if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
-                    return DEFAULT_LOCAL_API_BASE;
-                }
-            }
             return base;
         }
-        base = trimSlashes(getStorageValue(LEGACY_API_BASE_KEY));
+        base = normalizeConfiguredApiBase(getStorageValue(LEGACY_API_BASE_KEY));
         if (base) {
-            if (global.location && isLocalHost(global.location.hostname)) {
-                if (!isLocalApiBase(base)) {
-                    return DEFAULT_LOCAL_API_BASE;
-                }
-                if (trimSlashes(base) !== trimSlashes(DEFAULT_LOCAL_API_BASE)) {
-                    return DEFAULT_LOCAL_API_BASE;
-                }
-            }
             return base;
         }
         return DEFAULT_API_BASE;
@@ -183,7 +239,8 @@
                 (onLocalHost && (
                     !isLocalApiBase(storedBase) ||
                     trimSlashes(storedBase) !== trimSlashes(DEFAULT_LOCAL_API_BASE)
-                ))
+                )) ||
+                (!onLocalHost && shouldPreferCurrentOriginBase(storedBase))
             );
             var baseToUse = shouldUsePreferredBase ? preferredBase : storedBase;
 
