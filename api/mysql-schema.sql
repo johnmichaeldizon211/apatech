@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   email VARCHAR(190) NOT NULL,
   phone VARCHAR(20) NOT NULL,
   model VARCHAR(180) NOT NULL,
+  bike_color VARCHAR(64) NULL,
   bike_image VARCHAR(255) NULL,
   subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -72,6 +73,9 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 ALTER TABLE bookings
   ADD COLUMN schedule_date DATE NULL AFTER service_type;
+
+ALTER TABLE bookings
+  ADD COLUMN bike_color VARCHAR(64) NULL AFTER model;
 
 ALTER TABLE bookings
   ADD COLUMN payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation' AFTER payment_method;
@@ -181,3 +185,4 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ALTER TABLE chat_messages
   ADD COLUMN client_message_id VARCHAR(120) NULL AFTER message_text;
+

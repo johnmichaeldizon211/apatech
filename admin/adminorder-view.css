@@ -219,14 +219,9 @@ body {
     color: #173f7d;
 }
 
-.action-btn.receipt-print {
-    border-color: #8a6a00;
-    color: #6d4f00;
-}
-
-.action-btn.receipt-pdf {
-    border-color: #0e5f92;
-    color: #0d4f79;
+.action-btn.receipt-view {
+    border-color: #1f4b93;
+    color: #173f7d;
 }
 
 .action-btn:hover {

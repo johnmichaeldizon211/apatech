@@ -106,6 +106,32 @@
         return normalizeColorKey(dataColor || ariaLabel || classToken || fallback);
     }
 
+    function formatColorLabel(value) {
+        const cleaned = String(value || "")
+            .replace(/\bcolor\b/ig, "")
+            .replace(/[_-]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!cleaned) {
+            return "";
+        }
+
+        return cleaned.split(" ").map(function (token) {
+            if (!token) {
+                return "";
+            }
+            return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+        }).join(" ");
+    }
+
+    function getDotColorLabel(dot, index) {
+        const dataColor = String(dot && dot.getAttribute("data-color") || "").trim();
+        const ariaLabel = String(dot && dot.getAttribute("aria-label") || "").replace(/\bcolor\b/ig, "").trim();
+        const classToken = getDotClassColorToken(dot);
+        const fallback = "Color " + String(Number(index) + 1);
+        return formatColorLabel(dataColor || ariaLabel || classToken || fallback);
+    }
+
     function setBookingAvailability(isAvailable) {
         const bookBtn = document.querySelector(".check-btn");
         if (!bookBtn) {
@@ -403,7 +429,12 @@
         const modelEl = document.querySelector(".model-title");
         const priceEl = document.querySelector(".price");
         const imageEl = document.getElementById("bike-image");
+        const dots = Array.from(document.querySelectorAll(".dot"));
         const activeDot = document.querySelector(".dot.active");
+        const activeDotIndex = activeDot ? dots.indexOf(activeDot) : -1;
+        const selectedColor = activeDot
+            ? getDotColorLabel(activeDot, activeDotIndex >= 0 ? activeDotIndex : 0)
+            : "";
 
         const modelText = modelEl ? modelEl.textContent : "";
         const model = modelText.replace(/^MODEL:\s*/i, "").trim() || "Ecodrive E-Bike";
@@ -424,7 +455,10 @@
             total: total,
             image: selectedImage,
             bikeImage: selectedImage,
-            subtitle: String(product && product.category || getSubtitleByBikeId())
+            subtitle: String(product && product.category || getSubtitleByBikeId()),
+            bikeColor: selectedColor,
+            color: selectedColor,
+            selectedColor: selectedColor
         };
     }
 
@@ -462,3 +496,4 @@
         }
     });
 })();
+

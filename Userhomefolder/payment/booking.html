@@ -74,21 +74,13 @@
 
                 <h2>Payment Method</h2>
                 <div class="payment-options" role="group" aria-label="Payment Method">
-                    <button type="button" class="pay-btn pay-cod" data-payment="CASH ON DELIVERY">
+                    <button type="button" class="pay-btn pay-cod active" data-payment="CASH ON DELIVERY">
                         <img src="../Cod.png" alt="">
                         <span>CASH ON DELIVERY</span>
                     </button>
                     <button type="button" class="pay-btn pay-installment" data-payment="INSTALLMENT">
                         <span class="btn-icon" aria-hidden="true">&#128179;</span>
                         <span>INSTALLMENT</span>
-                    </button>
-                    <button type="button" class="pay-btn pay-gcash active" data-payment="GCASH">
-                        <img src="../gcash.png" alt="">
-                        <span>GCASH</span>
-                    </button>
-                    <button type="button" class="pay-btn pay-maya" data-payment="MAYA">
-                        <img src="../Paymaya.png" alt="">
-                        <span>MAYA</span>
                     </button>
                 </div>
                 <p id="form-error" class="form-error" aria-live="polite"></p>
@@ -128,31 +120,6 @@
             <button id="confirm-btn" type="button" class="confirm-btn">Confirm Booking</button>
         </aside>
     </main>
-
-    <section class="payment-qr-modal" id="payment-qr-modal" aria-hidden="true">
-        <div class="payment-qr-shell" id="payment-qr-shell">
-            <button type="button" class="payment-qr-close" id="payment-qr-close" aria-label="Close QR modal">x</button>
-
-            <div class="payment-qr-brand">
-                <img id="payment-brand-logo" src="../gcash.png" alt="Wallet logo">
-                <span id="payment-brand-name">GCash</span>
-            </div>
-
-            <div class="payment-qr-card">
-                <p class="payment-qr-headline">Scan to Pay</p>
-                <button type="button" class="payment-open-app" id="payment-open-app">Open App</button>
-                <a id="payment-open-browser" class="payment-open-browser" href="#" target="_blank" rel="noopener">Open Browser Checkout</a>
-                <p class="payment-qr-amount" id="payment-qr-amount">Amount: &#8369;0.00</p>
-                <p class="payment-qr-ref" id="payment-qr-ref">Reference: -</p>
-                <img class="payment-qr-image" id="payment-qr-image" src="../gcash.png" alt="Payment QR">
-                <p class="payment-qr-note">Scan this QR from your phone wallet app, then click Done to complete your booking.</p>
-
-                <div class="payment-qr-actions">
-                    <button type="button" class="payment-qr-done" id="payment-qr-done">Done</button>
-                </div>
-            </div>
-        </div>
-    </section>
 
     <script type="text/plain" id="booking-legacy-script">
         (function () {
@@ -583,9 +550,10 @@
         })();
     </script>
     <script src="../../session.js"></script>
-    <script src="booking.js?v=20260225b"></script>
+    <script src="booking.js?v=20260227a"></script>
 </body>
 </html>
+
 
 
 

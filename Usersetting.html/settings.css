@@ -416,21 +416,12 @@ body {
   cursor: pointer;
 }
 
-.order-pdf-btn {
-  background: #1f3f8d;
-  color: #ffffff;
-}
-
-.order-pdf-btn:hover {
-  background: #183472;
-}
-
-.order-print-btn {
+.order-view-receipt-btn {
   background: #ffffff;
   color: #1f3f8d;
 }
 
-.order-print-btn:hover {
+.order-view-receipt-btn:hover {
   background: #edf3ff;
 }
 

@@ -29,17 +29,6 @@
     const totalEl = document.getElementById("summary-total");
     const confirmBtn = document.getElementById("confirm-btn");
 
-    const qrModal = document.getElementById("payment-qr-modal");
-    const qrShell = document.getElementById("payment-qr-shell");
-    const qrClose = document.getElementById("payment-qr-close");
-    const qrBrandLogo = document.getElementById("payment-brand-logo");
-    const qrBrandName = document.getElementById("payment-brand-name");
-    const qrAmount = document.getElementById("payment-qr-amount");
-    const qrRef = document.getElementById("payment-qr-ref");
-    const qrImage = document.getElementById("payment-qr-image");
-    const qrOpenApp = document.getElementById("payment-open-app");
-    const qrOpenBrowser = document.getElementById("payment-open-browser");
-    const qrDone = document.getElementById("payment-qr-done");
     const logoutLink = document.getElementById("booking-logout-link");
 
     if (logoutLink) {
@@ -74,17 +63,6 @@
         !shippingEl ||
         !totalEl ||
         !confirmBtn ||
-        !qrModal ||
-        !qrShell ||
-        !qrClose ||
-        !qrBrandLogo ||
-        !qrBrandName ||
-        !qrAmount ||
-        !qrRef ||
-        !qrImage ||
-        !qrOpenApp ||
-        !qrOpenBrowser ||
-        !qrDone ||
         !shipMapPanel ||
         !shipMapFrame ||
         !shipMapStatus ||
@@ -100,7 +78,6 @@
     const LEGACY_PROFILE_KEY = "ecodrive_profile_settings";
     const PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
     const USERS_KEY = "users";
-    const PAYMENT_SETTINGS_KEY = "ecodrive_payment_settings";
     const bookingStorageKeys = ["ecodrive_bookings", "ecodrive_orders", "orders"];
     const API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
@@ -117,9 +94,7 @@
     const MAX_BOOKINGS_PER_DAY = 5;
 
     let selectedService = "Delivery";
-    let selectedPayment = "GCASH";
-    let pendingOrder = null;
-    let activeWalletContext = null;
+    let selectedPayment = "CASH ON DELIVERY";
     let shippingCoords = null;
     let rememberedDeliveryAddress = "";
     let rememberedDeliveryCoords = null;
@@ -134,7 +109,6 @@
     let scheduleDateAvailabilityRequestId = 0;
     let bookingSubmitInFlight = false;
     const confirmBtnDefaultLabel = confirmBtn.textContent;
-    const qrDoneDefaultLabel = qrDone.textContent;
 
     if (profileBtn && dropdown) {
         profileBtn.addEventListener("click", function (event) {
@@ -180,6 +154,23 @@
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
+    }
+
+    function normalizeColorLabel(value) {
+        const cleaned = String(value || "")
+            .replace(/\bcolor\b/ig, "")
+            .replace(/[_-]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!cleaned) {
+            return "";
+        }
+        return cleaned.split(" ").map(function (token) {
+            if (!token) {
+                return "";
+            }
+            return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+        }).join(" ");
     }
 
     function normalizePhoneValue(phone) {
@@ -503,13 +494,15 @@
         const subtotal = Number(value.total || value.price || value.amount || 0);
         const image = String(value.bikeImage || value.image || value.img || "").trim();
         const subtitle = String(value.subtitle || value.category || value.type || "").trim();
+        const bikeColor = normalizeColorLabel(value.bikeColor || value.color || value.selectedColor || "");
 
         if (!model && !subtotal && !image) return null;
         return {
             model: model || "Ecodrive E-Bike",
             total: Number.isFinite(subtotal) && subtotal > 0 ? subtotal : 0,
             image: image || "../image 1.png",
-            subtitle: subtitle || "E-Bike"
+            subtitle: subtitle || "E-Bike",
+            bikeColor: bikeColor
         };
     }
 
@@ -519,12 +512,14 @@
         const queryTotal = Number(params.get("total") || params.get("price") || 0);
         const queryImage = params.get("image");
         const querySubtitle = params.get("subtitle") || params.get("category");
+        const queryColor = normalizeColorLabel(params.get("bikeColor") || params.get("color") || params.get("selectedColor"));
         if (queryModel || queryTotal || queryImage) {
             return {
                 model: String(queryModel || "Ecodrive E-Bike"),
                 total: Number.isFinite(queryTotal) && queryTotal > 0 ? queryTotal : 68000,
                 image: String(queryImage || "../image 1.png"),
-                subtitle: String(querySubtitle || "E-Bike")
+                subtitle: String(querySubtitle || "E-Bike"),
+                bikeColor: queryColor
             };
         }
 
@@ -548,7 +543,8 @@
             model: "Ecodrive E-Bike",
             total: 68000,
             image: "../image 1.png",
-            subtitle: "E-Bike"
+            subtitle: "E-Bike",
+            bikeColor: ""
         };
     }
 
@@ -812,7 +808,7 @@
         const grandTotal = subtotal + shippingFee;
 
         summaryModel.textContent = selectedBike.model.toUpperCase();
-        summarySubtitle.textContent = selectedBike.subtitle || "E-Bike";
+        summarySubtitle.textContent = (selectedBike.subtitle || "E-Bike") + (selectedBike.bikeColor ? (" | " + selectedBike.bikeColor) : "");
         summaryImage.src = selectedBike.image || "../image 1.png";
         subtotalEl.innerHTML = formatPeso(subtotal);
         shippingEl.innerHTML = formatPeso(shippingFee);
@@ -898,7 +894,7 @@
     }
 
     function findPreferredPaymentButton() {
-        const preference = ["GCASH", "MAYA", "INSTALLMENT", "CASH ON DELIVERY"];
+        const preference = ["CASH ON DELIVERY", "INSTALLMENT"];
         for (let i = 0; i < preference.length; i += 1) {
             const target = preference[i];
             const button = paymentButtons.find(function (item) {
@@ -931,21 +927,19 @@
 
         const fallbackButton = findPreferredPaymentButton();
         if (fallbackButton) {
-            selectedPayment = fallbackButton.getAttribute("data-payment") || "GCASH";
+            selectedPayment = fallbackButton.getAttribute("data-payment") || "CASH ON DELIVERY";
             setActiveButton(paymentButtons, fallbackButton);
             return;
         }
 
-        selectedPayment = "GCASH";
+        selectedPayment = "CASH ON DELIVERY";
         setActiveButton(paymentButtons, null);
     }
 
     function setBookingSubmitState(inFlight) {
         bookingSubmitInFlight = Boolean(inFlight);
         confirmBtn.disabled = bookingSubmitInFlight;
-        qrDone.disabled = bookingSubmitInFlight;
         confirmBtn.textContent = bookingSubmitInFlight ? "Saving..." : confirmBtnDefaultLabel;
-        qrDone.textContent = bookingSubmitInFlight ? "Saving..." : qrDoneDefaultLabel;
     }
 
     function appendRecordToStorage(storageKey, record) {
@@ -1095,6 +1089,8 @@
             email: (emailInput.value || "").trim().toLowerCase(),
             phone: normalizePhoneValue(phoneInput.value || ""),
             model: selectedBike.model,
+            bikeColor: normalizeColorLabel(selectedBike.bikeColor || selectedBike.color || ""),
+            color: normalizeColorLabel(selectedBike.bikeColor || selectedBike.color || ""),
             bikeImage: selectedBike.image,
             subtotal: subtotal,
             shippingFee: shippingFee,
@@ -1176,190 +1172,6 @@
         return true;
     }
 
-    function interpolateTemplate(input, values) {
-        const template = String(input || "").trim();
-        if (!template) {
-            return "";
-        }
-        return template.replace(/\{(\w+)\}/g, function (_match, token) {
-            if (Object.prototype.hasOwnProperty.call(values, token)) {
-                return encodeURIComponent(String(values[token] || ""));
-            }
-            return "";
-        });
-    }
-
-    function readPaymentSettings() {
-        const raw = safeParse(localStorage.getItem(PAYMENT_SETTINGS_KEY));
-        const input = (raw && typeof raw === "object") ? raw : {};
-        const gcashInput = (input.gcash && typeof input.gcash === "object") ? input.gcash : {};
-        const mayaInput = (input.maya && typeof input.maya === "object") ? input.maya : {};
-
-        function normalizeLinks(value, fallback) {
-            if (!Array.isArray(value)) {
-                return fallback.slice();
-            }
-            const list = value
-                .map(function (item) {
-                    return String(item || "").trim();
-                })
-                .filter(Boolean);
-            return list.length ? list : fallback.slice();
-        }
-
-        return {
-            gcash: {
-                checkoutUrl: String(gcashInput.checkoutUrl || "").trim(),
-                qrText: String(gcashInput.qrText || "").trim(),
-                appLinks: normalizeLinks(gcashInput.appLinks, ["gcash://", "https://www.gcash.com/app"])
-            },
-            maya: {
-                checkoutUrl: String(mayaInput.checkoutUrl || "").trim(),
-                qrText: String(mayaInput.qrText || "").trim(),
-                appLinks: normalizeLinks(mayaInput.appLinks, ["maya://", "paymaya://", "https://www.maya.ph/app"])
-            }
-        };
-    }
-
-    function buildWalletPaymentContext(walletName, order) {
-        const isMaya = walletName === "MAYA";
-        const paymentSettings = readPaymentSettings();
-        const walletKey = isMaya ? "maya" : "gcash";
-        const walletSettings = paymentSettings[walletKey];
-        const amount = Number(order.total || 0).toFixed(2);
-        const replacementValues = {
-            amount: amount,
-            orderId: order.orderId,
-            model: order.model,
-            email: order.email,
-            phone: order.phone
-        };
-
-        const checkoutUrl = interpolateTemplate(walletSettings.checkoutUrl, replacementValues);
-        const appLinks = walletSettings.appLinks
-            .map(function (link) {
-                return interpolateTemplate(link, replacementValues);
-            })
-            .filter(Boolean);
-        const webFallback = isMaya ? "https://www.maya.ph/app" : "https://www.gcash.com/app";
-        const browserLink = checkoutUrl || appLinks.find(function (link) {
-            return /^https?:\/\//i.test(link);
-        }) || webFallback;
-
-        let qrPayload = checkoutUrl || interpolateTemplate(walletSettings.qrText, replacementValues);
-        if (!qrPayload) {
-            qrPayload = JSON.stringify({
-                wallet: walletKey.toUpperCase(),
-                merchant: "ECODRIVE",
-                amount: amount,
-                reference: order.orderId,
-                model: order.model
-            });
-        }
-
-        return {
-            isMaya: isMaya,
-            walletLabel: isMaya ? "Maya" : "GCash",
-            logoSrc: isMaya ? "../Paymaya.png" : "../gcash.png",
-            logoAlt: isMaya ? "Maya logo" : "GCash logo",
-            appLinks: appLinks.length ? appLinks : [webFallback],
-            browserLink: browserLink,
-            qrPayload: qrPayload
-        };
-    }
-
-    function buildQrCodeImageUrl(content) {
-        return "https://quickchart.io/qr?size=420&margin=1&text=" + encodeURIComponent(String(content || ""));
-    }
-
-    function openQrModal(walletName, amount, order) {
-        const context = buildWalletPaymentContext(walletName, order);
-        activeWalletContext = context;
-        qrShell.classList.toggle("wallet-maya", context.isMaya);
-        qrBrandName.textContent = context.walletLabel;
-        qrBrandLogo.src = context.logoSrc;
-        qrBrandLogo.alt = context.logoAlt;
-        qrImage.src = buildQrCodeImageUrl(context.qrPayload);
-        qrImage.alt = context.walletLabel + " payment QR";
-        qrAmount.innerHTML = "Amount: " + formatPeso(amount);
-        qrRef.textContent = "Reference: " + String(order.orderId || "-");
-
-        if (context.browserLink) {
-            qrOpenBrowser.href = context.browserLink;
-            qrOpenBrowser.classList.remove("hidden");
-        } else {
-            qrOpenBrowser.href = "#";
-            qrOpenBrowser.classList.add("hidden");
-        }
-
-        qrModal.classList.add("open");
-        qrModal.setAttribute("aria-hidden", "false");
-    }
-
-    function closeQrModal() {
-        qrModal.classList.remove("open");
-        qrModal.setAttribute("aria-hidden", "true");
-    }
-
-    function launchAppLink(link) {
-        const target = String(link || "").trim();
-        if (!target) {
-            return;
-        }
-
-        if (/^https?:\/\//i.test(target)) {
-            window.open(target, "_blank", "noopener");
-            return;
-        }
-
-        window.location.href = target;
-    }
-
-    function openWalletApp(context) {
-        if (!context || !Array.isArray(context.appLinks)) {
-            return;
-        }
-
-        const links = context.appLinks.filter(Boolean);
-        if (!links.length) {
-            if (context.browserLink) {
-                window.open(context.browserLink, "_blank", "noopener");
-            }
-            return;
-        }
-
-        const appLink = links.find(function (item) {
-            return !/^https?:\/\//i.test(item);
-        });
-        const webLink = links.find(function (item) {
-            return /^https?:\/\//i.test(item);
-        }) || context.browserLink;
-
-        if (!appLink) {
-            if (webLink) {
-                window.open(webLink, "_blank", "noopener");
-            }
-            return;
-        }
-
-        let pageHidden = false;
-        function handleVisibility() {
-            if (document.hidden) {
-                pageHidden = true;
-            }
-        }
-
-        document.addEventListener("visibilitychange", handleVisibility);
-        launchAppLink(appLink);
-
-        setTimeout(function () {
-            document.removeEventListener("visibilitychange", handleVisibility);
-            if (!pageHidden && webLink) {
-                window.open(webLink, "_blank", "noopener");
-            }
-        }, 1300);
-    }
-
     serviceButtons.forEach(function (button) {
         button.addEventListener("click", function () {
             const nextService = button.getAttribute("data-service") || "Delivery";
@@ -1379,7 +1191,7 @@
             if (button.disabled) {
                 return;
             }
-            selectedPayment = button.getAttribute("data-payment") || "GCASH";
+            selectedPayment = button.getAttribute("data-payment") || "CASH ON DELIVERY";
             setActiveButton(paymentButtons, button);
             clearError();
         });
@@ -1538,52 +1350,9 @@
                 return;
             }
 
-            pendingOrder = order;
-            openQrModal(order.payment, order.total, order);
+            showError(null, "Selected payment method is currently unavailable.");
         } finally {
             setBookingSubmitState(false);
-        }
-    });
-
-    qrClose.addEventListener("click", closeQrModal);
-    qrModal.addEventListener("click", function (event) {
-        if (event.target === qrModal) {
-            closeQrModal();
-        }
-    });
-
-    qrOpenApp.addEventListener("click", function () {
-        openWalletApp(activeWalletContext);
-    });
-
-    qrDone.addEventListener("click", async function () {
-        if (bookingSubmitInFlight) {
-            return;
-        }
-        if (!pendingOrder) {
-            closeQrModal();
-            return;
-        }
-
-        setBookingSubmitState(true);
-        try {
-            const saveResult = await saveBooking(pendingOrder);
-            if (!saveResult || saveResult.success !== true) {
-                showError(null, (saveResult && saveResult.message) || "Unable to save booking. Please try again.");
-                return;
-            }
-            pendingOrder = null;
-            closeQrModal();
-            window.location.href = "success.html";
-            return;
-        } finally {
-            setBookingSubmitState(false);
-        }
-    });
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") {
-            closeQrModal();
         }
     });
 
@@ -1595,3 +1364,4 @@
     }
     updateSummary();
 })();
+

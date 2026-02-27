@@ -21,6 +21,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const detailName = document.getElementById("detailName");
     const detailEmail = document.getElementById("detailEmail");
     const detailModel = document.getElementById("detailModel");
+    const detailColor = document.getElementById("detailColor");
     const detailService = document.getElementById("detailService");
     const detailSchedule = document.getElementById("detailSchedule");
     const detailPlan = document.getElementById("detailPlan");
@@ -40,7 +41,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const saveFulfillmentStatusBtn = document.getElementById("saveFulfillmentStatusBtn");
     const fulfillmentStatusFeedback = document.getElementById("fulfillmentStatusFeedback");
     const adminGenerateReceiptBtn = document.getElementById("adminGenerateReceiptBtn");
-    const adminDownloadReceiptBtn = document.getElementById("adminDownloadReceiptBtn");
     let currentBooking = null;
     let receiptPdfLibPromise = null;
 
@@ -127,6 +127,69 @@ document.addEventListener("DOMContentLoaded", function () {
             return direct;
         }
         return getRecordEmail(record) || "Unknown Customer";
+    }
+
+    function normalizeColorText(value) {
+        return String(value || "")
+            .trim()
+            .replace(/\s+/g, " ");
+    }
+
+    function splitModelAndColorFromModelText(modelText) {
+        const normalizedModel = String(modelText || "").trim().replace(/\s+/g, " ");
+        const match = normalizedModel.match(/^(.*)\(([^)]+)\)\s*$/);
+        if (!match) {
+            return {
+                model: normalizedModel,
+                color: ""
+            };
+        }
+
+        const baseModel = String(match[1] || "").trim().replace(/\s+/g, " ");
+        const suffixColor = normalizeColorText(match[2]);
+        const looksLikeColor = suffixColor && !/\d/.test(suffixColor);
+        if (!looksLikeColor || !baseModel) {
+            return {
+                model: normalizedModel,
+                color: ""
+            };
+        }
+
+        return {
+            model: baseModel,
+            color: suffixColor
+        };
+    }
+
+    function getBikeColorLabelFromRecord(record) {
+        const direct = normalizeColorText(
+            record && (record.bikeColor || record.color || record.selectedColor || record.bike_color)
+        );
+        if (direct) {
+            return direct;
+        }
+        const modelText = String((record && (record.model || record.productName || record.itemName)) || "");
+        return splitModelAndColorFromModelText(modelText).color;
+    }
+
+    function getModelLabelFromRecord(record) {
+        const modelText = String((record && (record.model || record.productName || record.itemName || "Ecodrive E-Bike")) || "Ecodrive E-Bike");
+        const parsed = splitModelAndColorFromModelText(modelText);
+        return parsed.model || "Ecodrive E-Bike";
+    }
+
+    function mergeBookingSnapshot(baseBooking, incomingBooking) {
+        const base = (baseBooking && typeof baseBooking === "object") ? baseBooking : {};
+        const incoming = (incomingBooking && typeof incomingBooking === "object") ? incomingBooking : {};
+        const merged = Object.assign({}, base, incoming);
+
+        const incomingColor = getBikeColorLabelFromRecord(incoming);
+        const baseColor = getBikeColorLabelFromRecord(base);
+        if (!incomingColor && baseColor) {
+            merged.bikeColor = baseColor;
+            merged.color = baseColor;
+        }
+        return merged;
     }
 
     function getPlanLabel(record) {
@@ -378,7 +441,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const customer = escapeHtml(buildNameFromRecord(booking) || "Customer");
         const email = escapeHtml(getRecordEmail(booking) || "-");
         const orderId = escapeHtml(getRecordOrderId(booking) || "-");
-        const model = escapeHtml(String(booking && (booking.model || booking.productName || booking.itemName || "Ecodrive E-Bike")));
+        const model = escapeHtml(getModelLabelFromRecord(booking));
+        const bikeColor = escapeHtml(getBikeColorLabelFromRecord(booking) || "-");
         const service = escapeHtml(String((booking && booking.service) || "-"));
         const payment = escapeHtml(String((booking && booking.payment) || "-"));
         const schedule = escapeHtml(formatScheduleFromRecord(booking));
@@ -403,8 +467,8 @@ document.addEventListener("DOMContentLoaded", function () {
             + ".label{flex:0 0 40%}.value{flex:1;text-align:right;word-break:break-word}.items-head,.item{display:flex;justify-content:space-between;gap:6px;font-size:10px;line-height:1.35}"
             + ".item-name{flex:1;word-break:break-word}.item-qty{width:24px;text-align:center}.item-amount{width:74px;text-align:right}"
             + ".totals{margin-top:4px}.strong{font-weight:700}.foot{margin-top:8px;text-align:center;font-size:9px;line-height:1.4}"
-            + ".print{margin-top:10px;text-align:center}.print button{border:1px solid #111;background:#fff;padding:6px 10px;font:inherit;font-size:10px;cursor:pointer}"
-            + "@media print{@page{size:80mm auto;margin:4mm}body{background:#fff;padding:0}.sheet{width:100%;max-width:none;border:none;padding:0}.print{display:none}}"
+            + ".actions{margin-top:10px;display:flex;gap:6px;justify-content:center}.actions button{border:1px solid #111;background:#fff;padding:6px 10px;font:inherit;font-size:10px;cursor:pointer}.actions .download{background:#1f4a92;border-color:#1f4a92;color:#fff}"
+            + "@media print{@page{size:80mm auto;margin:4mm}body{background:#fff;padding:0}.sheet{width:100%;max-width:none;border:none;padding:0}.actions{display:none}}"
             + "</style></head><body><div class=\"sheet\">"
             + "<div class=\"center brand\">ECODRIVE</div>"
             + "<div class=\"center muted\">Official Booking Receipt</div>"
@@ -417,6 +481,7 @@ document.addEventListener("DOMContentLoaded", function () {
             + "<div class=\"row\"><span class=\"label\">Service</span><span class=\"value\">" + service + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Payment</span><span class=\"value\">" + payment + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
+            + "<div class=\"row\"><span class=\"label\">Color</span><span class=\"value\">" + bikeColor + "</span></div>"
             + serviceLine
             + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + status + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
@@ -433,20 +498,11 @@ document.addEventListener("DOMContentLoaded", function () {
             + "</div>"
             + "<div class=\"hr\"></div>"
             + "<div class=\"foot\">Printed: " + escapeHtml(printedAt) + "<br>Generated by Admin Portal<br>THANK YOU</div>"
-            + "<div class=\"print\"><button onclick=\"window.print()\">Print Receipt</button></div>"
+            + "<div class=\"actions\">"
+            + "<button type=\"button\" class=\"download\" id=\"receiptDownloadBtn\">Download PDF</button>"
+            + "<button type=\"button\" id=\"receiptPrintBtn\">Print Receipt</button>"
+            + "</div>"
             + "</div></body></html>";
-    }
-
-    function openReceiptPrint(booking) {
-        const popup = window.open("", "_blank", "noopener,noreferrer,width=430,height=760");
-        if (!popup) {
-            window.alert("Please allow pop-ups to print your receipt.");
-            return;
-        }
-        popup.document.open();
-        popup.document.write(buildPrintableReceiptHtml(booking));
-        popup.document.close();
-        popup.focus();
     }
 
     function loadExternalScript(src) {
@@ -568,6 +624,7 @@ document.addEventListener("DOMContentLoaded", function () {
         writeLine("Service: " + String((booking && booking.service) || "-"));
         writeLine("Payment: " + String((booking && booking.payment) || "-"));
         writeLine("Schedule: " + String(formatScheduleFromRecord(booking)));
+        writeLine("Color: " + String(getBikeColorLabelFromRecord(booking) || "-"));
         if (deliveryAddress) {
             writeLine("Address: " + deliveryAddress);
         }
@@ -576,7 +633,7 @@ document.addEventListener("DOMContentLoaded", function () {
         writeLine("ETA: " + String((booking && booking.trackingEta) || "Not set"));
         writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));
         writeRule();
-        writeLine("1 x " + String((booking && (booking.model || booking.productName || booking.itemName || "Ecodrive E-Bike"))));
+        writeLine("1 x " + getModelLabelFromRecord(booking));
         writeLine("Amount: " + amountLabel);
         writeRule();
         writeLine("Subtotal: " + amountLabel, "bold");
@@ -604,14 +661,59 @@ document.addEventListener("DOMContentLoaded", function () {
             doc.save(getReceiptDownloadFileName(booking));
         } catch (error) {
             console.error("Failed to generate receipt PDF", error);
-            window.alert("Unable to download PDF right now. Opening print view instead.");
-            openReceiptPrint(booking);
+            window.alert("Unable to download PDF right now. Please use Print Receipt.");
         } finally {
             if (button) {
                 button.disabled = false;
                 button.textContent = originalLabel || "Download PDF";
             }
         }
+    }
+
+    function bindReceiptViewActions(popup, booking) {
+        if (!popup || popup.closed || !popup.document) {
+            return;
+        }
+
+        const printBtn = popup.document.getElementById("receiptPrintBtn");
+        const downloadBtn = popup.document.getElementById("receiptDownloadBtn");
+
+        if (printBtn && printBtn.dataset.bound !== "1") {
+            printBtn.dataset.bound = "1";
+            printBtn.addEventListener("click", function () {
+                popup.print();
+            });
+        }
+
+        if (downloadBtn && downloadBtn.dataset.bound !== "1") {
+            downloadBtn.dataset.bound = "1";
+            downloadBtn.addEventListener("click", async function () {
+                const originalLabel = downloadBtn.textContent;
+                downloadBtn.disabled = true;
+                downloadBtn.textContent = "Preparing...";
+                try {
+                    await downloadReceiptPdf(booking);
+                } catch (_error) {
+                    popup.alert("Unable to download PDF right now. Please use Print Receipt.");
+                } finally {
+                    downloadBtn.disabled = false;
+                    downloadBtn.textContent = originalLabel || "Download PDF";
+                }
+            });
+        }
+    }
+
+    function openReceiptView(booking) {
+        const popup = window.open("", "_blank", "width=430,height=760");
+        if (!popup) {
+            window.alert("Please allow pop-ups to view your receipt.");
+            return;
+        }
+        popup.document.open();
+        popup.document.write(buildPrintableReceiptHtml(booking));
+        popup.document.close();
+        bindReceiptViewActions(popup, booking);
+        popup.focus();
     }
 
     function updateReceiptActionButtons(booking) {
@@ -622,11 +724,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const disabledHint = "Available after booking is approved.";
         if (adminGenerateReceiptBtn) {
             adminGenerateReceiptBtn.disabled = !canGenerate;
-            adminGenerateReceiptBtn.title = canGenerate ? "Generate printable receipt." : disabledHint;
-        }
-        if (adminDownloadReceiptBtn) {
-            adminDownloadReceiptBtn.disabled = !canGenerate;
-            adminDownloadReceiptBtn.title = canGenerate ? "Download receipt as PDF." : disabledHint;
+            adminGenerateReceiptBtn.title = canGenerate ? "View receipt, then print or download." : disabledHint;
         }
     }
 
@@ -976,7 +1074,10 @@ document.addEventListener("DOMContentLoaded", function () {
         detailCreatedAt.textContent = formatDateTime(getRecordCreatedAt(booking));
         detailName.textContent = buildNameFromRecord(booking);
         detailEmail.textContent = getRecordEmail(booking) || "-";
-        detailModel.textContent = String(booking.model || booking.productName || booking.itemName || "Ecodrive E-Bike");
+        detailModel.textContent = getModelLabelFromRecord(booking);
+        if (detailColor) {
+            detailColor.textContent = getBikeColorLabelFromRecord(booking) || "-";
+        }
         detailService.textContent = String(booking.service || "-");
         detailSchedule.textContent = formatScheduleFromRecord(booking);
         detailPlan.textContent = getPlanLabel(booking);
@@ -1037,10 +1138,17 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        const localBooking = findBooking(orderId, createdAt);
         let booking = null;
         const apiResult = await fetchBookingFromApi(orderId);
         if (apiResult.mode === "ok") {
             booking = apiResult.booking;
+        }
+
+        if (!booking && localBooking) {
+            booking = localBooking;
+        } else if (booking && localBooking) {
+            booking = mergeBookingSnapshot(localBooking, booking);
         }
 
         if (!booking) {
@@ -1063,7 +1171,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const result = await updateBookingDecisionViaApi(orderId, "approve");
             if (result.mode === "ok") {
                 if (result.booking) {
-                    currentBooking = result.booking;
+                    currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
                     localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
                     renderBookingDetails(currentBooking);
                     alert("Booking approved.");
@@ -1117,20 +1225,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     window.alert("Receipt is available only for approved or completed bookings.");
                     return;
                 }
-                openReceiptPrint(currentBooking);
-            });
-        }
-
-        if (adminDownloadReceiptBtn) {
-            adminDownloadReceiptBtn.addEventListener("click", async function () {
-                if (!currentBooking) {
-                    return;
-                }
-                if (!canPrintReceiptStatus(currentBooking.status, currentBooking.fulfillmentStatus)) {
-                    window.alert("Receipt is available only for approved or completed bookings.");
-                    return;
-                }
-                await downloadReceiptPdf(currentBooking, adminDownloadReceiptBtn);
+                openReceiptView(currentBooking);
             });
         }
 
@@ -1156,7 +1251,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const result = await updateBookingPaymentStatusViaApi(orderId, nextStatus);
                 if (result.mode === "ok" && result.booking) {
-                    currentBooking = result.booking;
+                    currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
                     localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
                     renderBookingDetails(currentBooking);
                     setPaymentStatusFeedback("Payment status updated successfully.", "success");
@@ -1225,7 +1320,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     locationNote
                 );
                 if (result.mode === "ok" && result.booking) {
-                    currentBooking = result.booking;
+                    currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
                     localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
                     renderBookingDetails(currentBooking);
                     setFulfillmentStatusFeedback("Fulfillment, ETA, and location updated successfully.", "success");
@@ -1268,3 +1363,4 @@ document.addEventListener("DOMContentLoaded", function () {
 
     void initialize();
 });
+

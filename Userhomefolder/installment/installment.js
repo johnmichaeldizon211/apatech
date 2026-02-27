@@ -1595,6 +1595,8 @@
                 email: draft.email,
                 phone: draft.phone,
                 model: draft.model,
+                bikeColor: String(draft.bikeColor || draft.color || "").trim(),
+                color: String(draft.bikeColor || draft.color || "").trim(),
                 bikeImage: draft.bikeImage,
                 total: draft.total,
                 payment: draft.payment,
@@ -1646,4 +1648,5 @@
         localStorage.removeItem(INSTALLMENT_FORM_KEY);
     }
 })();
+
 

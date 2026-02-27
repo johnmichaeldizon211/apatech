@@ -139,6 +139,93 @@ document.addEventListener("DOMContentLoaded", function () {
             .toLowerCase();
     }
 
+    function normalizeColorText(value) {
+        return String(value || "")
+            .trim()
+            .replace(/\s+/g, " ");
+    }
+
+    function splitModelAndColorFromModelText(modelText) {
+        const normalizedModel = String(modelText || "").trim().replace(/\s+/g, " ");
+        const match = normalizedModel.match(/^(.*)\(([^)]+)\)\s*$/);
+        if (!match) {
+            return {
+                model: normalizedModel,
+                color: ""
+            };
+        }
+
+        const baseModel = String(match[1] || "").trim().replace(/\s+/g, " ");
+        const suffixColor = normalizeColorText(match[2]);
+        const looksLikeColor = suffixColor && !/\d/.test(suffixColor);
+        if (!looksLikeColor || !baseModel) {
+            return {
+                model: normalizedModel,
+                color: ""
+            };
+        }
+        return {
+            model: baseModel,
+            color: suffixColor
+        };
+    }
+
+    function getModelLabel(record) {
+        const modelText = String((record && (record.model || record.productName || record.itemName || "Ecodrive E-Bike")) || "Ecodrive E-Bike");
+        const parsed = splitModelAndColorFromModelText(modelText);
+        return parsed.model || "Ecodrive E-Bike";
+    }
+
+    function getBikeColorLabel(record) {
+        const direct = normalizeColorText(
+            record && (record.bikeColor || record.color || record.selectedColor || record.bike_color)
+        );
+        if (direct) {
+            return direct;
+        }
+        const modelText = String((record && (record.model || record.productName || record.itemName)) || "");
+        return splitModelAndColorFromModelText(modelText).color;
+    }
+
+    function getOrderKey(record) {
+        return String((record && (record.orderId || record.id)) || "")
+            .trim()
+            .toLowerCase();
+    }
+
+    function hydrateColorFromLocalRows(apiRows, localRows) {
+        const apiList = Array.isArray(apiRows) ? apiRows : [];
+        const localList = Array.isArray(localRows) ? localRows : [];
+        const localByOrder = new Map();
+
+        localList.forEach(function (record) {
+            const key = getOrderKey(record);
+            if (!key || localByOrder.has(key)) {
+                return;
+            }
+            localByOrder.set(key, record);
+        });
+
+        return apiList.map(function (record) {
+            if (getBikeColorLabel(record)) {
+                return record;
+            }
+            const key = getOrderKey(record);
+            if (!key || !localByOrder.has(key)) {
+                return record;
+            }
+            const localMatch = localByOrder.get(key);
+            const localColor = getBikeColorLabel(localMatch);
+            if (!localColor) {
+                return record;
+            }
+            return Object.assign({}, record, {
+                bikeColor: localColor,
+                color: localColor
+            });
+        });
+    }
+
     function readBookings() {
         const merged = [];
         bookingStorageKeys.forEach(function (key) {
@@ -210,7 +297,10 @@ document.addEventListener("DOMContentLoaded", function () {
             "userEmail",
             "model",
             "productName",
-            "itemName"
+            "itemName",
+            "bikeColor",
+            "color",
+            "selectedColor"
         ];
 
         Object.keys(incoming).forEach(function (key) {
@@ -589,7 +679,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     orderId: String(record.orderId || record.id || "").trim() || ("BOOKING-" + index),
                     createdAt: String(record.createdAt || record.updatedAt || "").trim(),
                     name: getBookingName(record, usersByEmailMap),
-                    model: String(record.model || record.productName || record.itemName || "Ecodrive E-Bike"),
+                    model: getModelLabel(record),
+                    bikeColor: getBikeColorLabel(record),
                     schedule: formatScheduleFromRecord(record),
                     plan: getPlanLabel(record),
                     status: getStatusLabel(record),
@@ -659,11 +750,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 ? "plan-installment"
                 : "plan-full";
             const statusClass = getStatusChipClass(entry.status);
+            const modelDisplay = entry.bikeColor
+                ? (String(entry.model || "") + " (" + String(entry.bikeColor || "") + ")")
+                : String(entry.model || "");
             return ""
                 + "<article class=\"day-schedule-item\">"
                 + "<div class=\"day-schedule-main\">"
                 + "<span class=\"day-schedule-name\">" + escapeHtml(entry.name) + "</span>"
-                + "<span class=\"day-schedule-model\">" + escapeHtml(entry.model) + "</span>"
+                + "<span class=\"day-schedule-model\">" + escapeHtml(modelDisplay) + "</span>"
                 + "</div>"
                 + "<div class=\"day-schedule-info\">"
                 + "<span class=\"day-schedule-chip\">" + escapeHtml(entry.schedule) + "</span>"
@@ -858,7 +952,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     orderId: orderId,
                     createdAt: createdAt,
                     name: getBookingName(record, usersByEmailMap),
-                    model: String(record.model || record.productName || record.itemName || "Ecodrive E-Bike"),
+                    model: getModelLabel(record),
+                    bikeColor: getBikeColorLabel(record),
                     schedule: formatScheduleFromRecord(record),
                     plan: getPlanLabel(record),
                     status: getStatusLabel(record),
@@ -913,9 +1008,12 @@ document.addEventListener("DOMContentLoaded", function () {
         renderedItems.forEach(function (item) {
             const row = document.createElement("article");
             row.className = "request-row";
+            const modelDisplay = item.bikeColor
+                ? (String(item.model || "") + " (" + String(item.bikeColor || "") + ")")
+                : String(item.model || "");
             row.innerHTML = ""
                 + "<span>" + escapeHtml(item.name) + "</span>"
-                + "<span>" + escapeHtml(item.model) + "</span>"
+                + "<span>" + escapeHtml(modelDisplay) + "</span>"
                 + "<span>" + escapeHtml(item.schedule) + "</span>"
                 + "<span>" + escapeHtml(item.plan) + "</span>"
                 + "<span class=\"status\">" + escapeHtml(item.status) + "</span>"
@@ -1131,7 +1229,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (pendingApiResult.mode === "ok") {
-                renderRows(pendingApiResult.bookings);
+                const pendingRows = hydrateColorFromLocalRows(pendingApiResult.bookings, localRows);
+                renderRows(pendingRows);
             } else {
                 renderRows(localRows);
             }
@@ -1317,3 +1416,4 @@ document.addEventListener("DOMContentLoaded", function () {
     void loadRows(true);
     startAutoRefresh();
 });
+

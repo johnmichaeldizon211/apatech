@@ -188,7 +188,7 @@ body {
 
 .row-grid {
     display: grid;
-    grid-template-columns: 1.15fr 0.95fr 1.25fr 0.9fr 0.9fr 0.9fr 0.95fr 0.8fr;
+    grid-template-columns: 1.1fr 0.95fr 1.2fr 0.9fr 0.8fr 0.85fr 1fr 1.2fr;
     column-gap: 12px;
     align-items: center;
 }
@@ -253,14 +253,14 @@ body {
 
 .cancel-btn {
     height: 26px;
-    min-width: 72px;
+    min-width: 68px;
     border-radius: 6px;
     border: 1px solid #b13434;
     background: #d54a4a;
     color: #fff;
     font-size: 10px;
     font-weight: 600;
-    padding: 0 10px;
+    padding: 0 8px;
     cursor: pointer;
 }
 
@@ -270,30 +270,21 @@ body {
 
 .receipt-action-btn {
     height: 26px;
-    min-width: 96px;
+    min-width: 86px;
     font-size: 10px;
     font-weight: 700;
-    padding: 0 10px;
+    padding: 0 8px;
     cursor: pointer;
     border-radius: 6px;
     border: 1px solid #1f4a92;
 }
 
-.receipt-pdf-btn {
-    background: #1f4a92;
-    color: #ffffff;
-}
-
-.receipt-pdf-btn:hover {
-    background: #16386f;
-}
-
-.print-btn {
+.view-receipt-btn {
     background: #ffffff;
     color: #1f4a92;
 }
 
-.print-btn:hover {
+.view-receipt-btn:hover {
     background: #ebf2ff;
 }
 
@@ -305,7 +296,7 @@ body {
 .action-stack {
     display: inline-flex;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
 }
 
@@ -444,7 +435,7 @@ body {
     }
 
     .row-grid {
-        grid-template-columns: 1.2fr 0.9fr 1.2fr 0.88fr 0.88fr 0.85fr 0.95fr 0.82fr;
+        grid-template-columns: 1.08fr 0.86fr 1.08fr 0.82fr 0.76fr 0.75fr 0.98fr 1.35fr;
         column-gap: 10px;
     }
 
@@ -573,6 +564,10 @@ body {
     .table-row.placeholder {
         min-height: 28px;
         padding: 0;
+    }
+
+    .action-stack {
+        flex-wrap: wrap;
     }
 
     .cancel-btn {
