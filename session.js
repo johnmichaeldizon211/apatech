@@ -8,7 +8,8 @@
     var API_BASE_KEY = "ecodrive_api_base";
     var LEGACY_API_BASE_KEY = "ecodrive_kyc_api_base";
     var DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5050";
-    var DEFAULT_REMOTE_API_BASE = getCurrentOrigin() || "https://apatech.onrender.com";
+    var DEFAULT_RENDER_API_BASE = "https://apatech.onrender.com";
+    var DEFAULT_REMOTE_API_BASE = DEFAULT_RENDER_API_BASE;
     var DEFAULT_API_BASE = detectDefaultApiBase();
     var originalFetch = typeof global.fetch === "function" ? global.fetch.bind(global) : null;
 
