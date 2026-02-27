@@ -104,6 +104,13 @@ const SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase() =
 
 const SMS_WEBHOOK_URL = String(process.env.SMS_WEBHOOK_URL || "").trim();
 const SMS_WEBHOOK_TOKEN = String(process.env.SMS_WEBHOOK_TOKEN || "").trim();
+const SEMAPHORE_RELAY_TOKEN = String(process.env.SEMAPHORE_RELAY_TOKEN || SMS_WEBHOOK_TOKEN).trim();
+const SEMAPHORE_API_KEY = String(process.env.SEMAPHORE_API_KEY || "").trim();
+const SEMAPHORE_SENDERNAME = String(process.env.SEMAPHORE_SENDERNAME || "").trim();
+const SEMAPHORE_API_BASE = String(process.env.SEMAPHORE_API_BASE || "https://api.semaphore.co/api/v4")
+    .trim()
+    .replace(/\/+$/, "");
+const SEMAPHORE_REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.SEMAPHORE_REQUEST_TIMEOUT_MS, 15000);
 let smtpTransport = null;
 
 const DEFAULT_PRODUCT_CATALOG = [
@@ -342,6 +349,26 @@ function readBody(req) {
     });
 }
 
+function createHttpError(statusCode, message, details) {
+    const error = new Error(String(message || "Request failed."));
+    error.statusCode = Number(statusCode) || 500;
+    if (details && typeof details === "object") {
+        error.details = details;
+    }
+    return error;
+}
+
+function normalizeWalletPaymentMethod(value) {
+    const normalized = String(value || "").trim().toUpperCase();
+    if (normalized === "MAYA" || normalized === "PAYMAYA") {
+        return "MAYA";
+    }
+    if (normalized === "GCASH") {
+        return "GCASH";
+    }
+    return "";
+}
+
 function isDataImage(value) {
     return typeof value === "string" && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value);
 }
@@ -460,6 +487,33 @@ function verifyPassword(plainPassword, storedHash) {
     } catch (_error) {
         return false;
     }
+}
+
+function safeTokenEquals(leftValue, rightValue) {
+    const left = String(leftValue || "");
+    const right = String(rightValue || "");
+    if (!left || !right) {
+        return false;
+    }
+    try {
+        const leftBuffer = Buffer.from(left, "utf8");
+        const rightBuffer = Buffer.from(right, "utf8");
+        return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+    } catch (_error) {
+        return false;
+    }
+}
+
+function isSemaphoreConfigured() {
+    return Boolean(SEMAPHORE_API_KEY && SEMAPHORE_API_BASE);
+}
+
+function isSmsWebhookConfigured() {
+    return Boolean(SMS_WEBHOOK_URL);
+}
+
+function isSmsDeliveryConfigured() {
+    return isSemaphoreConfigured() || isSmsWebhookConfigured();
 }
 
 function normalizeAdminLoginId(value) {
@@ -907,6 +961,7 @@ async function ensureDbSchema() {
                 email VARCHAR(190) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
                 model VARCHAR(180) NOT NULL,
+                bike_color VARCHAR(64) NULL,
                 bike_image VARCHAR(255) NULL,
                 subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -949,6 +1004,14 @@ async function ensureDbSchema() {
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add bookings.schedule_date automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN bike_color VARCHAR(64) NULL AFTER model"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.bike_color automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1325,17 +1388,208 @@ function buildLocalDateTimeFromParts(dateValue, timeValue) {
     return value;
 }
 
+function parseSemaphoreApiMessage(payloadInput) {
+    if (Array.isArray(payloadInput) && payloadInput.length > 0) {
+        const first = payloadInput[0];
+        if (first && typeof first === "object") {
+            return first;
+        }
+    }
+    if (payloadInput && typeof payloadInput === "object") {
+        return payloadInput;
+    }
+    return null;
+}
+
+function normalizeSemaphoreErrorMessage(payloadInput, fallbackMessage) {
+    const fallback = String(fallbackMessage || "Semaphore request failed.");
+    const payload = payloadInput && typeof payloadInput === "object" ? payloadInput : {};
+    const candidates = [
+        payload.error,
+        payload.message,
+        payload.details,
+        payload.status
+    ];
+    for (let i = 0; i < candidates.length; i += 1) {
+        const text = String(candidates[i] || "").trim();
+        if (text) {
+            return text;
+        }
+    }
+    return fallback;
+}
+
+async function sendSmsViaSemaphore(numberInput, messageInput, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const number = normalizeMobile(numberInput);
+    const message = String(messageInput || "").trim();
+    if (!isSemaphoreConfigured()) {
+        return { sent: false, reason: "Semaphore relay is not configured." };
+    }
+    if (!isValidMobile(number)) {
+        return { sent: false, reason: "Invalid mobile number." };
+    }
+    if (!message) {
+        return { sent: false, reason: "SMS message is required." };
+    }
+    if (typeof fetch !== "function") {
+        return { sent: false, reason: "Global fetch is unavailable in this Node version." };
+    }
+
+    const params = new URLSearchParams();
+    params.set("apikey", SEMAPHORE_API_KEY);
+    params.set("number", number);
+    params.set("message", message);
+    if (SEMAPHORE_SENDERNAME) {
+        params.set("sendername", SEMAPHORE_SENDERNAME);
+    }
+
+    const endpoint = `${SEMAPHORE_API_BASE}/messages`;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeoutMs = Number(opts.timeoutMs || SEMAPHORE_REQUEST_TIMEOUT_MS);
+    const timeoutId = controller
+        ? setTimeout(() => {
+            controller.abort();
+        }, timeoutMs)
+        : null;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: params.toString(),
+            signal: controller ? controller.signal : undefined
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return {
+                sent: false,
+                reason: normalizeSemaphoreErrorMessage(
+                    payload,
+                    `Semaphore API returned ${response.status}.`
+                ),
+                statusCode: response.status
+            };
+        }
+
+        const apiMessage = parseSemaphoreApiMessage(payload);
+        const statusText = String((apiMessage && apiMessage.status) || "").trim();
+        const messageId = String((apiMessage && (apiMessage.message_id || apiMessage.messageId)) || "").trim();
+        return {
+            sent: true,
+            provider: "semaphore",
+            status: statusText || "queued",
+            messageId: messageId
+        };
+    } catch (error) {
+        if (error && error.name === "AbortError") {
+            return { sent: false, reason: "Semaphore request timed out." };
+        }
+        return { sent: false, reason: error.message || "Semaphore request failed." };
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
+}
+
+async function handleSmsSemaphoreRelay(req, res) {
+    try {
+        if (!isSemaphoreConfigured()) {
+            sendJson(res, 503, {
+                success: false,
+                message: "Semaphore relay is not configured. Set SEMAPHORE_API_KEY first."
+            });
+            return;
+        }
+        if (!SEMAPHORE_RELAY_TOKEN) {
+            sendJson(res, 503, {
+                success: false,
+                message: "SEMAPHORE_RELAY_TOKEN (or SMS_WEBHOOK_TOKEN) is required for the semaphore relay endpoint."
+            });
+            return;
+        }
+
+        const providedToken = getAuthTokenFromRequest(req);
+        if (!safeTokenEquals(providedToken, SEMAPHORE_RELAY_TOKEN)) {
+            sendJson(res, 401, { success: false, message: "Unauthorized SMS relay request." });
+            return;
+        }
+
+        const body = await readBody(req);
+        const mobile = normalizeMobile(body.to || body.number || body.mobile);
+        const code = String(body.code || "").trim();
+        const message = String(body.message || "").trim()
+            || (code ? `Your Ecodrive verification code is ${code}. It expires in 5 minutes.` : "");
+
+        if (!isValidMobile(mobile)) {
+            sendJson(res, 400, { success: false, message: "A valid PH mobile number is required." });
+            return;
+        }
+        if (!message) {
+            sendJson(res, 400, { success: false, message: "SMS message is required." });
+            return;
+        }
+
+        const result = await sendSmsViaSemaphore(mobile, message, {
+            timeoutMs: SEMAPHORE_REQUEST_TIMEOUT_MS
+        });
+        if (!result.sent) {
+            sendJson(res, 502, {
+                success: false,
+                message: result.reason || "Semaphore delivery failed."
+            });
+            return;
+        }
+
+        sendJson(res, 200, {
+            success: true,
+            provider: "semaphore",
+            status: result.status || "queued",
+            messageId: result.messageId || ""
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to process semaphore relay request." });
+    }
+}
+
 async function sendOtpSms(mobile, code) {
-    if (!SMS_WEBHOOK_URL) {
-        return { sent: false, reason: "SMS_WEBHOOK_URL is not configured." };
+    const normalizedMobile = normalizeMobile(mobile);
+    const message = `Your Ecodrive verification code is ${code}. It expires in 5 minutes.`;
+    if (!isValidMobile(normalizedMobile)) {
+        return { sent: false, reason: "Invalid mobile number." };
+    }
+
+    // Preferred path: send directly to Semaphore from this backend.
+    if (isSemaphoreConfigured()) {
+        const semaphoreResult = await sendSmsViaSemaphore(normalizedMobile, message, {
+            timeoutMs: SEMAPHORE_REQUEST_TIMEOUT_MS
+        });
+        if (semaphoreResult.sent) {
+            return semaphoreResult;
+        }
+        if (!isSmsWebhookConfigured()) {
+            return semaphoreResult;
+        }
+    }
+
+    // Backward compatibility: allow custom external SMS webhook fallback.
+    if (!isSmsWebhookConfigured()) {
+        return {
+            sent: false,
+            reason: "SMS provider is not configured. Set SEMAPHORE_API_KEY (recommended) or SMS_WEBHOOK_URL."
+        };
     }
     if (typeof fetch !== "function") {
         return { sent: false, reason: "Global fetch is unavailable in this Node version." };
     }
 
     const headers = { "Content-Type": "application/json" };
-    if (SMS_WEBHOOK_TOKEN) {
-        headers.Authorization = `Bearer ${SMS_WEBHOOK_TOKEN}`;
+    if (SEMAPHORE_RELAY_TOKEN) {
+        headers.Authorization = `Bearer ${SEMAPHORE_RELAY_TOKEN}`;
     }
 
     try {
@@ -1343,16 +1597,25 @@ async function sendOtpSms(mobile, code) {
             method: "POST",
             headers: headers,
             body: JSON.stringify({
-                to: mobile,
+                to: normalizedMobile,
                 code: code,
-                message: `Your Ecodrive verification code is ${code}. It expires in 5 minutes.`
+                message: message
             })
         });
 
+        const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-            return { sent: false, reason: `SMS webhook returned ${response.status}.` };
+            return {
+                sent: false,
+                reason: normalizeSemaphoreErrorMessage(payload, `SMS webhook returned ${response.status}.`),
+                statusCode: response.status
+            };
         }
-        return { sent: true, provider: "sms-webhook" };
+
+        const provider = String(payload.provider || "sms-webhook").trim() || "sms-webhook";
+        const status = String(payload.status || "queued").trim() || "queued";
+        const messageId = String(payload.messageId || payload.message_id || "").trim();
+        return { sent: true, provider: provider, status: status, messageId: messageId };
     } catch (error) {
         return { sent: false, reason: error.message || "SMS delivery failed." };
     }
@@ -1801,6 +2064,8 @@ function mapBookingRow(row) {
         email: String(row.email || ""),
         phone: String(row.phone || ""),
         model: String(row.model || "Ecodrive E-Bike"),
+        bikeColor: String(row.bike_color || ""),
+        color: String(row.bike_color || ""),
         bikeImage: String(row.bike_image || ""),
         subtotal: Number(row.subtotal || 0),
         shippingFee: Number(row.shipping_fee || 0),
@@ -3765,6 +4030,282 @@ async function handleProfilePasswordChange(req, res) {
     }
 }
 
+async function prepareBookingForInsert(bodyInput, options) {
+    const body = bodyInput && typeof bodyInput === "object" ? bodyInput : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const db = opts.db && typeof opts.db.execute === "function"
+        ? opts.db
+        : await getDbPool();
+    const authSession = opts.authSession && typeof opts.authSession === "object"
+        ? opts.authSession
+        : null;
+    const sessionEmail = authSession ? normalizeEmail(authSession.email) : "";
+    const isAdminRequest = Boolean(opts.asAdmin) || Boolean(authSession && authSession.role === "admin");
+
+    const forcedOrderId = normalizeOrderId(opts.orderId, false);
+    const orderId = forcedOrderId || (
+        isAdminRequest
+            ? normalizeOrderId(body.orderId)
+            : generateOrderId()
+    );
+    if (!orderId) {
+        throw createHttpError(400, "Invalid booking order id.");
+    }
+
+    const ownerEmail = normalizeEmail(opts.ownerEmail || "");
+    let email = normalizeEmail(ownerEmail || body.email || body.userEmail);
+    let userEmail = normalizeEmail(ownerEmail || body.userEmail || body.email);
+    const fullName = normalizeText(body.fullName || body.name);
+    const phone = normalizeMobile(body.phone);
+    const model = normalizeText(body.model || body.productName || body.itemName || "Ecodrive E-Bike");
+    const bikeColor = normalizeText(body.bikeColor || body.color || body.selectedColor || body.bike_color).slice(0, 64);
+    const bikeImage = normalizeText(body.bikeImage || body.image || body.img);
+    const serviceType = normalizeServiceType(body.service);
+    const forcedPaymentMethod = normalizeWalletPaymentMethod(opts.paymentMethod || "");
+    const paymentMethod = (
+        forcedPaymentMethod
+            ? forcedPaymentMethod
+            : normalizeText(body.payment || "CASH ON DELIVERY")
+    ).slice(0, 80);
+    const normalizedPaymentMethod = String(paymentMethod || "").trim().toUpperCase();
+    if (normalizedPaymentMethod === "GCASH" || normalizedPaymentMethod === "MAYA" || normalizedPaymentMethod === "PAYMAYA") {
+        throw createHttpError(400, "GCash and Maya payments are no longer available. Please use Cash on Delivery or Installment.");
+    }
+    const scheduleDateInput = body.scheduleDate || body.bookingDate || body.date;
+    const scheduleTimeInput = body.scheduleTime || body.bookingTime || body.time;
+    const scheduleDate = normalizeScheduleDate(scheduleDateInput);
+    const scheduleTime = normalizeScheduleTime(scheduleTimeInput);
+    let status = normalizeOrderStatus(body.status, serviceType);
+    let fulfillmentStatus = normalizeFulfillmentStatus(body.fulfillmentStatus, serviceType);
+    let trackingEta = normalizeText(body.trackingEta || body.eta).slice(0, 80);
+    let trackingLocation = normalizeText(
+        body.trackingLocation
+        || body.locationNote
+        || body.location
+    ).slice(0, 120);
+    let receiptNumber = normalizeText(body.receiptNumber).slice(0, 40);
+    let receiptIssuedAt = null;
+    let paymentStatus = normalizePaymentStatus(
+        body.paymentStatus,
+        getDefaultPaymentStatus(paymentMethod, serviceType)
+    );
+    const shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
+    const shippingMapEmbedUrl = String(body.shippingMapEmbedUrl || "").trim().slice(0, 3000);
+    const shippingCoordinates = body.shippingCoordinates && typeof body.shippingCoordinates === "object"
+        ? body.shippingCoordinates
+        : null;
+    const shippingLat = normalizeOptionalNumber(shippingCoordinates && shippingCoordinates.lat);
+    const shippingLng = normalizeOptionalNumber(shippingCoordinates && shippingCoordinates.lng);
+    const subtotal = parseAmount(body.subtotal);
+    const shippingFee = parseAmount(body.shippingFee);
+    const total = parseAmount(body.total || (subtotal + shippingFee));
+    let installmentPayload = null;
+    if (body.installment && typeof body.installment === "object") {
+        installmentPayload = JSON.stringify(body.installment);
+    }
+
+    const forceCustomerDefaults = opts.forceCustomerDefaults !== false
+        && (!isAdminRequest || Boolean(opts.forceCustomerDefaults));
+    if (forceCustomerDefaults) {
+        if (sessionEmail) {
+            if ((isValidEmail(email) && email !== sessionEmail) || (isValidEmail(userEmail) && userEmail !== sessionEmail)) {
+                throw createHttpError(403, "You can only create bookings for your own account.");
+            }
+            email = sessionEmail;
+            userEmail = sessionEmail;
+        } else if (ownerEmail) {
+            email = ownerEmail;
+            userEmail = ownerEmail;
+        }
+        status = normalizeOrderStatus("", serviceType);
+        fulfillmentStatus = normalizeFulfillmentStatus("", serviceType);
+        trackingEta = "";
+        trackingLocation = "";
+        receiptNumber = "";
+        receiptIssuedAt = null;
+        paymentStatus = getDefaultPaymentStatus(paymentMethod, serviceType);
+    }
+
+    const forcedPaymentStatus = String(opts.paymentStatus || "").trim().toLowerCase();
+    if (forcedPaymentStatus) {
+        paymentStatus = normalizePaymentStatus(forcedPaymentStatus, paymentStatus);
+    }
+
+    const reviewDecision = getReviewDecisionFromStatus(status, fulfillmentStatus);
+    const reviewedAt = reviewDecision === "none" ? null : new Date();
+    if (reviewDecision === "approved") {
+        if (!receiptNumber) {
+            receiptNumber = buildReceiptNumber(orderId, reviewedAt || new Date());
+        }
+        receiptIssuedAt = reviewedAt || new Date();
+    }
+
+    if (!isValidEmail(email)) {
+        throw createHttpError(400, "A valid email is required for booking.");
+    }
+    if (!fullName || fullName.length < 2) {
+        throw createHttpError(400, "Customer full name is required.");
+    }
+    if (!isValidMobile(phone)) {
+        throw createHttpError(400, "Use 09XXXXXXXXX or +639XXXXXXXXX.");
+    }
+    if ((scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
+        throw createHttpError(400, "Provide a valid schedule date and time.");
+    }
+
+    if (!opts.skipScheduleCapacity && scheduleDate) {
+        const activeBookingsForDate = await countActiveBookingsByScheduleDate(db, scheduleDate, orderId);
+        if (hasReachedDailyBookingLimit(activeBookingsForDate)) {
+            throw createHttpError(
+                409,
+                `Maximum booking limit reached for ${scheduleDate}. Please choose another date.`,
+                {
+                    code: "MAX_BOOKINGS_REACHED",
+                    date: scheduleDate,
+                    maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+                    currentBookings: activeBookingsForDate
+                }
+            );
+        }
+    }
+
+    let userId = null;
+    const [userRows] = await db.execute(
+        "SELECT id FROM users WHERE email = ? LIMIT 1",
+        [email]
+    );
+    if (Array.isArray(userRows) && userRows.length > 0) {
+        userId = Number(userRows[0].id || 0) || null;
+    }
+
+    return {
+        orderId: orderId,
+        userId: userId,
+        fullName: fullName,
+        email: email,
+        phone: phone,
+        model: model,
+        bikeColor: bikeColor || null,
+        bikeImage: bikeImage || null,
+        subtotal: subtotal,
+        shippingFee: shippingFee,
+        total: total,
+        paymentMethod: paymentMethod,
+        paymentStatus: paymentStatus,
+        serviceType: serviceType,
+        scheduleDate: scheduleDate,
+        scheduleTime: scheduleTime,
+        status: status,
+        fulfillmentStatus: fulfillmentStatus,
+        trackingEta: trackingEta || null,
+        trackingLocation: trackingLocation || null,
+        receiptNumber: receiptNumber || null,
+        receiptIssuedAt: receiptIssuedAt,
+        shippingAddress: shippingAddress || null,
+        shippingLat: shippingLat,
+        shippingLng: shippingLng,
+        shippingMapEmbedUrl: shippingMapEmbedUrl || null,
+        userEmail: userEmail || null,
+        installmentPayload: installmentPayload,
+        reviewDecision: reviewDecision,
+        reviewedAt: reviewedAt
+    };
+}
+
+async function insertPreparedBooking(db, preparedInput) {
+    const prepared = preparedInput && typeof preparedInput === "object" ? preparedInput : {};
+    const orderId = normalizeOrderId(prepared.orderId, false);
+    if (!orderId) {
+        throw createHttpError(500, "Unable to resolve booking order id.");
+    }
+
+    await db.execute(
+        `INSERT INTO bookings (
+            order_id,
+            user_id,
+            full_name,
+            email,
+            phone,
+            model,
+            bike_color,
+            bike_image,
+            subtotal,
+            shipping_fee,
+            total,
+            payment_method,
+            payment_status,
+            service_type,
+            schedule_date,
+            schedule_time,
+            status,
+            fulfillment_status,
+            tracking_eta,
+            tracking_location,
+            receipt_number,
+            receipt_issued_at,
+            shipping_address,
+            shipping_lat,
+            shipping_lng,
+            shipping_map_embed_url,
+            user_email,
+            installment_payload,
+            review_decision,
+            reviewed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            orderId,
+            prepared.userId || null,
+            prepared.fullName || "",
+            prepared.email || "",
+            prepared.phone || "",
+            prepared.model || "Ecodrive E-Bike",
+            prepared.bikeColor || null,
+            prepared.bikeImage || null,
+            parseAmount(prepared.subtotal),
+            parseAmount(prepared.shippingFee),
+            parseAmount(prepared.total),
+            prepared.paymentMethod || "CASH ON DELIVERY",
+            normalizePaymentStatus(prepared.paymentStatus, "awaiting_payment_confirmation"),
+            prepared.serviceType || "Delivery",
+            prepared.scheduleDate || null,
+            prepared.scheduleTime || null,
+            prepared.status || "Pending review",
+            prepared.fulfillmentStatus || "In Process",
+            prepared.trackingEta || null,
+            prepared.trackingLocation || null,
+            prepared.receiptNumber || null,
+            prepared.receiptIssuedAt || null,
+            prepared.shippingAddress || null,
+            prepared.shippingLat,
+            prepared.shippingLng,
+            prepared.shippingMapEmbedUrl || null,
+            prepared.userEmail || null,
+            prepared.installmentPayload || null,
+            prepared.reviewDecision || "none",
+            prepared.reviewedAt || null
+        ]
+    );
+
+    const [rows] = await db.execute(
+        `SELECT *
+         FROM bookings
+         WHERE order_id = ?
+         LIMIT 1`,
+        [orderId]
+    );
+    return Array.isArray(rows) && rows.length ? mapBookingRow(rows[0]) : null;
+}
+
+async function createBookingFromDraft(bodyInput, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const db = opts.db && typeof opts.db.execute === "function"
+        ? opts.db
+        : await getDbPool();
+    const prepared = await prepareBookingForInsert(bodyInput, Object.assign({}, opts, { db: db }));
+    return insertPreparedBooking(db, prepared);
+}
+
 async function handleCreateBooking(req, res) {
     try {
         const authSession = requireAuthSession(req, res);
@@ -3773,196 +4314,10 @@ async function handleCreateBooking(req, res) {
         }
 
         const body = await readBody(req);
-
-        const isAdminRequest = authSession.role === "admin";
-        const orderId = isAdminRequest
-            ? normalizeOrderId(body.orderId)
-            : generateOrderId();
-        let email = normalizeEmail(body.email || body.userEmail);
-        let userEmail = normalizeEmail(body.userEmail || body.email);
-        const fullName = normalizeText(body.fullName || body.name);
-        const phone = normalizeMobile(body.phone);
-        const model = normalizeText(body.model || body.productName || body.itemName || "Ecodrive E-Bike");
-        const bikeImage = normalizeText(body.bikeImage || body.image || body.img);
-        const serviceType = normalizeServiceType(body.service);
-        const paymentMethod = normalizeText(body.payment || "CASH ON DELIVERY").slice(0, 80);
-        const scheduleDateInput = body.scheduleDate || body.bookingDate || body.date;
-        const scheduleTimeInput = body.scheduleTime || body.bookingTime || body.time;
-        const scheduleDate = normalizeScheduleDate(scheduleDateInput);
-        const scheduleTime = normalizeScheduleTime(scheduleTimeInput);
-        let status = normalizeOrderStatus(body.status, serviceType);
-        let fulfillmentStatus = normalizeFulfillmentStatus(body.fulfillmentStatus, serviceType);
-        let trackingEta = normalizeText(body.trackingEta || body.eta).slice(0, 80);
-        let trackingLocation = normalizeText(
-            body.trackingLocation
-            || body.locationNote
-            || body.location
-        ).slice(0, 120);
-        let receiptNumber = normalizeText(body.receiptNumber).slice(0, 40);
-        let receiptIssuedAt = null;
-        let paymentStatus = normalizePaymentStatus(
-            body.paymentStatus,
-            getDefaultPaymentStatus(paymentMethod, serviceType)
-        );
-        const shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
-        const shippingMapEmbedUrl = String(body.shippingMapEmbedUrl || "").trim().slice(0, 3000);
-        const shippingCoordinates = body.shippingCoordinates && typeof body.shippingCoordinates === "object"
-            ? body.shippingCoordinates
-            : null;
-        const shippingLat = normalizeOptionalNumber(shippingCoordinates && shippingCoordinates.lat);
-        const shippingLng = normalizeOptionalNumber(shippingCoordinates && shippingCoordinates.lng);
-        const subtotal = parseAmount(body.subtotal);
-        const shippingFee = parseAmount(body.shippingFee);
-        const total = parseAmount(body.total || (subtotal + shippingFee));
-        const reviewDecision = getReviewDecisionFromStatus(status, fulfillmentStatus);
-        const reviewedAt = reviewDecision === "none" ? null : new Date();
-        if (reviewDecision === "approved") {
-            if (!receiptNumber) {
-                receiptNumber = buildReceiptNumber(orderId, reviewedAt || new Date());
-            }
-            receiptIssuedAt = reviewedAt || new Date();
-        }
-        const sessionEmail = normalizeEmail(authSession.email);
-
-        if (!isAdminRequest) {
-            if ((isValidEmail(email) && email !== sessionEmail) || (isValidEmail(userEmail) && userEmail !== sessionEmail)) {
-                sendJson(res, 403, { success: false, message: "You can only create bookings for your own account." });
-                return;
-            }
-            email = sessionEmail;
-            userEmail = sessionEmail;
-            status = normalizeOrderStatus("", serviceType);
-            fulfillmentStatus = normalizeFulfillmentStatus("", serviceType);
-            trackingEta = "";
-            trackingLocation = "";
-            receiptNumber = "";
-            receiptIssuedAt = null;
-            paymentStatus = getDefaultPaymentStatus(paymentMethod, serviceType);
-        }
-
-        let installmentPayload = null;
-        if (body.installment && typeof body.installment === "object") {
-            installmentPayload = JSON.stringify(body.installment);
-        }
-
-        if (!isValidEmail(email)) {
-            sendJson(res, 400, { success: false, message: "A valid email is required for booking." });
-            return;
-        }
-        if (!fullName || fullName.length < 2) {
-            sendJson(res, 400, { success: false, message: "Customer full name is required." });
-            return;
-        }
-        if (!isValidMobile(phone)) {
-            sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
-            return;
-        }
-        if ((scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
-            sendJson(res, 400, { success: false, message: "Provide a valid schedule date and time." });
-            return;
-        }
-
-        const pool = await getDbPool();
-
-        let userId = null;
-        const [userRows] = await pool.execute(
-            "SELECT id FROM users WHERE email = ? LIMIT 1",
-            [email]
-        );
-        if (Array.isArray(userRows) && userRows.length > 0) {
-            userId = Number(userRows[0].id || 0) || null;
-        }
-
-        if (scheduleDate) {
-            const activeBookingsForDate = await countActiveBookingsByScheduleDate(pool, scheduleDate, orderId);
-            if (hasReachedDailyBookingLimit(activeBookingsForDate)) {
-                sendJson(res, 409, {
-                    success: false,
-                    code: "MAX_BOOKINGS_REACHED",
-                    date: scheduleDate,
-                    maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
-                    currentBookings: activeBookingsForDate,
-                    message: `Maximum booking limit reached for ${scheduleDate}. Please choose another date.`
-                });
-                return;
-            }
-        }
-
-        await pool.execute(
-            `INSERT INTO bookings (
-                order_id,
-                user_id,
-                full_name,
-                email,
-                phone,
-                model,
-                bike_image,
-                subtotal,
-                shipping_fee,
-                total,
-                payment_method,
-                payment_status,
-                service_type,
-                schedule_date,
-                schedule_time,
-                status,
-                fulfillment_status,
-                tracking_eta,
-                tracking_location,
-                receipt_number,
-                receipt_issued_at,
-                shipping_address,
-                shipping_lat,
-                shipping_lng,
-                shipping_map_embed_url,
-                user_email,
-                installment_payload,
-                review_decision,
-                reviewed_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                orderId,
-                userId,
-                fullName,
-                email,
-                phone,
-                model,
-                bikeImage || null,
-                subtotal,
-                shippingFee,
-                total,
-                paymentMethod,
-                paymentStatus,
-                serviceType,
-                scheduleDate,
-                scheduleTime,
-                status,
-                fulfillmentStatus,
-                trackingEta || null,
-                trackingLocation || null,
-                receiptNumber || null,
-                receiptIssuedAt,
-                shippingAddress || null,
-                shippingLat,
-                shippingLng,
-                shippingMapEmbedUrl || null,
-                userEmail || null,
-                installmentPayload,
-                reviewDecision,
-                reviewedAt
-            ]
-        );
-
-        const [rows] = await pool.execute(
-            `SELECT *
-             FROM bookings
-             WHERE order_id = ?
-             LIMIT 1`,
-            [orderId]
-        );
-        const booking = Array.isArray(rows) && rows.length ? mapBookingRow(rows[0]) : null;
-
+        const booking = await createBookingFromDraft(body, {
+            authSession: authSession,
+            forceCustomerDefaults: authSession.role !== "admin"
+        });
         sendJson(res, 201, { success: true, booking: booking });
     } catch (error) {
         if (error && error.code === "ER_DUP_ENTRY") {
@@ -3970,6 +4325,15 @@ async function handleCreateBooking(req, res) {
                 success: false,
                 message: "Duplicate booking reference detected. Please submit the booking again."
             });
+            return;
+        }
+        if (error && Number(error.statusCode) >= 400 && Number(error.statusCode) < 600) {
+            const details = error.details && typeof error.details === "object" ? error.details : {};
+            sendJson(
+                res,
+                Number(error.statusCode),
+                Object.assign({ success: false, message: error.message || "Unable to save booking." }, details)
+            );
             return;
         }
         sendJson(res, 500, { success: false, message: error.message || "Unable to save booking." });
@@ -5046,7 +5410,11 @@ const server = http.createServer(async (req, res) => {
             service: "ecodrive-api",
             dbConfigured: isDbConfigured(),
             smtpConfigured: isSmtpConfigured(),
-            smsConfigured: Boolean(SMS_WEBHOOK_URL)
+            smsConfigured: isSmsDeliveryConfigured(),
+            smsMode: isSemaphoreConfigured()
+                ? "semaphore-direct"
+                : (isSmsWebhookConfigured() ? "webhook-relay" : "not-configured"),
+            semaphoreConfigured: isSemaphoreConfigured()
         });
         return;
     }
@@ -5230,6 +5598,11 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    if (req.method === "POST" && pathname === "/api/integrations/sms/semaphore-relay") {
+        await handleSmsSemaphoreRelay(req, res);
+        return;
+    }
+
     if (req.method === "POST" && pathname === "/api/signup/send-code") {
         await handleSignupSendCode(req, res);
         return;
@@ -5282,7 +5655,10 @@ server.listen(PORT, () => {
     void ensureDbSchema();
     const dbStatus = isDbConfigured() ? "configured" : "missing-config";
     const smtpStatus = isSmtpConfigured() ? "enabled" : "demo-fallback";
-    const smsStatus = SMS_WEBHOOK_URL ? "configured" : "demo-fallback";
+    const smsStatus = isSemaphoreConfigured()
+        ? "semaphore-direct"
+        : (isSmsWebhookConfigured() ? "webhook-relay" : "demo-fallback");
+    const semaphoreStatus = isSemaphoreConfigured() ? "configured" : "missing-config";
     const otpMode = DEMO_OTP_ENABLED ? "demo-allowed" : "provider-required";
     const corsStatus = CORS_ALLOWED_ORIGINS.size > 0 ? `${CORS_ALLOWED_ORIGINS.size}-origins` : "none";
     const adminStatus = getAdminCredentials() ? "configured" : "missing";
@@ -5294,6 +5670,7 @@ server.listen(PORT, () => {
         console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
     }
     console.log(
-        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
+        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
     );
 });
+

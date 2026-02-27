@@ -7,14 +7,40 @@ MYSQL_URL=mysql://user:password@host:3306/database_name
 DB_SSL=false
 DB_SSL_REJECT_UNAUTHORIZED=false
 
-# Optional OTP/email settings
+# OTP/email settings (choose one SMTP mode below)
+
+# --- Mode A: Mailtrap Sandbox (testing only; email visible in Mailtrap inbox) ---
+# SMTP_HOST=sandbox.smtp.mailtrap.io
+# SMTP_PORT=587
+# SMTP_USER=<mailtrap-sandbox-username>
+# SMTP_PASS=<mailtrap-sandbox-password>
+# SMTP_FROM=Ecodrive <no-reply@ecodrive.local>
+# SMTP_SECURE=false
+
+# --- Mode B: Mailtrap Live (requires verified domain; suitable for real inbox delivery) ---
+# SMTP_HOST=live.smtp.mailtrap.io
+# SMTP_PORT=587
+# SMTP_USER=api
+# SMTP_PASS=<mailtrap-live-stream-password>
+# SMTP_FROM=Ecodrive <no-reply@mail.yourdomain.com>
+# SMTP_SECURE=false
+
+# Active SMTP values (set these after choosing a mode)
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
-SMTP_FROM=Ecodrive <no-reply@example.com>
+SMTP_FROM=
 SMTP_SECURE=false
 
+# Recommended SMS setup (built-in Semaphore relay, no separate SMS server)
+SEMAPHORE_API_KEY=
+SEMAPHORE_SENDERNAME=
+SEMAPHORE_API_BASE=https://api.semaphore.co/api/v4
+SEMAPHORE_REQUEST_TIMEOUT_MS=15000
+SEMAPHORE_RELAY_TOKEN=
+
+# Legacy/optional custom SMS webhook fallback
 SMS_WEBHOOK_URL=
 SMS_WEBHOOK_TOKEN=
 

@@ -36,6 +36,8 @@ This API now supports:
   - `POST /api/forgot/send-code`
   - `POST /api/forgot/verify-code`
   - `POST /api/reset-password`
+- SMS integrations:
+  - `POST /api/integrations/sms/semaphore-relay`
 - KYC endpoints:
   - `POST /api/kyc/verify-id`
   - `POST /api/kyc/verify-face`
@@ -80,7 +82,13 @@ Optional OTP delivery config:
   - `SMTP_PASS`
   - `SMTP_FROM`
   - `SMTP_SECURE`
-- SMS webhook:
+- SMS via built-in Semaphore relay (recommended):
+  - `SEMAPHORE_API_KEY`
+  - `SEMAPHORE_SENDERNAME` (optional)
+  - `SEMAPHORE_API_BASE` (optional)
+  - `SEMAPHORE_REQUEST_TIMEOUT_MS` (optional)
+  - `SEMAPHORE_RELAY_TOKEN` (optional, only needed if external services call relay endpoint)
+- Legacy SMS webhook fallback (optional):
   - `SMS_WEBHOOK_URL`
   - `SMS_WEBHOOK_TOKEN`
 
@@ -144,6 +152,7 @@ Optional server log label:
   - `ADMIN_LOGIN_ID` + `ADMIN_PASSWORD` in `api/.env` before first run, or
   - a generated `api/admin-credentials.json` file.
 - `ALLOW_DEMO_OTP=true` is ignored when `NODE_ENV=production`.
+- If `SEMAPHORE_API_KEY` is set, mobile OTP is sent directly by this backend (no separate SMS relay server needed).
 - Passwords in MySQL are stored as `scrypt` hashes (`password_hash` column).
 - `POST /api/login` and `POST /api/signup` now return:
   - `token` (Bearer token)
