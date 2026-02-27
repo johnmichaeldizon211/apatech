@@ -1419,6 +1419,14 @@ function normalizeSemaphoreErrorMessage(payloadInput, fallbackMessage) {
     return fallback;
 }
 
+function isSemaphoreDeliveryStatusSuccessful(statusInput) {
+    const status = String(statusInput || "").trim().toLowerCase();
+    if (!status) {
+        return true;
+    }
+    return status === "queued" || status === "pending" || status === "sent" || status === "success";
+}
+
 async function sendSmsViaSemaphore(numberInput, messageInput, options) {
     const opts = options && typeof options === "object" ? options : {};
     const number = normalizeMobile(numberInput);
@@ -1478,6 +1486,14 @@ async function sendSmsViaSemaphore(numberInput, messageInput, options) {
         const apiMessage = parseSemaphoreApiMessage(payload);
         const statusText = String((apiMessage && apiMessage.status) || "").trim();
         const messageId = String((apiMessage && (apiMessage.message_id || apiMessage.messageId)) || "").trim();
+        if (!isSemaphoreDeliveryStatusSuccessful(statusText)) {
+            return {
+                sent: false,
+                reason: `Semaphore delivery status is ${statusText || "unknown"}.`,
+                status: statusText || "unknown",
+                messageId: messageId
+            };
+        }
         return {
             sent: true,
             provider: "semaphore",
@@ -2486,9 +2502,12 @@ async function handleSignupSendCode(req, res) {
         const isDemoMode = !delivery.sent;
         if (isDemoMode && !DEMO_OTP_ENABLED) {
             signupOtpSessions.delete(requestId);
+            const deliveryReason = String(delivery.reason || "").trim();
             sendJson(res, 503, {
                 success: false,
-                message: "OTP delivery is unavailable. Configure SMTP or SMS provider first."
+                message: deliveryReason
+                    ? `OTP delivery is unavailable. ${deliveryReason}`
+                    : "OTP delivery is unavailable. Configure SMTP or SMS provider first."
             });
             return;
         }
@@ -5164,9 +5183,12 @@ async function handleForgotSendCode(req, res) {
         const isDemoMode = !delivery.sent;
         if (isDemoMode && !DEMO_OTP_ENABLED) {
             otpSessions.delete(requestId);
+            const deliveryReason = String(delivery.reason || "").trim();
             sendJson(res, 503, {
                 success: false,
-                message: "OTP delivery is unavailable. Configure SMTP or SMS provider first."
+                message: deliveryReason
+                    ? `OTP delivery is unavailable. ${deliveryReason}`
+                    : "OTP delivery is unavailable. Configure SMTP or SMS provider first."
             });
             return;
         }
@@ -5414,7 +5436,8 @@ const server = http.createServer(async (req, res) => {
             smsMode: isSemaphoreConfigured()
                 ? "semaphore-direct"
                 : (isSmsWebhookConfigured() ? "webhook-relay" : "not-configured"),
-            semaphoreConfigured: isSemaphoreConfigured()
+            semaphoreConfigured: isSemaphoreConfigured(),
+            semaphoreSenderConfigured: Boolean(SEMAPHORE_SENDERNAME)
         });
         return;
     }
