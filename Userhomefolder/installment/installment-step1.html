@@ -7,9 +7,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="installment.css">
+    <link rel="stylesheet" href="installment.css?v=20260227a">
     <script src="../../session.js" defer></script>
-    <script src="installment.js?v=20260226a" defer></script>
+    <script src="installment.js?v=20260227a" defer></script>
 </head>
 <body data-step="1-id">
     <div class="bg-shape bg-left"></div>
@@ -44,17 +44,17 @@
         <header class="page-head">
             <div>
                 <h1>Installment Application</h1>
-                <p>Requirements Reminder</p>
+                <p>Requirements</p>
             </div>
 
             <ol class="stepper" aria-label="Installment steps">
                 <li class="active">
                     <span class="dot">1</span>
-                    <span class="step-copy">2x2 Picture Reminder</span>
+                    <span class="step-copy">Requirements</span>
                 </li>
                 <li>
                     <span class="dot">2</span>
-                    <span class="step-copy">Personal Information</span>
+                    <span class="step-copy">Plan &amp; Personal Information</span>
                 </li>
                 <li>
                     <span class="dot">3</span>
@@ -65,18 +65,17 @@
 
         <section class="installment-card">
             <form id="installmentNoticeForm" novalidate>
-                <p class="scan-flow-note">Please bring one recent 2x2 picture when applying for installment.</p>
-
-                <article class="reminder-card">
-                    <h2>Important Reminder</h2>
-                    <p>For installment applications, bring your printed 2x2 picture to Ecodrive during verification.</p>
-                    <p>No camera scan is required on this page.</p>
+                <article class="requirements-card">
+                    <h2>Installment Requirements</h2>
+                    <ul class="requirements-list">
+                        <li>2 VALID ID</li>
+                        <li>PROOF OF INCOME</li>
+                        <li>PAYSLIP/COE if employed</li>
+                        <li>BUSINESS PERMIT if business owner</li>
+                        <li>PROOF OF BILLING (MERALCO, WATER BILL OR INTERNET)</li>
+                        <li>BRGY CERTIFICATE</li>
+                    </ul>
                 </article>
-
-                <label class="terms-row" for="photoReminderAgree">
-                    <input type="checkbox" id="photoReminderAgree">
-                    <span>I understand and I will bring a 2x2 picture.</span>
-                </label>
 
                 <div class="action-row right">
                     <button type="submit" class="action-btn">Proceed to Step 2</button>

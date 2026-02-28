@@ -6,16 +6,19 @@
 
 :root {
     --blue-main: #0f2f74;
-    --blue-border: #354f9a;
+    --blue-border: #35509d;
     --blue-soft: #bdd2dc;
     --side-bg: #95bfd0;
     --panel-bg: #ececef;
+    --card-bg: #f7f9fc;
+    --text-main: #0f172a;
+    --text-muted: #475569;
 }
 
 body {
     font-family: "Poppins", "Segoe UI", sans-serif;
     background: #f4f5f7;
-    color: #111827;
+    color: var(--text-main);
     min-height: 100vh;
 }
 
@@ -131,8 +134,6 @@ body {
     margin-top: 14px;
     min-height: 420px;
     padding: 18px;
-    display: grid;
-    gap: 14px;
 }
 
 .details-content {
@@ -140,36 +141,243 @@ body {
     gap: 14px;
 }
 
-.details-grid {
+.booking-mode-layout {
     display: grid;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.booking-mode-layout[hidden] {
+    display: none !important;
+}
+
+.installment-layout,
+.cash-layout {
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+}
+
+.mode-main-col,
+.mode-side-col {
+    display: grid;
     gap: 12px;
 }
 
-.detail-item {
-    background: #f7f9fc;
+.mode-card {
+    background: var(--card-bg);
     border: 1px solid #a7b8df;
     border-radius: 12px;
-    padding: 10px 12px;
+    padding: 12px 14px;
+    box-shadow: 0 1px 3px rgba(30, 49, 104, 0.14);
+}
+
+.mode-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0b2d70;
+    margin-bottom: 8px;
+}
+
+.info-grid {
     display: grid;
-    gap: 6px;
+    gap: 7px;
 }
 
-.detail-item.wide {
-    grid-column: 1 / -1;
+.info-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    align-items: center;
+    gap: 10px;
 }
 
-.label {
+.row-label {
     font-size: 12px;
     font-weight: 600;
     color: #334155;
 }
 
-.value {
-    font-size: 16px;
+.row-value {
+    font-size: 13px;
     font-weight: 600;
-    color: #0f172a;
+    color: #111827;
     overflow-wrap: anywhere;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    min-height: 22px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #334155;
+    background: #e2e8f0;
+}
+
+.status-pill.success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-pill.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-pill.danger {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-pill.info {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.product-shell {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.product-meta {
+    display: grid;
+    gap: 8px;
+    min-width: 220px;
+}
+
+.product-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.product-line {
+    font-size: 12px;
+    color: #334155;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.product-line strong {
+    color: #0f172a;
+    font-size: 13px;
+}
+
+.product-image {
+    width: 160px;
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid #c3d1ee;
+    background: #fff;
+    object-fit: contain;
+}
+
+.card-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.mini-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.breakdown-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #c7d3ed;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 620px;
+}
+
+.breakdown-table th,
+.breakdown-table td {
+    font-size: 12px;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.breakdown-table th {
+    background: #edf3ff;
+    color: #1e3a8a;
+    font-weight: 700;
+}
+
+.breakdown-table tr:last-child td {
+    border-bottom: none;
+}
+
+.readonly-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.inst-mark-paid-btn {
+    min-width: 92px;
+    border: 1px solid #93afea;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 9px;
+    cursor: pointer;
+}
+
+.inst-mark-paid-btn:hover {
+    background: #c7ddff;
+}
+
+.inst-mark-paid-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.mode-fallback {
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #92400e;
+}
+
+.account-box {
+    margin-top: 10px;
+    border: 1px solid #b6c4e6;
+    border-radius: 10px;
+    background: #f8fbff;
+    padding: 9px 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.summary-card .row-value {
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .action-row {
@@ -207,18 +415,6 @@ body {
     color: #21396d;
 }
 
-.action-btn.payment-save {
-    min-width: 182px;
-    border-color: #0e5f92;
-    color: #0d4f79;
-}
-
-.action-btn.fulfillment-save {
-    min-width: 200px;
-    border-color: #1f4b93;
-    color: #173f7d;
-}
-
 .action-btn.receipt-view {
     border-color: #1f4b93;
     color: #173f7d;
@@ -231,125 +427,6 @@ body {
 .action-btn:disabled {
     opacity: 0.58;
     cursor: not-allowed;
-}
-
-.payment-status-editor {
-    gap: 10px;
-}
-
-.payment-status-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-}
-
-.payment-status-select {
-    min-width: 250px;
-    height: 38px;
-    border: 1px solid #9fb0d7;
-    border-radius: 10px;
-    background: #ffffff;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 0 10px;
-}
-
-.payment-status-select:focus {
-    outline: 2px solid #97b4ff;
-    outline-offset: 1px;
-}
-
-.payment-status-feedback {
-    min-height: 18px;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.payment-status-feedback.success {
-    color: #166534;
-}
-
-.payment-status-feedback.error {
-    color: #991b1b;
-}
-
-.payment-status-feedback.muted {
-    color: #475569;
-}
-
-.fulfillment-status-editor {
-    gap: 10px;
-}
-
-.fulfillment-status-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-}
-
-.fulfillment-status-select {
-    min-width: 250px;
-    height: 38px;
-    border: 1px solid #9fb0d7;
-    border-radius: 10px;
-    background: #ffffff;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 0 10px;
-}
-
-.fulfillment-eta-input {
-    min-width: 230px;
-    height: 38px;
-    border: 1px solid #9fb0d7;
-    border-radius: 10px;
-    background: #ffffff;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 0 10px;
-}
-
-.fulfillment-location-input {
-    min-width: 280px;
-    flex: 1 1 280px;
-    height: 38px;
-    border: 1px solid #9fb0d7;
-    border-radius: 10px;
-    background: #ffffff;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 0 10px;
-}
-
-.fulfillment-status-select:focus,
-.fulfillment-eta-input:focus,
-.fulfillment-location-input:focus {
-    outline: 2px solid #97b4ff;
-    outline-offset: 1px;
-}
-
-.fulfillment-status-feedback {
-    min-height: 18px;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.fulfillment-status-feedback.success {
-    color: #166534;
-}
-
-.fulfillment-status-feedback.error {
-    color: #991b1b;
-}
-
-.fulfillment-status-feedback.muted {
-    color: #475569;
 }
 
 .empty-state {
@@ -377,6 +454,13 @@ body {
 
 .empty-state[hidden] {
     display: none;
+}
+
+@media (max-width: 1180px) {
+    .installment-layout,
+    .cash-layout {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 980px) {
@@ -408,6 +492,21 @@ body {
     }
 }
 
+@media (max-width: 720px) {
+    .info-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    .product-shell {
+        flex-direction: column;
+    }
+
+    .breakdown-table {
+        min-width: 560px;
+    }
+}
+
 @media (max-width: 620px) {
     .brand {
         font-size: 20px;
@@ -419,24 +518,5 @@ body {
 
     .sidebar-nav {
         grid-template-columns: 1fr;
-    }
-
-    .details-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .value {
-        font-size: 15px;
-    }
-
-    .payment-status-select {
-        width: 100%;
-    }
-
-    .fulfillment-status-select,
-    .fulfillment-eta-input,
-    .fulfillment-location-input {
-        width: 100%;
-        min-width: 0;
     }
 }

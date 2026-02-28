@@ -58,6 +58,81 @@
     };
     const PSGC_API_BASE = "https://psgc.cloud/api/v2";
     const LOCATION_FETCH_TIMEOUT_MS = 15000;
+    const REGULAR_PLAN_PRICING_SOURCE = "flyer_regular_dp_2026_02";
+    const ALLOWED_REGULAR_MONTHS = ["6", "12", "18", "24"];
+    const REGULAR_PLAN_MATRIX = [
+        {
+            model: "ECONO350 MINI-II",
+            battery: "48V 20AH",
+            srp: 39000,
+            minDp: 1600,
+            monthly: { "6": 7215, "12": 4098, "18": 3060, "24": 2540 }
+        },
+        {
+            model: "ECONO 500MP",
+            battery: "60V 20AH",
+            srp: 51500,
+            minDp: 3000,
+            monthly: { "6": 9238, "12": 5196, "18": 3849, "24": 3175 }
+        },
+        {
+            model: "ECONO MP 650 48V",
+            battery: "48V 32AH",
+            srp: 62000,
+            minDp: 8000,
+            monthly: { "6": 10240, "12": 5740, "18": 4240, "24": 3490 }
+        },
+        {
+            model: "ECONO 800 MP II",
+            battery: "60V 20AH",
+            srp: 63500,
+            minDp: 9500,
+            monthly: { "6": 10240, "12": 5740, "18": 4240, "24": 3490 }
+        },
+        {
+            model: "ECAB 1000 V2",
+            battery: "60V 38AH",
+            srp: 90000,
+            minDp: 18000,
+            monthly: { "6": 13520, "12": 7520, "18": 5520, "24": 4520 }
+        },
+        {
+            model: "TRAVELLER 1500",
+            battery: "60V-38AH",
+            srp: 78000,
+            minDp: 13500,
+            monthly: { "6": 12153, "12": 6778, "18": 4987, "24": 4091 }
+        },
+        {
+            model: "BLITZ 2000 ADV",
+            battery: "72V 35AH Graphene",
+            srp: 68000,
+            minDp: 14000,
+            monthly: { "6": 10240, "12": 5740, "18": 4240, "24": 3490 }
+        }
+    ];
+    const MODEL_ALIAS_ENTRIES = [
+        ["ECONO350 MINI-II", "ECONO350 MINI-II"],
+        ["ECONO350 MINI II", "ECONO350 MINI-II"],
+        ["ECONO 350 MINI-II", "ECONO350 MINI-II"],
+        ["ECONO 350 MINI II", "ECONO350 MINI-II"],
+        ["ECONO 500MP", "ECONO 500MP"],
+        ["ECONO500 MP", "ECONO 500MP"],
+        ["ECONO 500 MP", "ECONO 500MP"],
+        ["ECONO MP 650 48V", "ECONO MP 650 48V"],
+        ["ECONO MP 650 48 V", "ECONO MP 650 48V"],
+        ["ECONO 650 MP", "ECONO MP 650 48V"],
+        ["ECONO 650 MP 48V", "ECONO MP 650 48V"],
+        ["ECONO 650 48V", "ECONO MP 650 48V"],
+        ["ECONO 650MP", "ECONO MP 650 48V"],
+        ["ECONO 800 MP II", "ECONO 800 MP II"],
+        ["ECAB 100V V2", "ECAB 1000 V2"],
+        ["ECAB 1000 V2", "ECAB 1000 V2"],
+        ["TRAVELLER 1500", "TRAVELLER 1500"],
+        ["TRAVELER 1500", "TRAVELLER 1500"],
+        ["BLITZ 2000", "BLITZ 2000 ADV"],
+        ["BLITZ 2000 ADV", "BLITZ 2000 ADV"]
+    ];
 
     const profileBtn = document.querySelector(".profile-menu .profile-btn");
     const dropdown = document.querySelector(".profile-menu .dropdown");
@@ -101,6 +176,98 @@
             headers.Authorization = "Bearer " + token;
         }
         return headers;
+    }
+
+    function normalizeModelKey(value) {
+        return String(value || "")
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, " ")
+            .trim()
+            .replace(/\s+/g, " ");
+    }
+
+    const REGULAR_PLAN_BY_KEY = REGULAR_PLAN_MATRIX.reduce(function (map, row) {
+        const key = normalizeModelKey(row.model);
+        if (key) {
+            map.set(key, row);
+        }
+        return map;
+    }, new Map());
+
+    const MODEL_ALIASES = MODEL_ALIAS_ENTRIES.reduce(function (map, entry) {
+        const alias = normalizeModelKey(entry[0]);
+        const canonical = String(entry[1] || "").trim();
+        if (alias && canonical) {
+            map.set(alias, canonical);
+        }
+        return map;
+    }, new Map());
+
+    function getDraftSrpValue(draft) {
+        const subtotal = Number(draft && draft.subtotal);
+        if (Number.isFinite(subtotal) && subtotal > 0) {
+            return Math.round(subtotal);
+        }
+
+        const total = Number(draft && draft.total);
+        const shippingFee = Number(draft && draft.shippingFee);
+        if (Number.isFinite(total) && total > 0 && Number.isFinite(shippingFee) && shippingFee >= 0) {
+            const computed = total - shippingFee;
+            if (computed > 0) {
+                return Math.round(computed);
+            }
+        }
+
+        if (Number.isFinite(total) && total > 0) {
+            return Math.round(total);
+        }
+
+        return 0;
+    }
+
+    function resolveRegularPlanForDraft(draft) {
+        const modelText = String(draft && draft.model || "").trim();
+        const modelKey = normalizeModelKey(modelText);
+        const srpValue = getDraftSrpValue(draft);
+        let row = null;
+
+        if (modelKey) {
+            const canonicalModel = MODEL_ALIASES.get(modelKey) || "";
+            if (canonicalModel) {
+                row = REGULAR_PLAN_BY_KEY.get(normalizeModelKey(canonicalModel)) || null;
+            }
+
+            if (!row) {
+                row = REGULAR_PLAN_BY_KEY.get(modelKey) || null;
+            }
+        }
+
+        if (!row && srpValue > 0) {
+            const candidates = REGULAR_PLAN_MATRIX.filter(function (entry) {
+                return Number(entry.srp) === srpValue;
+            });
+            if (candidates.length === 1) {
+                row = candidates[0];
+            }
+        }
+
+        return {
+            matched: !!row,
+            row: row,
+            inputModel: modelText,
+            inputSrp: srpValue
+        };
+    }
+
+    function formatInstallmentPeso(value) {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) {
+            return "-";
+        }
+        return String.fromCharCode(8369) + amount.toLocaleString("en-PH", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        });
     }
 
     function normalizeLocationText(value) {
@@ -1165,7 +1332,6 @@
 
     function setupStep1Notice() {
         const form = document.getElementById("installmentNoticeForm");
-        const reminderAgree = document.getElementById("photoReminderAgree");
         const error = document.getElementById("idStepError");
 
         if (!form) {
@@ -1180,31 +1346,25 @@
                 error.textContent = "";
             }
 
-            if (!reminderAgree || !reminderAgree.checked) {
-                if (error) {
-                    error.textContent = "Please confirm that you will bring a 2x2 picture.";
-                }
-                return;
-            }
-
             const timestamp = new Date().toISOString();
             const next = {
                 ...existing,
-                idType: "Manual 2x2 Picture Requirement",
+                idType: "Requirements Review",
                 kycFlowId: existing.kycFlowId || createKycFlowId(),
                 kycFlowStage: "face-verified",
                 idVerified: true,
                 idImageDataUrl: "",
                 idVerificationToken: "",
                 idVerificationSource: "manual-requirement",
-                idVerificationReason: "Customer reminded to bring a 2x2 picture.",
+                idVerificationReason: "Customer reviewed installment requirements.",
                 idVerifiedAt: timestamp,
                 faceVerified: true,
                 faceDistance: "",
                 faceVerifiedAt: timestamp,
                 identityVerifiedAt: timestamp,
                 termsAgree: true,
-                manualPhotoReminder: true
+                manualPhotoReminder: false,
+                requirementsReviewedAt: timestamp
             };
 
             setInstallmentFormData(next);
@@ -1484,6 +1644,15 @@
 
         const form = document.getElementById("installmentStep2Form");
         const error = document.getElementById("step2Error");
+        const planError = document.getElementById("step2PlanError");
+        const planPanel = document.getElementById("regularPlanPanel");
+        const selectedModelEl = document.getElementById("planSelectedModel");
+        const batteryEl = document.getElementById("planBattery");
+        const srpEl = document.getElementById("planSrp");
+        const minDpEl = document.getElementById("planMinDp");
+        const monthlyEl = document.getElementById("planMonthlyAmortization");
+        const monthsSelect = document.getElementById("monthsToPay");
+        const submitBtn = form ? form.querySelector("button[type='submit']") : null;
         if (!form) {
             return;
         }
@@ -1491,10 +1660,156 @@
         const seededData = seedStep2();
         setupStep2LocationSelectors(seededData);
 
+        const draft = getCheckoutDraft() || {};
+        const planState = {
+            matchStatus: "unknown_model_blocked",
+            row: null,
+            monthsToPay: "",
+            monthlyAmortization: 0
+        };
+
+        function setPlanField(target, text) {
+            if (!target) {
+                return;
+            }
+            target.textContent = text;
+        }
+
+        function setSubmitEnabled(enabled) {
+            if (!submitBtn) {
+                return;
+            }
+            submitBtn.disabled = !enabled;
+        }
+
+        function setPlanBlocked(message) {
+            planState.matchStatus = "unknown_model_blocked";
+            planState.row = null;
+            planState.monthsToPay = "";
+            planState.monthlyAmortization = 0;
+
+            if (planPanel) {
+                planPanel.classList.add("plan-blocked");
+            }
+            if (monthsSelect) {
+                monthsSelect.disabled = true;
+                monthsSelect.value = "";
+            }
+
+            setPlanField(selectedModelEl, String(draft.model || "").trim() || "-");
+            setPlanField(batteryEl, "-");
+            setPlanField(srpEl, getDraftSrpValue(draft) > 0 ? formatInstallmentPeso(getDraftSrpValue(draft)) : "-");
+            setPlanField(minDpEl, "-");
+            setPlanField(monthlyEl, "-");
+
+            if (planError) {
+                planError.textContent = message;
+            }
+            setSubmitEnabled(false);
+        }
+
+        function updateMonthlyPreview() {
+            if (!monthsSelect || !planState.row) {
+                return;
+            }
+
+            const months = String(monthsSelect.value || "").trim();
+            if (!ALLOWED_REGULAR_MONTHS.includes(months)) {
+                planState.monthsToPay = "";
+                planState.monthlyAmortization = 0;
+                setPlanField(monthlyEl, "-");
+                return;
+            }
+
+            const monthlyValue = Number(planState.row.monthly[months] || 0);
+            if (!Number.isFinite(monthlyValue) || monthlyValue <= 0) {
+                planState.monthsToPay = "";
+                planState.monthlyAmortization = 0;
+                setPlanField(monthlyEl, "-");
+                return;
+            }
+
+            planState.monthsToPay = months;
+            planState.monthlyAmortization = monthlyValue;
+            setPlanField(monthlyEl, formatInstallmentPeso(monthlyValue) + " / month");
+        }
+
+        function setPlanMatched(row) {
+            planState.matchStatus = "matched";
+            planState.row = row;
+
+            if (planPanel) {
+                planPanel.classList.remove("plan-blocked");
+            }
+            if (monthsSelect) {
+                monthsSelect.disabled = false;
+            }
+
+            setPlanField(selectedModelEl, row.model);
+            setPlanField(batteryEl, row.battery);
+            setPlanField(srpEl, formatInstallmentPeso(row.srp));
+            setPlanField(minDpEl, formatInstallmentPeso(row.minDp));
+
+            const existingMonths = String((seededData && seededData.monthsToPay) || (monthsSelect && monthsSelect.value) || "").trim();
+            const defaultMonths = ALLOWED_REGULAR_MONTHS.includes(existingMonths) ? existingMonths : "6";
+            if (monthsSelect) {
+                monthsSelect.value = defaultMonths;
+            }
+            updateMonthlyPreview();
+
+            if (planError) {
+                planError.textContent = "";
+            }
+            setSubmitEnabled(true);
+        }
+
+        const resolvedPlan = resolveRegularPlanForDraft(draft);
+        if (!resolvedPlan.matched || !resolvedPlan.row) {
+            setPlanBlocked("Installment rates for this model are not yet available online. Please contact Ecodrive branch.");
+        } else {
+            setPlanMatched(resolvedPlan.row);
+        }
+
+        if (monthsSelect) {
+            monthsSelect.addEventListener("change", function () {
+                if (planError && planState.matchStatus === "matched") {
+                    planError.textContent = "";
+                }
+                updateMonthlyPreview();
+            });
+        }
+
         form.addEventListener("submit", function (event) {
             event.preventDefault();
             if (error) {
                 error.textContent = "";
+            }
+            if (planError) {
+                planError.textContent = "";
+            }
+
+            if (planState.matchStatus !== "matched" || !planState.row) {
+                if (planError) {
+                    planError.textContent = "Installment rates for this model are not yet available online. Please contact Ecodrive branch.";
+                }
+                return;
+            }
+
+            if (!ALLOWED_REGULAR_MONTHS.includes(planState.monthsToPay)) {
+                if (planError) {
+                    planError.textContent = "Please select a valid installment plan month.";
+                }
+                if (monthsSelect) {
+                    monthsSelect.focus();
+                }
+                return;
+            }
+
+            if (!Number.isFinite(planState.monthlyAmortization) || planState.monthlyAmortization <= 0) {
+                if (planError) {
+                    planError.textContent = "Unable to compute monthly hulog for the selected plan.";
+                }
+                return;
             }
 
             const data = {
@@ -1513,7 +1828,7 @@
                 civilStatus: (document.getElementById("civilStatus").value || "").trim(),
                 dob: (document.getElementById("dob").value || "").trim(),
                 nationality: (document.getElementById("nationality").value || "").trim(),
-                monthsToPay: (document.getElementById("monthsToPay").value || "").trim()
+                monthsToPay: planState.monthsToPay
             };
 
             if (!data.firstName || !data.lastName || !data.gender || !data.age || !data.personalEmail || !data.province || !data.cellphone || !data.zipCode || !data.street || !data.city || !data.barangay || !data.civilStatus || !data.dob || !data.nationality || !data.monthsToPay) {
@@ -1533,7 +1848,15 @@
 
             const merged = {
                 ...getInstallmentFormData(),
-                ...data
+                ...data,
+                planType: "regular_down_payment",
+                pricingSource: REGULAR_PLAN_PRICING_SOURCE,
+                planModel: planState.row.model,
+                planBattery: planState.row.battery,
+                planSrp: Number(planState.row.srp || 0),
+                planMinDp: Number(planState.row.minDp || 0),
+                monthlyAmortization: Number(planState.monthlyAmortization || 0),
+                planMatchStatus: planState.matchStatus
             };
             setInstallmentFormData(merged);
             window.location.href = "installment-step3.html";

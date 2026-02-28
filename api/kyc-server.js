@@ -116,20 +116,20 @@ let smtpTransport = null;
 const DEFAULT_PRODUCT_CATALOG = [
     { model: "BLITZ 2000", price: 68000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 1.png", detailUrl: "/Userhomefolder/Ebikes/ebike1.0.html" },
     { model: "BLITZ 1200", price: 45000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 2.png", detailUrl: "/Userhomefolder/Ebikes/ebike2.0.html" },
-    { model: "FUN 1500 FI", price: 74000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html" },
-    { model: "CANDY 800", price: 58000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html" },
-    { model: "BLITZ 200R", price: 74000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html" },
-    { model: "TRAVELLER 1500", price: 79000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html" },
-    { model: "ECONO 500 MP", price: 51500, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html" },
-    { model: "ECONO 350 MINI-II", price: 58000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html" },
+    { model: "FUN 1500 FI", price: 24000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html" },
+    { model: "CANDY 800", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html" },
+    { model: "BLITZ 200R", price: 40000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html" },
+    { model: "TRAVELLER 1500", price: 78000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html" },
+    { model: "ECONO 500 MP", price: 51000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html" },
+    { model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html" },
     { model: "ECARGO 100", price: 72500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 9.png", detailUrl: "/Userhomefolder/Ebikes/ebike9.0.html" },
     { model: "ECONO 650 MP", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 10.png", detailUrl: "/Userhomefolder/Ebikes/ebike10.0.html" },
     { model: "ECAB 100V V2", price: 51500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 11.png", detailUrl: "/Userhomefolder/Ebikes/ebike11.0.html" },
     { model: "ECONO 800 MP II", price: 67000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 12.png", detailUrl: "/Userhomefolder/Ebikes/ebike12.0.html" },
-    { model: "E-CARGO 800", price: 205000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html" },
+    { model: "E-CARGO 800", price: 65000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html" },
     { model: "E-CAB MAX 1500", price: 130000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html" },
     { model: "E-CAB 1000", price: 75000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html" },
-    { model: "ECONO 800 MP", price: 100000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html" }
+    { model: "ECONO 800 MP", price: 60000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html" }
 ];
 const MAX_PRODUCT_IMAGE_DATA_URL_LENGTH = 3 * 1024 * 1024;
 const MAX_BOOKINGS_PER_DAY = 5;
@@ -516,8 +516,12 @@ function isSmsDeliveryConfigured() {
     return isSemaphoreConfigured() || isSmsWebhookConfigured();
 }
 
+function stripInvisibleIdentifierChars(value) {
+    return String(value || "").replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "");
+}
+
 function normalizeAdminLoginId(value) {
-    return String(value || "").trim().toLowerCase();
+    return stripInvisibleIdentifierChars(value).trim().toLowerCase();
 }
 
 function isValidAdminLoginId(value) {
@@ -1125,6 +1129,8 @@ async function ensureDbSchema() {
                 values
             );
         }
+
+        await reconcileProductCategories(pool);
 
         await pool.execute(
             `CREATE TABLE IF NOT EXISTS chat_threads (
@@ -1812,21 +1818,66 @@ function normalizeProductModel(value) {
     return normalizeText(value).slice(0, 180);
 }
 
-function normalizeProductCategory(value) {
+function parseWheelCategory(value) {
     const raw = normalizeText(value).toLowerCase();
     if (!raw) {
-        return "Other";
+        return "";
     }
-    if (raw.includes("2")) {
+    const compact = raw.replace(/[\s_-]+/g, "");
+    if (compact === "2wheel" || compact === "2wheels") {
         return "2-Wheel";
     }
-    if (raw.includes("3")) {
+    if (compact === "3wheel" || compact === "3wheels") {
         return "3-Wheel";
     }
-    if (raw.includes("4")) {
+    if (compact === "4wheel" || compact === "4wheels") {
         return "4-Wheel";
     }
-    return "Other";
+    if (compact === "other") {
+        return "Other";
+    }
+    return "";
+}
+
+function inferCategoryFromDetailUrl(detailUrl) {
+    const raw = String(detailUrl || "").trim();
+    if (!raw) {
+        return "";
+    }
+    const match = raw.match(/ebike(\d+)\.0\.html/i);
+    if (!match) {
+        return "";
+    }
+    const bikeId = Number(match[1]);
+    if (!Number.isFinite(bikeId)) {
+        return "";
+    }
+    if (bikeId >= 1 && bikeId <= 5) {
+        return "2-Wheel";
+    }
+    if (bikeId === 6) {
+        return "4-Wheel";
+    }
+    if (bikeId === 8) {
+        return "2-Wheel";
+    }
+    if (bikeId >= 7 && bikeId <= 16) {
+        return "3-Wheel";
+    }
+    return "";
+}
+
+function resolveProductCategory(rawCategory, detailUrl) {
+    const fromDetail = inferCategoryFromDetailUrl(detailUrl);
+    if (fromDetail) {
+        return fromDetail;
+    }
+    const parsed = parseWheelCategory(rawCategory);
+    return parsed || "Other";
+}
+
+function normalizeProductCategory(value, detailUrl) {
+    return resolveProductCategory(value, detailUrl);
 }
 
 function normalizeProductPrice(value) {
@@ -2049,18 +2100,75 @@ function hasReachedDailyBookingLimit(count) {
 }
 
 function mapProductRow(row) {
+    const detailUrl = normalizeProductUrl(row.detail_url || "");
     return {
         id: Number(row.id || 0),
         model: String(row.model || "Ecodrive E-Bike"),
         price: Number(row.price || 0),
-        category: String(row.category || "Other"),
+        category: resolveProductCategory(row.category, detailUrl),
         info: String(row.product_info || ""),
         imageUrl: String(row.image_url || ""),
-        detailUrl: String(row.detail_url || ""),
+        detailUrl: detailUrl,
         isActive: Number(row.is_active || 0) > 0,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
     };
+}
+
+async function reconcileProductCategories(pool) {
+    try {
+        const [rows] = await pool.execute(
+            `SELECT id, model, category, detail_url
+             FROM products`
+        );
+        const list = Array.isArray(rows) ? rows : [];
+        let corrected = 0;
+        let skippedConflicts = 0;
+        for (const row of list) {
+            const productId = Number(row && row.id || 0);
+            if (!Number.isFinite(productId) || productId < 1) {
+                continue;
+            }
+            const model = normalizeProductModel(row && row.model);
+            const currentCategory = parseWheelCategory(row && row.category) || "Other";
+            const targetCategory = resolveProductCategory(row && row.category, row && row.detail_url);
+            if (currentCategory === targetCategory) {
+                continue;
+            }
+
+            const [conflicts] = await pool.execute(
+                `SELECT id
+                 FROM products
+                 WHERE model = ?
+                   AND category = ?
+                   AND id <> ?
+                 LIMIT 1`,
+                [model, targetCategory, productId]
+            );
+            if (Array.isArray(conflicts) && conflicts.length > 0) {
+                skippedConflicts += 1;
+                console.warn(
+                    `[db-products] Category reconcile skipped (conflict): id=${productId}, model=${model}, target=${targetCategory}`
+                );
+                continue;
+            }
+
+            await pool.execute(
+                `UPDATE products
+                 SET category = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [targetCategory, productId]
+            );
+            corrected += 1;
+        }
+
+        console.info(
+            `[db-products] Category reconcile complete: scanned=${list.length}, corrected=${corrected}, skipped_conflicts=${skippedConflicts}`
+        );
+    } catch (error) {
+        console.warn("[db-products] Unable to reconcile product categories:", error.message || error);
+    }
 }
 
 function mapBookingRow(row) {
@@ -2072,6 +2180,50 @@ function mapBookingRow(row) {
             installment = null;
         }
     }
+    const explicitInstallmentAccountStatus = normalizeText(
+        installment && (installment.accountStatus || installment.account_status)
+    ).slice(0, 80);
+    const installmentMonthsRaw = Number(
+        installment && (installment.monthsToPay || installment.months || installment.installmentMonths || 0)
+    );
+    const installmentMonths = Number.isFinite(installmentMonthsRaw) && installmentMonthsRaw > 0
+        ? Math.floor(installmentMonthsRaw)
+        : 0;
+    const installmentPaidRaw = Number(
+        installment && (
+            installment.paidInstallments
+            || installment.paidCount
+            || installment.monthsPaid
+            || installment.installmentsPaid
+            || 0
+        )
+    );
+    const installmentPaidCountFromFields = Number.isFinite(installmentPaidRaw) && installmentPaidRaw > 0
+        ? Math.floor(installmentPaidRaw)
+        : 0;
+    const installmentPaidCountFromHistory = Array.isArray(installment && installment.paymentHistory)
+        ? installment.paymentHistory.filter((entry) => {
+            const monthRaw = Number(entry && (entry.month || entry.installmentMonth) || 0);
+            const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+            const status = String(entry && entry.status || "").toLowerCase();
+            return month > 0 && status.includes("paid");
+        }).length
+        : 0;
+    const installmentPaidCount = Math.max(
+        installmentPaidCountFromFields,
+        installmentPaidCountFromHistory
+    );
+    let derivedInstallmentAccountStatus = "";
+    if (installment && installmentMonths > 0) {
+        if (installmentPaidCount >= installmentMonths) {
+            derivedInstallmentAccountStatus = "Installment Completed";
+        } else if (installmentPaidCount > 0) {
+            derivedInstallmentAccountStatus = "Installment Active";
+        } else {
+            derivedInstallmentAccountStatus = "Awaiting First Installment";
+        }
+    }
+    const installmentAccountStatus = explicitInstallmentAccountStatus || derivedInstallmentAccountStatus;
 
     return {
         id: Number(row.id || 0),
@@ -2114,6 +2266,8 @@ function mapBookingRow(row) {
             : null,
         shippingMapEmbedUrl: String(row.shipping_map_embed_url || ""),
         userEmail: String(row.user_email || ""),
+        accountStatus: installmentAccountStatus || "Active",
+        customerAccountStatus: installmentAccountStatus || "Active",
         reviewedAt: row.reviewed_at || null,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null,
@@ -2851,37 +3005,38 @@ async function handleLogin(req, res) {
         if (!enforceRateLimit(req, res, "login", loginId, LOGIN_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
             return;
         }
-        if (
-            adminCredentials &&
-            loginId === adminCredentials.loginId &&
-            verifyPassword(password, adminCredentials.passwordHash)
-        ) {
-            const adminUser = {
-                id: 0,
-                name: "Admin",
-                email: adminCredentials.loginId,
-                role: "admin",
-                status: "active"
-            };
-            const authSession = createAuthSession(adminUser);
-            sendJson(res, 200, {
-                success: true,
-                user: adminUser,
-                ...getAuthResponse(authSession)
-            });
-            return;
-        }
+        if (adminCredentials && loginId === adminCredentials.loginId) {
+            if (verifyPassword(password, adminCredentials.passwordHash)) {
+                const adminUser = {
+                    id: 0,
+                    name: "Admin",
+                    email: adminCredentials.loginId,
+                    role: "admin",
+                    status: "active"
+                };
+                const authSession = createAuthSession(adminUser);
+                sendJson(res, 200, {
+                    success: true,
+                    user: adminUser,
+                    ...getAuthResponse(authSession)
+                });
+                return;
+            }
 
-        if (!adminCredentials && !isValidEmail(loginId)) {
-            sendJson(res, 503, {
-                success: false,
-                message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
-            });
+            sendJson(res, 401, { success: false, message: "Invalid email/username or password." });
             return;
         }
 
         if (!isValidEmail(loginId)) {
-            sendJson(res, 400, { success: false, message: "Please enter a valid email address or the admin username." });
+            if (!adminCredentials) {
+                sendJson(res, 503, {
+                    success: false,
+                    message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
+                });
+                return;
+            }
+
+            sendJson(res, 401, { success: false, message: "Invalid email/username or password." });
             return;
         }
 
@@ -2896,7 +3051,7 @@ async function handleLogin(req, res) {
 
         const user = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!user) {
-            sendJson(res, 401, { success: false, message: "Invalid email or password." });
+            sendJson(res, 401, { success: false, message: "Invalid email/username or password." });
             return;
         }
 
@@ -2910,7 +3065,7 @@ async function handleLogin(req, res) {
 
         const validPassword = verifyPassword(password, user.password_hash);
         if (!validPassword) {
-            sendJson(res, 401, { success: false, message: "Invalid email or password." });
+            sendJson(res, 401, { success: false, message: "Invalid email/username or password." });
             return;
         }
 
@@ -4827,16 +4982,303 @@ async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
     }
 }
 
+async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
+    try {
+        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const normalizedOrderId = normalizeOrderId(orderId, false);
+        if (!normalizedOrderId) {
+            sendJson(res, 400, { success: false, message: "Invalid booking order id." });
+            return;
+        }
+
+        const body = await readBody(_req);
+        const requestedMonthRaw = Number(
+            body.month || body.monthNumber || body.installmentMonth || 0
+        );
+        let requestedMonth = Number.isFinite(requestedMonthRaw)
+            ? Math.floor(requestedMonthRaw)
+            : 0;
+
+        const pool = await getDbPool();
+        const [beforeRows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const beforeRow = beforeRows[0];
+        const mergedBeforeStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
+        if (mergedBeforeStatus.includes("reject") || mergedBeforeStatus.includes("cancel")) {
+            sendJson(res, 409, { success: false, message: "Rejected or cancelled bookings cannot be updated." });
+            return;
+        }
+
+        let installment = {};
+        if (beforeRow.installment_payload) {
+            try {
+                const parsed = JSON.parse(beforeRow.installment_payload);
+                if (parsed && typeof parsed === "object") {
+                    installment = parsed;
+                }
+            } catch (_error) {
+                installment = {};
+            }
+        }
+
+        const serviceText = String(beforeRow.service_type || "").toLowerCase();
+        const paymentText = String(beforeRow.payment_method || "").toLowerCase();
+        const isInstallmentBooking = serviceText.includes("installment")
+            || paymentText.includes("installment")
+            || Object.keys(installment).length > 0;
+        if (!isInstallmentBooking) {
+            sendJson(res, 409, { success: false, message: "This booking is not an installment booking." });
+            return;
+        }
+
+        const monthsRaw = Number(
+            installment.monthsToPay || installment.months || installment.installmentMonths || 0
+        );
+        const monthsToPay = Number.isFinite(monthsRaw) && monthsRaw > 0
+            ? Math.floor(monthsRaw)
+            : 0;
+        if (monthsToPay < 1) {
+            sendJson(res, 409, { success: false, message: "Installment month plan is missing for this booking." });
+            return;
+        }
+
+        const minDp = parseAmount(
+            installment.planMinDp
+            || installment.minDp
+            || installment.downPayment
+            || installment.dp
+        );
+        const bookingTotal = parseAmount(beforeRow.total || 0);
+        const fallbackMonthly = monthsToPay > 0
+            ? parseAmount(Math.max((bookingTotal - minDp) / monthsToPay, 0))
+            : 0;
+        const monthlyAmount = parseAmount(
+            installment.monthlyAmortization
+            || installment.monthlyAmount
+            || installment.monthlyPayment
+            || installment.monthly
+            || fallbackMonthly
+        );
+        if (!(monthlyAmount > 0)) {
+            sendJson(res, 409, { success: false, message: "Monthly installment amount is unavailable for this booking." });
+            return;
+        }
+
+        const sourceHistory = Array.isArray(installment.paymentHistory)
+            ? installment.paymentHistory
+            : [];
+        const normalizedHistory = sourceHistory
+            .map((entry) => {
+                if (!entry || typeof entry !== "object") {
+                    return null;
+                }
+                const monthRaw = Number(entry.month || entry.installmentMonth || 0);
+                const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+                if (month < 1 || month > monthsToPay) {
+                    return null;
+                }
+                const status = normalizeText(entry.status || "Paid") || "Paid";
+                const paidAt = entry.paidAt || entry.updatedAt || entry.createdAt || null;
+                const amount = parseAmount(
+                    entry.amount
+                    || entry.value
+                    || entry.monthlyAmount
+                    || monthlyAmount
+                );
+                return {
+                    month: month,
+                    amount: amount,
+                    status: status,
+                    paidAt: paidAt
+                };
+            })
+            .filter(Boolean);
+
+        const paidMonths = new Set();
+        normalizedHistory.forEach((entry) => {
+            if (String(entry.status || "").toLowerCase().includes("paid")) {
+                paidMonths.add(Number(entry.month));
+            }
+        });
+
+        const legacyPaidCountRaw = Number(
+            installment.paidInstallments
+            || installment.paidCount
+            || installment.monthsPaid
+            || installment.installmentsPaid
+            || 0
+        );
+        const legacyPaidCount = Number.isFinite(legacyPaidCountRaw) && legacyPaidCountRaw > 0
+            ? Math.min(monthsToPay, Math.floor(legacyPaidCountRaw))
+            : 0;
+        for (let monthIndex = 1; monthIndex <= legacyPaidCount; monthIndex += 1) {
+            paidMonths.add(monthIndex);
+        }
+
+        if (requestedMonth < 1 || requestedMonth > monthsToPay) {
+            requestedMonth = 0;
+            for (let monthIndex = 1; monthIndex <= monthsToPay; monthIndex += 1) {
+                if (!paidMonths.has(monthIndex)) {
+                    requestedMonth = monthIndex;
+                    break;
+                }
+            }
+        }
+
+        if (requestedMonth < 1) {
+            sendJson(res, 200, {
+                success: true,
+                message: "All installment months are already marked as paid.",
+                booking: mapBookingRow(beforeRow)
+            });
+            return;
+        }
+
+        if (paidMonths.has(requestedMonth)) {
+            sendJson(res, 200, {
+                success: true,
+                message: `Month ${requestedMonth} is already marked as paid.`,
+                booking: mapBookingRow(beforeRow)
+            });
+            return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const nextHistory = normalizedHistory.filter((entry) => Number(entry.month) !== requestedMonth);
+        nextHistory.push({
+            month: requestedMonth,
+            amount: monthlyAmount,
+            status: "Paid",
+            paidAt: nowIso
+        });
+        nextHistory.sort((a, b) => Number(a.month || 0) - Number(b.month || 0));
+
+        const nextPaidMonths = new Set(paidMonths);
+        nextPaidMonths.add(requestedMonth);
+        const paidInstallments = Math.min(monthsToPay, nextPaidMonths.size);
+
+        const paidAmountByMonth = new Map();
+        nextHistory.forEach((entry) => {
+            if (!String(entry.status || "").toLowerCase().includes("paid")) {
+                return;
+            }
+            const month = Number(entry.month || 0);
+            if (month < 1 || month > monthsToPay) {
+                return;
+            }
+            paidAmountByMonth.set(month, parseAmount(entry.amount || monthlyAmount));
+        });
+        Array.from(nextPaidMonths).forEach((month) => {
+            if (!paidAmountByMonth.has(month)) {
+                paidAmountByMonth.set(month, monthlyAmount);
+            }
+        });
+        const totalPaid = parseAmount(
+            Array.from(paidAmountByMonth.values()).reduce((sum, amount) => sum + parseAmount(amount), 0)
+        );
+
+        let accountStatus = "Awaiting First Installment";
+        if (paidInstallments >= monthsToPay) {
+            accountStatus = "Installment Completed";
+        } else if (paidInstallments > 0) {
+            accountStatus = "Installment Active";
+        }
+
+        const firstPaidHistory = nextHistory.find((entry) => Number(entry.month) === 1 && String(entry.status || "").toLowerCase().includes("paid"));
+        const nextInstallment = Object.assign({}, installment, {
+            monthsToPay: monthsToPay,
+            installmentMonths: monthsToPay,
+            monthlyAmortization: monthlyAmount,
+            monthlyAmount: monthlyAmount,
+            monthlyPayment: monthlyAmount,
+            planMinDp: minDp,
+            paymentHistory: nextHistory,
+            paidInstallments: paidInstallments,
+            paidCount: paidInstallments,
+            monthsPaid: paidInstallments,
+            installmentsPaid: paidInstallments,
+            totalPaid: totalPaid,
+            paidAmount: totalPaid,
+            totalPaidAmount: totalPaid,
+            accountStatus: accountStatus,
+            lastPaymentMonth: requestedMonth,
+            lastPaymentAt: nowIso,
+            firstInstallmentPaidAt: (
+                installment.firstInstallmentPaidAt
+                || (firstPaidHistory && firstPaidHistory.paidAt)
+                || (requestedMonth === 1 ? nowIso : "")
+            )
+        });
+
+        const nextPaymentStatus = paidInstallments >= monthsToPay
+            ? "paid"
+            : "installment_review";
+
+        const [updateResult] = await pool.execute(
+            `UPDATE bookings
+             SET installment_payload = ?,
+                 payment_status = ?,
+                 updated_at = NOW()
+             WHERE order_id = ?`,
+            [
+                JSON.stringify(nextInstallment),
+                nextPaymentStatus,
+                normalizedOrderId
+            ]
+        );
+        if (!updateResult || Number(updateResult.affectedRows || 0) < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(rows) || rows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const completionMessage = paidInstallments >= monthsToPay
+            ? "All installments are now paid. Account status updated to Installment Completed."
+            : (requestedMonth === 1
+                ? "First installment marked as paid. Account status updated to Installment Active."
+                : `Installment month ${requestedMonth} marked as paid.`);
+
+        sendJson(res, 200, {
+            success: true,
+            message: completionMessage,
+            booking: mapBookingRow(rows[0])
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to update installment payment." });
+    }
+}
+
 function getProductCategoryFilter(parsedUrl) {
     const raw = String(parsedUrl.searchParams.get("category") || "").trim();
     if (!raw) {
         return "";
     }
-    const normalized = normalizeProductCategory(raw);
-    if (normalized === "Other" && raw.toLowerCase() !== "other") {
-        return "";
-    }
-    return normalized;
+    return parseWheelCategory(raw);
 }
 
 async function fetchProductById(pool, productId) {
@@ -4923,10 +5365,10 @@ async function handleAdminCreateProduct(req, res) {
         const body = await readBody(req);
         const model = normalizeProductModel(body.model);
         const price = normalizeProductPrice(body.price);
-        const category = normalizeProductCategory(body.category);
         const productInfo = normalizeProductInfo(body.info || body.productInfo || body.description);
         const imageUrl = normalizeProductImage(body.imageUrl || body.image || body.image_url);
         const detailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
+        const category = normalizeProductCategory(body.category, detailUrl);
         const isActive = normalizeOptionalBoolean(body.isActive, true) ? 1 : 0;
 
         if (model.length < 2) {
@@ -4989,6 +5431,13 @@ async function handleAdminUpdateProduct(req, res, productId) {
         }
 
         const body = await readBody(req);
+        const pool = await getDbPool();
+        const currentProduct = await fetchProductById(pool, id);
+        if (!currentProduct) {
+            sendJson(res, 404, { success: false, message: "Product not found." });
+            return;
+        }
+
         const updates = [];
         const params = [];
 
@@ -5012,11 +5461,6 @@ async function handleAdminUpdateProduct(req, res, productId) {
             params.push(price);
         }
 
-        if (Object.prototype.hasOwnProperty.call(body, "category")) {
-            updates.push("category = ?");
-            params.push(normalizeProductCategory(body.category));
-        }
-
         const hasInfoField = ["info", "productInfo", "description"].some((key) => Object.prototype.hasOwnProperty.call(body, key));
         if (hasInfoField) {
             const productInfo = normalizeProductInfo(body.info || body.productInfo || body.description);
@@ -5035,11 +5479,19 @@ async function handleAdminUpdateProduct(req, res, productId) {
             params.push(imageUrl || null);
         }
 
+        const hasCategoryField = Object.prototype.hasOwnProperty.call(body, "category");
         const hasDetailField = ["detailUrl", "detailsUrl", "detail_url"].some((key) => Object.prototype.hasOwnProperty.call(body, key));
+        let nextDetailUrl = normalizeProductUrl(currentProduct.detailUrl || "");
         if (hasDetailField) {
-            const detailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
+            nextDetailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
             updates.push("detail_url = ?");
-            params.push(detailUrl || null);
+            params.push(nextDetailUrl || null);
+        }
+        if (hasCategoryField || hasDetailField) {
+            const categoryInput = hasCategoryField ? body.category : currentProduct.category;
+            const category = normalizeProductCategory(categoryInput, nextDetailUrl);
+            updates.push("category = ?");
+            params.push(category);
         }
 
         if (Object.prototype.hasOwnProperty.call(body, "isActive")) {
@@ -5052,7 +5504,6 @@ async function handleAdminUpdateProduct(req, res, productId) {
             return;
         }
 
-        const pool = await getDbPool();
         params.push(id);
         const [result] = await pool.execute(
             `UPDATE products
@@ -5431,6 +5882,7 @@ const server = http.createServer(async (req, res) => {
             ok: true,
             service: "ecodrive-api",
             dbConfigured: isDbConfigured(),
+            adminAuthConfigured: Boolean(getAdminCredentials()),
             smtpConfigured: isSmtpConfigured(),
             smsConfigured: isSmsDeliveryConfigured(),
             smsMode: isSemaphoreConfigured()
@@ -5572,6 +6024,16 @@ const server = http.createServer(async (req, res) => {
             req,
             res,
             decodeURIComponent(adminBookingPaymentStatusMatch[1])
+        );
+        return;
+    }
+
+    const adminBookingInstallmentMarkPaidMatch = pathname.match(/^\/api\/admin\/bookings\/([^/]+)\/installment\/mark-paid$/);
+    if (req.method === "POST" && adminBookingInstallmentMarkPaidMatch) {
+        await handleAdminInstallmentMarkPaid(
+            req,
+            res,
+            decodeURIComponent(adminBookingInstallmentMarkPaidMatch[1])
         );
         return;
     }

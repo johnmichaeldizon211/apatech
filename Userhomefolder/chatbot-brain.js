@@ -4,20 +4,20 @@
     var DEFAULT_BIKE_CATALOG = [
         { model: "BLITZ 2000", price: 68000, category: "2-Wheel", aliases: ["blitz 2000"] },
         { model: "BLITZ 1200", price: 45000, category: "2-Wheel", aliases: ["blitz 1200"] },
-        { model: "FUN 1500 FI", price: 74000, category: "2-Wheel", aliases: ["fun 1500 fi", "fun 1500"] },
-        { model: "CANDY 800", price: 58000, category: "2-Wheel", aliases: ["candy 800"] },
-        { model: "BLITZ 200R", price: 74000, category: "2-Wheel", aliases: ["blitz 200r"] },
-        { model: "TRAVELLER 1500", price: 79000, category: "2-Wheel", aliases: ["traveller 1500", "traveler 1500"] },
-        { model: "ECONO 500 MP", price: 51500, category: "2-Wheel", aliases: ["econo 500 mp"] },
-        { model: "ECONO 350 MINI-II", price: 58000, category: "2-Wheel", aliases: ["econo 350 mini ii", "econo 350 mini", "mini ii"] },
+        { model: "FUN 1500 FI", price: 24000, category: "2-Wheel", aliases: ["fun 1500 fi", "fun 1500"] },
+        { model: "CANDY 800", price: 39000, category: "2-Wheel", aliases: ["candy 800"] },
+        { model: "BLITZ 200R", price: 40000, category: "2-Wheel", aliases: ["blitz 200r"] },
+        { model: "TRAVELLER 1500", price: 78000, category: "2-Wheel", aliases: ["traveller 1500", "traveler 1500"] },
+        { model: "ECONO 500 MP", price: 51000, category: "2-Wheel", aliases: ["econo 500 mp"] },
+        { model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", aliases: ["econo 350 mini ii", "econo 350 mini", "mini ii"] },
         { model: "ECARGO 100", price: 72500, category: "3-Wheel", aliases: ["ecargo 100", "e cargo 100"] },
         { model: "ECONO 650 MP", price: 65000, category: "3-Wheel", aliases: ["econo 650 mp"] },
         { model: "ECAB 100V V2", price: 51500, category: "3-Wheel", aliases: ["ecab 100v v2", "ecab 1000 ii", "ecab v2"] },
         { model: "ECONO 800 MP II", price: 67000, category: "3-Wheel", aliases: ["econo 800 mp ii", "econo 800 mp 2"] },
-        { model: "E-CARGO 800", price: 205000, category: "4-Wheel", aliases: ["e cargo 800", "ecargo 800"] },
+        { model: "E-CARGO 800", price: 65000, category: "4-Wheel", aliases: ["e cargo 800", "ecargo 800"] },
         { model: "E-CAB MAX 1500", price: 130000, category: "4-Wheel", aliases: ["e cab max 1500", "ecab max 1500", "traveler 1500 4 wheel", "traveller 1500 4 wheel"] },
         { model: "E-CAB 1000", price: 75000, category: "4-Wheel", aliases: ["e cab 1000", "ecab 1000"] },
-        { model: "ECONO 800 MP", price: 100000, category: "4-Wheel", aliases: ["econo 800 mp"] }
+        { model: "ECONO 800 MP", price: 60000, category: "4-Wheel", aliases: ["econo 800 mp"] }
     ];
 
     var PRODUCT_STORAGE_KEY = "ecodrive_product_catalog";

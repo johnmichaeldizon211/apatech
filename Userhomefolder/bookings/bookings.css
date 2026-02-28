@@ -220,6 +220,19 @@ body {
     color: #b32b2b;
 }
 
+.table-row .total-wrap {
+    display: grid;
+    gap: 1px;
+}
+
+.table-row .total-note {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1f4c98;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+}
+
 .service-pill {
     display: inline-flex;
     align-items: center;

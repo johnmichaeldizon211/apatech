@@ -81,21 +81,66 @@ document.addEventListener("DOMContentLoaded", function () {
         return String(value || "").trim().replace(/\s+/g, " ");
     }
 
-    function normalizeCategory(value) {
-        const raw = String(value || "").trim().toLowerCase();
+    function parseWheelCategory(value) {
+        const raw = normalizeText(value).toLowerCase();
         if (!raw) {
-            return "Other";
+            return "";
         }
-        if (raw.includes("2")) {
+        const compact = raw.replace(/[\s_-]+/g, "");
+        if (compact === "2wheel" || compact === "2wheels") {
             return "2-Wheel";
         }
-        if (raw.includes("3")) {
+        if (compact === "3wheel" || compact === "3wheels") {
             return "3-Wheel";
         }
-        if (raw.includes("4")) {
+        if (compact === "4wheel" || compact === "4wheels") {
             return "4-Wheel";
         }
-        return "Other";
+        if (compact === "other") {
+            return "Other";
+        }
+        return "";
+    }
+
+    function inferCategoryFromDetailUrl(detailUrl) {
+        const raw = String(detailUrl || "").trim();
+        if (!raw) {
+            return "";
+        }
+        const match = raw.match(/ebike(\d+)\.0\.html/i);
+        if (!match) {
+            return "";
+        }
+        const bikeId = Number(match[1]);
+        if (!Number.isFinite(bikeId)) {
+            return "";
+        }
+        if (bikeId >= 1 && bikeId <= 5) {
+            return "2-Wheel";
+        }
+        if (bikeId === 6) {
+            return "4-Wheel";
+        }
+        if (bikeId === 8) {
+            return "2-Wheel";
+        }
+        if (bikeId >= 7 && bikeId <= 16) {
+            return "3-Wheel";
+        }
+        return "";
+    }
+
+    function resolveCategory(rawCategory, detailUrl) {
+        const fromDetail = inferCategoryFromDetailUrl(detailUrl);
+        if (fromDetail) {
+            return fromDetail;
+        }
+        const parsed = parseWheelCategory(rawCategory);
+        return parsed || "Other";
+    }
+
+    function normalizeCategory(value) {
+        return parseWheelCategory(value) || "Other";
     }
 
     function parsePrice(value) {
@@ -200,15 +245,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const parsedPrice = parsePrice(source.price);
         const info = normalizeText(source.info || source.productInfo || source.description).slice(0, 255);
         const detailUrl = String(source.detailUrl || source.detailsUrl || source.detail_url || "").trim();
+        const normalizedDetailUrl = resolveAssetPath(detailUrl);
 
         return {
             id: id,
             model: model,
             price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
-            category: normalizeCategory(source.category),
+            category: resolveCategory(source.category, normalizedDetailUrl || detailUrl),
             info: info,
             imageUrl: resolveAssetPath(imageUrl || "/Userhomefolder/image 1.png"),
-            detailUrl: resolveAssetPath(detailUrl),
+            detailUrl: normalizedDetailUrl,
             isActive: toIsActive(source.isActive),
             createdAt: createdAt || null
         };
@@ -1008,12 +1054,13 @@ document.addEventListener("DOMContentLoaded", function () {
         setAddStatus("", "");
 
         const model = normalizeText(modelInput.value).slice(0, 180);
-        const category = normalizeCategory(categoryInput.value);
+        const selectedCategory = categoryInput.value;
         const price = parsePrice(priceInput.value);
         const info = normalizeText(infoInput.value).slice(0, 255);
         const selectedImageFile = imageFileInput.files && imageFileInput.files[0] ? imageFileInput.files[0] : null;
         let imageUrl = resolveAssetPath(String(imageInput.value || "").trim() || "/Userhomefolder/image 1.png");
         const detailUrl = normalizeText(detailInput.value).slice(0, 255);
+        const category = resolveCategory(selectedCategory, detailUrl);
 
         if (model.length < 2) {
             setAddStatus("Model name is required.", "error");
@@ -1188,3 +1235,4 @@ document.addEventListener("DOMContentLoaded", function () {
 
     void init();
 });
+

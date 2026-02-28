@@ -70,6 +70,9 @@
 
         // When frontend is opened from local static server, prefer deployed API host.
         if (isLocalHost(currentHost)) {
+            if (trimSlashes(storedBase) === trimSlashes(DEFAULT_REMOTE_API_BASE)) {
+                return true;
+            }
             return isLocalApiBase(storedBase);
         }
 
@@ -104,7 +107,7 @@
             return fromWindow;
         }
         if (global.location && isLocalHost(global.location.hostname)) {
-            return DEFAULT_REMOTE_API_BASE;
+            return DEFAULT_LOCAL_API_BASE;
         }
         return getCurrentOrigin() || DEFAULT_REMOTE_API_BASE;
     }
@@ -306,6 +309,80 @@
         return url.startsWith(base + "/api/");
     }
 
+    function getRequestUrl(input) {
+        if (typeof input === "string") {
+            return input;
+        }
+        if (input && typeof input.url === "string") {
+            return input.url;
+        }
+        return "";
+    }
+
+    function buildRemoteFallbackUrl(input) {
+        var remoteBase = trimSlashes(DEFAULT_REMOTE_API_BASE);
+        if (!remoteBase) {
+            return "";
+        }
+
+        var requestUrl = getRequestUrl(input);
+        if (!requestUrl) {
+            return "";
+        }
+
+        if (requestUrl.startsWith("/api/")) {
+            return remoteBase + requestUrl;
+        }
+
+        var apiBase = trimSlashes(getApiBase());
+        if (apiBase && requestUrl.startsWith(apiBase + "/api/")) {
+            return remoteBase + requestUrl.slice(apiBase.length);
+        }
+
+        var absoluteUrl = "";
+        try {
+            absoluteUrl = String(new URL(requestUrl, global.location && global.location.href ? global.location.href : remoteBase));
+        } catch (_error) {
+            return "";
+        }
+
+        try {
+            var parsed = new URL(absoluteUrl);
+            if (isLocalHost(parsed.hostname) && parsed.pathname.indexOf("/api/") === 0) {
+                return remoteBase + parsed.pathname + parsed.search;
+            }
+        } catch (_error) {
+            return "";
+        }
+
+        return "";
+    }
+
+    function shouldAttemptRemoteFallback(input) {
+        if (typeof input !== "string") {
+            return false;
+        }
+        if (!isLocalApiBase(getApiBase())) {
+            return false;
+        }
+        return Boolean(buildRemoteFallbackUrl(input));
+    }
+
+    function isLikelyNetworkError(error) {
+        if (!error) {
+            return false;
+        }
+        var message = String(error && error.message || "").toLowerCase();
+        var name = String(error && error.name || "").toLowerCase();
+        return (
+            name === "typeerror"
+            || message.indexOf("failed to fetch") !== -1
+            || message.indexOf("networkerror") !== -1
+            || message.indexOf("network request failed") !== -1
+            || message.indexOf("load failed") !== -1
+        );
+    }
+
     function shouldBePublicPage(pathname) {
         var path = String(pathname || "").toLowerCase();
         return (
@@ -397,13 +474,24 @@
                 headers.set("Authorization", "Bearer " + token);
             }
             requestInit.headers = headers;
+            var fallbackUrl = shouldAttemptRemoteFallback(input) ? buildRemoteFallbackUrl(input) : "";
 
-            return originalFetch(input, requestInit).then(function (response) {
-                if (response.status === 401 && !shouldBePublicPage(global.location && global.location.pathname)) {
-                    clearSession();
-                }
-                return response;
-            });
+            return originalFetch(input, requestInit)
+                .catch(function (error) {
+                    if (!fallbackUrl || !isLikelyNetworkError(error)) {
+                        throw error;
+                    }
+                    return originalFetch(fallbackUrl, requestInit).then(function (response) {
+                        setApiBase(DEFAULT_REMOTE_API_BASE, true);
+                        return response;
+                    });
+                })
+                .then(function (response) {
+                    if (response.status === 401 && !shouldBePublicPage(global.location && global.location.pathname)) {
+                        clearSession();
+                    }
+                    return response;
+                });
         };
     }
 

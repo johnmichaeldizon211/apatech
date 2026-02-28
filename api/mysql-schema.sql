@@ -118,21 +118,31 @@ ALTER TABLE products
 INSERT IGNORE INTO products (model, price, category, product_info, image_url, detail_url, is_active) VALUES
   ('BLITZ 2000', 68000.00, '2-Wheel', NULL, '/Userhomefolder/image 1.png', '/Userhomefolder/Ebikes/ebike1.0.html', 1),
   ('BLITZ 1200', 45000.00, '2-Wheel', NULL, '/Userhomefolder/image 2.png', '/Userhomefolder/Ebikes/ebike2.0.html', 1),
-  ('FUN 1500 FI', 74000.00, '2-Wheel', NULL, '/Userhomefolder/image 3.png', '/Userhomefolder/Ebikes/ebike3.0.html', 1),
-  ('CANDY 800', 58000.00, '2-Wheel', NULL, '/Userhomefolder/image 4.png', '/Userhomefolder/Ebikes/ebike4.0.html', 1),
-  ('BLITZ 200R', 74000.00, '2-Wheel', NULL, '/Userhomefolder/image 5.png', '/Userhomefolder/Ebikes/ebike5.0.html', 1),
-  ('TRAVELLER 1500', 79000.00, '2-Wheel', NULL, '/Userhomefolder/image 6.png', '/Userhomefolder/Ebikes/ebike6.0.html', 1),
-  ('ECONO 500 MP', 51500.00, '2-Wheel', NULL, '/Userhomefolder/image 7.png', '/Userhomefolder/Ebikes/ebike7.0.html', 1),
-  ('ECONO 350 MINI-II', 58000.00, '2-Wheel', NULL, '/Userhomefolder/image 8.png', '/Userhomefolder/Ebikes/ebike8.0.html', 1),
+  ('FUN 1500 FI', 24000.00, '2-Wheel', NULL, '/Userhomefolder/image 3.png', '/Userhomefolder/Ebikes/ebike3.0.html', 1),
+  ('CANDY 800', 39000.00, '2-Wheel', NULL, '/Userhomefolder/image 4.png', '/Userhomefolder/Ebikes/ebike4.0.html', 1),
+  ('BLITZ 200R', 40000.00, '2-Wheel', NULL, '/Userhomefolder/image 5.png', '/Userhomefolder/Ebikes/ebike5.0.html', 1),
+  ('TRAVELLER 1500', 78000.00, '2-Wheel', NULL, '/Userhomefolder/image 6.png', '/Userhomefolder/Ebikes/ebike6.0.html', 1),
+  ('ECONO 500 MP', 51000.00, '2-Wheel', NULL, '/Userhomefolder/image 7.png', '/Userhomefolder/Ebikes/ebike7.0.html', 1),
+  ('ECONO 350 MINI-II', 39000.00, '2-Wheel', NULL, '/Userhomefolder/image 8.png', '/Userhomefolder/Ebikes/ebike8.0.html', 1),
   ('ECARGO 100', 72500.00, '3-Wheel', NULL, '/Userhomefolder/image 9.png', '/Userhomefolder/Ebikes/ebike9.0.html', 1),
   ('ECONO 650 MP', 65000.00, '3-Wheel', NULL, '/Userhomefolder/image 10.png', '/Userhomefolder/Ebikes/ebike10.0.html', 1),
   ('ECAB 100V V2', 51500.00, '3-Wheel', NULL, '/Userhomefolder/image 11.png', '/Userhomefolder/Ebikes/ebike11.0.html', 1),
   ('ECONO 800 MP II', 67000.00, '3-Wheel', NULL, '/Userhomefolder/image 12.png', '/Userhomefolder/Ebikes/ebike12.0.html', 1),
-  ('E-CARGO 800', 205000.00, '4-Wheel', NULL, '/Userhomefolder/image 13.png', '/Userhomefolder/Ebikes/ebike13.0.html', 1),
+  ('E-CARGO 800', 65000.00, '4-Wheel', NULL, '/Userhomefolder/image 13.png', '/Userhomefolder/Ebikes/ebike13.0.html', 1),
   ('E-CAB MAX 1500', 130000.00, '4-Wheel', NULL, '/Userhomefolder/image 14.png', '/Userhomefolder/Ebikes/ebike14.0.html', 1),
   ('E-CAB 1000', 75000.00, '4-Wheel', NULL, '/Userhomefolder/image 15.png', '/Userhomefolder/Ebikes/ebike15.0.html', 1),
-  ('ECONO 800 MP', 100000.00, '4-Wheel', NULL, '/Userhomefolder/image 16.png', '/Userhomefolder/Ebikes/ebike16.0.html', 1);
+  ('ECONO 800 MP', 60000.00, '4-Wheel', NULL, '/Userhomefolder/image 16.png', '/Userhomefolder/Ebikes/ebike16.0.html', 1);
 
+-- Sync existing product rows to current published prices (idempotent)
+UPDATE products SET price = 24000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike3.0.html';
+UPDATE products SET price = 39000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike4.0.html';
+UPDATE products SET price = 40000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike5.0.html';
+UPDATE products SET price = 78000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike6.0.html';
+UPDATE products SET price = 51000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike7.0.html';
+UPDATE products SET price = 39000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike8.0.html';
+UPDATE products SET price = 65000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike10.0.html';
+UPDATE products SET price = 65000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike13.0.html';
+UPDATE products SET price = 60000.00 WHERE detail_url = '/Userhomefolder/Ebikes/ebike16.0.html';
 CREATE TABLE IF NOT EXISTS chat_threads (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NULL,

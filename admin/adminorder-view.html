@@ -48,83 +48,143 @@
                 </div>
 
                 <div id="detailsContent" class="details-content" aria-live="polite">
-                    <article class="details-grid">
-                        <div class="detail-item"><span class="label">Order ID</span><span id="detailOrderId" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Created</span><span id="detailCreatedAt" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Customer Name</span><span id="detailName" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Email</span><span id="detailEmail" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Model</span><span id="detailModel" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Color</span><span id="detailColor" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Service</span><span id="detailService" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Schedule</span><span id="detailSchedule" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Plan</span><span id="detailPlan" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Payment</span><span id="detailPayment" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Payment Status</span><span id="detailPaymentStatus" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Status</span><span id="detailStatus" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Tracking ETA</span><span id="detailTrackingEta" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Tracked Location</span><span id="detailTrackingLocation" class="value">-</span></div>
-                        <div class="detail-item"><span class="label">Total</span><span id="detailTotal" class="value">-</span></div>
-                    </article>
+                    <section id="modeInstallmentLayout" class="booking-mode-layout installment-layout" hidden>
+                        <div class="mode-main-col">
+                            <article class="mode-card booking-info-card">
+                                <h3>Booking Information</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Order Date</span><span id="instOrderDate" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Order Status</span><span id="instOrderStatus" class="status-pill">-</span></div>
+                                    <div class="info-row"><span class="row-label">Delivery Details</span><span id="instDeliveryMethod" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Delivery Status</span><span id="instDeliveryStatus" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Estimated Delivery</span><span id="instEstimatedDelivery" class="row-value">-</span></div>
+                                </div>
+                            </article>
 
-                    <article class="detail-item wide">
-                        <span class="label">Shipping Address</span>
-                        <span id="detailAddress" class="value">-</span>
-                    </article>
+                            <article class="mode-card product-card installment-product-card">
+                                <h3>Ebike Model</h3>
+                                <div class="product-shell">
+                                    <div class="product-meta">
+                                        <p id="instModelName" class="product-name">-</p>
+                                        <p class="product-line"><span>Amount Due Now:</span><strong id="instTotalPrice">-</strong></p>
+                                        <p class="product-line"><span>Payment Method:</span><strong id="instPaymentMethod">-</strong></p>
+                                        <p class="product-line"><span>Installment Plan:</span><strong id="instInstallmentPlan">-</strong></p>
+                                    </div>
+                                    <img id="instModelImage" class="product-image" src="../Userhomefolder/image 1.png" alt="Booked e-bike">
+                                </div>
+                            </article>
 
-                    <article class="detail-item wide payment-status-editor">
-                        <span class="label">Update Payment Status</span>
-                        <div class="payment-status-controls">
-                            <select id="paymentStatusSelect" class="payment-status-select" aria-label="Payment status">
-                                <option value="awaiting_payment_confirmation">Awaiting Payment Confirmation</option>
-                                <option value="pending_cod">Pending COD</option>
-                                <option value="installment_review">Installment Review</option>
-                                <option value="paid">Paid</option>
-                                <option value="failed">Failed</option>
-                                <option value="refunded">Refunded</option>
-                                <option value="not_applicable">Not Applicable</option>
-                            </select>
-                            <button id="savePaymentStatusBtn" type="button" class="action-btn payment-save">Save Payment Status</button>
+                            <article class="mode-card breakdown-card">
+                                <div class="card-title-row">
+                                    <h3>Installment Breakdown</h3>
+                                    <span class="mini-note">Admin actions</span>
+                                </div>
+                                <div class="breakdown-table-wrap">
+                                    <table class="breakdown-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Month</th>
+                                                <th>Due Date</th>
+                                                <th>Amount</th>
+                                                <th>Status</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="instBreakdownTableBody"></tbody>
+                                    </table>
+                                </div>
+                                <p id="instBreakdownFallback" class="mode-fallback" hidden>Installment details not available.</p>
+                            </article>
                         </div>
-                        <span id="paymentStatusFeedback" class="payment-status-feedback" aria-live="polite"></span>
-                    </article>
 
-                    <article class="detail-item wide fulfillment-status-editor">
-                        <span class="label">Update Fulfillment Progress</span>
-                        <div class="fulfillment-status-controls">
-                            <select id="fulfillmentStatusSelect" class="fulfillment-status-select" aria-label="Fulfillment status"></select>
-                            <input
-                                id="fulfillmentEtaInput"
-                                class="fulfillment-eta-input"
-                                type="text"
-                                maxlength="80"
-                                placeholder="ETA (e.g. 20 mins / Today 3:45 PM)"
-                                aria-label="ETA update"
-                            >
-                            <input
-                                id="fulfillmentLocationInput"
-                                class="fulfillment-location-input"
-                                type="text"
-                                maxlength="120"
-                                placeholder="Optional location update (e.g. Near Baliwag Plaza)"
-                                aria-label="Optional location note"
-                            >
-                            <button id="saveFulfillmentStatusBtn" type="button" class="action-btn fulfillment-save">Save Fulfillment Status</button>
+                        <div class="mode-side-col">
+                            <article class="mode-card customer-card">
+                                <h3>Customer Information</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Name</span><span id="instCustomerName" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Phone</span><span id="instCustomerPhone" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Location</span><span id="instCustomerLocation" class="row-value">-</span></div>
+                                </div>
+                                <div class="account-box">
+                                    <div class="info-row"><span class="row-label">Account Status</span><span id="instAccountStatus" class="status-pill">Active</span></div>
+                                    <div class="info-row"><span class="row-label">Customer Type</span><span id="instCustomerType" class="row-value">Installment Buyer</span></div>
+                                </div>
+                            </article>
+
+                            <article class="mode-card summary-card">
+                                <h3>Customer Installment Summary</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Total Installment Order</span><span id="instSummaryTotalOrder" class="row-value">1</span></div>
+                                    <div class="info-row"><span class="row-label">Paid Installment</span><span id="instSummaryPaidInstallment" class="row-value">0 / 0</span></div>
+                                    <div class="info-row"><span class="row-label">Outstanding Balance</span><span id="instSummaryOutstandingBalance" class="row-value">-</span></div>
+                                </div>
+                            </article>
                         </div>
-                        <span id="fulfillmentStatusFeedback" class="fulfillment-status-feedback" aria-live="polite"></span>
-                    </article>
-                </div>
+                    </section>
 
-                <div class="action-row">
-                    <button id="approveBtn" type="button" class="action-btn approve">Approve</button>
-                    <button id="rejectBtn" type="button" class="action-btn reject">Reject</button>
-                    <button id="adminGenerateReceiptBtn" type="button" class="action-btn receipt-view">View Receipt</button>
-                    <a href="adminorder.html" class="action-btn back">Back to Requests</a>
+                    <section id="modeCashLayout" class="booking-mode-layout cash-layout" hidden>
+                        <div class="mode-main-col">
+                            <article class="mode-card booking-info-card">
+                                <h3>Booking Information</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Order Date</span><span id="cashOrderDate" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Order Status</span><span id="cashOrderStatus" class="status-pill">-</span></div>
+                                    <div class="info-row"><span class="row-label">Delivery Details</span><span id="cashDeliveryMethod" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Delivery Status</span><span id="cashDeliveryStatus" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Estimated Delivery</span><span id="cashEstimatedDelivery" class="row-value">-</span></div>
+                                </div>
+                            </article>
+
+                            <article class="mode-card product-card cash-product-card">
+                                <h3>Ebike Model</h3>
+                                <div class="product-shell">
+                                    <div class="product-meta">
+                                        <p id="cashModelName" class="product-name">-</p>
+                                        <p class="product-line"><span>Total Price:</span><strong id="cashTotalPrice">-</strong></p>
+                                        <p class="product-line"><span>Payment Method:</span><strong id="cashPaymentMethod">-</strong></p>
+                                    </div>
+                                    <img id="cashModelImage" class="product-image" src="../Userhomefolder/image 1.png" alt="Booked e-bike">
+                                </div>
+                            </article>
+                        </div>
+
+                        <div class="mode-side-col">
+                            <article class="mode-card customer-card">
+                                <h3>Customer Information</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Name</span><span id="cashCustomerName" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Phone</span><span id="cashCustomerPhone" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Location</span><span id="cashCustomerLocation" class="row-value">-</span></div>
+                                </div>
+                                <div class="account-box">
+                                    <div class="info-row"><span class="row-label">Account Status</span><span id="cashAccountStatus" class="status-pill">Active</span></div>
+                                    <div class="info-row"><span class="row-label">Customer Type</span><span id="cashCustomerType" class="row-value">Cash Buyer</span></div>
+                                </div>
+                            </article>
+
+                            <article class="mode-card summary-card">
+                                <h3>Payment Summary</h3>
+                                <div class="info-grid">
+                                    <div class="info-row"><span class="row-label">Total Price</span><span id="cashPaymentTotalPrice" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Delivery Fee</span><span id="cashPaymentDeliveryFee" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Grand Total</span><span id="cashPaymentGrandTotal" class="row-value">-</span></div>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <div class="action-row">
+                        <button id="approveBtn" type="button" class="action-btn approve">Approve</button>
+                        <button id="rejectBtn" type="button" class="action-btn reject">Reject</button>
+                        <button id="adminGenerateReceiptBtn" type="button" class="action-btn receipt-view">View Receipt</button>
+                        <a href="adminorder.html" class="action-btn back">Back to Requests</a>
+                    </div>
                 </div>
             </section>
         </main>
     </div>
     <script src="../session.js?v=20260221-2"></script>
-    <script src="adminorder-view.js?v=20260226d"></script>
+    <script src="adminorder-view.js?v=20260228d"></script>
 </body>
 </html>
 

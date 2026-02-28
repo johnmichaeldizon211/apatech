@@ -24,20 +24,20 @@ document.addEventListener("DOMContentLoaded", function () {
     const defaultProducts = [
         { id: 1, model: "BLITZ 2000", price: 68000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 1.png", detailUrl: "/Userhomefolder/Ebikes/ebike1.0.html", isActive: true },
         { id: 2, model: "BLITZ 1200", price: 45000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 2.png", detailUrl: "/Userhomefolder/Ebikes/ebike2.0.html", isActive: true },
-        { id: 3, model: "FUN 1500 FI", price: 74000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html", isActive: true },
-        { id: 4, model: "CANDY 800", price: 58000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html", isActive: true },
-        { id: 5, model: "BLITZ 200R", price: 74000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html", isActive: true },
-        { id: 6, model: "TRAVELLER 1500", price: 79000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html", isActive: true },
-        { id: 7, model: "ECONO 500 MP", price: 51500, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html", isActive: true },
-        { id: 8, model: "ECONO 350 MINI-II", price: 58000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html", isActive: true },
+        { id: 3, model: "FUN 1500 FI", price: 24000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html", isActive: true },
+        { id: 4, model: "CANDY 800", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html", isActive: true },
+        { id: 5, model: "BLITZ 200R", price: 40000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html", isActive: true },
+        { id: 6, model: "TRAVELLER 1500", price: 78000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html", isActive: true },
+        { id: 7, model: "ECONO 500 MP", price: 51000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html", isActive: true },
+        { id: 8, model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html", isActive: true },
         { id: 9, model: "ECARGO 100", price: 72500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 9.png", detailUrl: "/Userhomefolder/Ebikes/ebike9.0.html", isActive: true },
         { id: 10, model: "ECONO 650 MP", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 10.png", detailUrl: "/Userhomefolder/Ebikes/ebike10.0.html", isActive: true },
         { id: 11, model: "ECAB 100V V2", price: 51500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 11.png", detailUrl: "/Userhomefolder/Ebikes/ebike11.0.html", isActive: true },
         { id: 12, model: "ECONO 800 MP II", price: 67000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 12.png", detailUrl: "/Userhomefolder/Ebikes/ebike12.0.html", isActive: true },
-        { id: 13, model: "E-CARGO 800", price: 205000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html", isActive: true },
+        { id: 13, model: "E-CARGO 800", price: 65000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html", isActive: true },
         { id: 14, model: "E-CAB MAX 1500", price: 130000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html", isActive: true },
         { id: 15, model: "E-CAB 1000", price: 75000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html", isActive: true },
-        { id: 16, model: "ECONO 800 MP", price: 100000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
+        { id: 16, model: "ECONO 800 MP", price: 60000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
     ];
 
     let products = [];
@@ -55,21 +55,66 @@ document.addEventListener("DOMContentLoaded", function () {
         return String(value || "").trim().replace(/\s+/g, " ");
     }
 
-    function normalizeCategory(value) {
-        const raw = String(value || "").trim().toLowerCase();
+    function parseWheelCategory(value) {
+        const raw = normalizeText(value).toLowerCase();
         if (!raw) {
-            return "Other";
+            return "";
         }
-        if (raw.includes("2")) {
+        const compact = raw.replace(/[\s_-]+/g, "");
+        if (compact === "2wheel" || compact === "2wheels") {
             return "2-Wheel";
         }
-        if (raw.includes("3")) {
+        if (compact === "3wheel" || compact === "3wheels") {
             return "3-Wheel";
         }
-        if (raw.includes("4")) {
+        if (compact === "4wheel" || compact === "4wheels") {
             return "4-Wheel";
         }
-        return "Other";
+        if (compact === "other") {
+            return "Other";
+        }
+        return "";
+    }
+
+    function inferCategoryFromDetailUrl(detailUrl) {
+        const raw = String(detailUrl || "").trim();
+        if (!raw) {
+            return "";
+        }
+        const match = raw.match(/ebike(\d+)\.0\.html/i);
+        if (!match) {
+            return "";
+        }
+        const bikeId = Number(match[1]);
+        if (!Number.isFinite(bikeId)) {
+            return "";
+        }
+        if (bikeId >= 1 && bikeId <= 5) {
+            return "2-Wheel";
+        }
+        if (bikeId === 6) {
+            return "4-Wheel";
+        }
+        if (bikeId === 8) {
+            return "2-Wheel";
+        }
+        if (bikeId >= 7 && bikeId <= 16) {
+            return "3-Wheel";
+        }
+        return "";
+    }
+
+    function resolveCategory(rawCategory, detailUrl) {
+        const fromDetail = inferCategoryFromDetailUrl(detailUrl);
+        if (fromDetail) {
+            return fromDetail;
+        }
+        const parsed = parseWheelCategory(rawCategory);
+        return parsed || "Other";
+    }
+
+    function normalizeCategory(value) {
+        return parseWheelCategory(value) || "Other";
     }
 
     function parsePrice(value) {
@@ -179,16 +224,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const id = Number.isFinite(rawId) && rawId > 0 ? rawId : Number(fallbackId || 0);
         const imageUrl = String(source.imageUrl || source.image || source.bikeImage || "").trim();
         const detailUrl = String(source.detailUrl || source.detailsUrl || "").trim();
+        const normalizedDetailUrl = resolveAssetPath(detailUrl);
         const info = normalizeText(source.info || source.productInfo || source.description).slice(0, 255);
 
         return {
             id: id,
             model: model,
             price: price,
-            category: normalizeCategory(source.category),
+            category: resolveCategory(source.category, normalizedDetailUrl || detailUrl),
             info: info,
             imageUrl: resolveAssetPath(imageUrl || "/Userhomefolder/image 1.png"),
-            detailUrl: resolveAssetPath(detailUrl),
+            detailUrl: normalizedDetailUrl,
             isActive: toIsActive(source.isActive)
         };
     }
@@ -460,3 +506,4 @@ document.addEventListener("DOMContentLoaded", function () {
 
     void init();
 });
+

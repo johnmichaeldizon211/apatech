@@ -146,6 +146,26 @@ Optional server log label:
 - Set `PUBLIC_API_BASE` in `api/.env` so startup logs show your public API URL:
   - `PUBLIC_API_BASE=https://api.ecodrive.example.com`
 
+## 7) Admin Login Recovery
+
+If admin login cannot access because the login ID changed, you can update credentials safely from `api` folder.
+
+Keep the existing password hash and set login ID to `ecodrive`:
+
+```bash
+npm run admin:credentials -- --login-id ecodrive --keep-password-hash
+```
+
+Set both login ID and a new strong password:
+
+```bash
+npm run admin:credentials -- --login-id ecodrive --password "NewStrongPassword123!"
+```
+
+After updating credentials, restart the API server.
+
+You can verify auth config via health endpoint (`GET /api/health`) and check `adminAuthConfigured: true`.
+
 ## Notes
 
 - No default admin password is exposed anymore. Initialize admin credentials using either:

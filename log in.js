@@ -1,12 +1,19 @@
 document.addEventListener("DOMContentLoaded", function () {
     var form = document.getElementById("loginForm");
-    var emailInput = document.getElementById("email");
+    var loginIdInput = document.getElementById("email");
     var passwordInput = document.getElementById("password");
     var rememberInput = document.getElementById("remember");
     var loginError = document.getElementById("loginError");
 
-    if (!form || !emailInput || !passwordInput) {
+    if (!form || !loginIdInput || !passwordInput) {
         return;
+    }
+
+    function normalizeLoginIdentifier(value) {
+        return String(value || "")
+            .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "")
+            .trim()
+            .toLowerCase();
     }
 
     function getApiUrl(path) {
@@ -23,6 +30,17 @@ document.addEventListener("DOMContentLoaded", function () {
             .trim()
             .replace(/\/+$/, "");
         return base ? base + path : path;
+    }
+
+    function getActiveApiBase() {
+        if (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function") {
+            return String(window.EcodriveSession.getApiBase() || "").trim().replace(/\/+$/, "");
+        }
+        return String(
+            localStorage.getItem("ecodrive_api_base")
+            || localStorage.getItem("ecodrive_kyc_api_base")
+            || ""
+        ).trim().replace(/\/+$/, "");
     }
 
     function setError(message) {
@@ -43,11 +61,11 @@ document.addEventListener("DOMContentLoaded", function () {
         event.preventDefault();
         clearError();
 
-        var emailValue = String(emailInput.value || "").trim().toLowerCase();
+        var loginIdValue = normalizeLoginIdentifier(loginIdInput.value);
         var passwordValue = String(passwordInput.value || "").trim();
         var remember = rememberInput ? Boolean(rememberInput.checked) : false;
 
-        if (!emailValue || !passwordValue) {
+        if (!loginIdValue || !passwordValue) {
             setError("Please enter both email/username and password.");
             return;
         }
@@ -60,7 +78,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    email: emailValue,
+                    email: loginIdValue,
+                    username: loginIdValue,
                     password: passwordValue
                 })
             });
@@ -73,7 +92,18 @@ document.addEventListener("DOMContentLoaded", function () {
             return {};
         });
         if (!response.ok || payload.success !== true) {
-            setError(payload.message || "Invalid email/username or password.");
+            var backendMessage = String(payload.message || "").trim();
+            if (/admin credentials are not initialized/i.test(backendMessage)) {
+                var activeApiBase = getActiveApiBase() || "(relative /api)";
+                setError(
+                    backendMessage
+                    + " Active API base: "
+                    + activeApiBase
+                    + ". Configure admin credentials on that API server."
+                );
+                return;
+            }
+            setError(backendMessage || "Invalid email/username or password.");
             return;
         }
 

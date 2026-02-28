@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ecodrive - Installment Personal Information</title>
+    <title>Ecodrive - Installment Plan and Personal Information</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="installment.css">
+    <link rel="stylesheet" href="installment.css?v=20260227a">
     <script src="../../session.js" defer></script>
-    <script src="installment.js?v=20260226a" defer></script>
+    <script src="installment.js?v=20260227a" defer></script>
 </head>
 <body data-step="2">
     <div class="bg-shape bg-left"></div>
@@ -44,17 +44,17 @@
         <header class="page-head">
             <div>
                 <h1>Installment Application</h1>
-                <p>Personal Information</p>
+                <p>Plan &amp; Personal Information</p>
             </div>
 
             <ol class="stepper" aria-label="Installment steps">
                 <li class="done">
                     <span class="dot">1</span>
-                    <span class="step-copy">2x2 Picture Reminder</span>
+                    <span class="step-copy">Requirements</span>
                 </li>
                 <li class="active">
                     <span class="dot">2</span>
-                    <span class="step-copy">Personal Information</span>
+                    <span class="step-copy">Plan &amp; Personal Information</span>
                 </li>
                 <li>
                     <span class="dot">3</span>
@@ -65,6 +65,43 @@
 
         <section class="installment-card">
             <form id="installmentStep2Form" novalidate>
+                <article id="regularPlanPanel" class="plan-panel">
+                    <h2>Regular Down Payment Plan</h2>
+                    <div class="plan-grid">
+                        <div class="plan-item">
+                            <span class="plan-label">Selected Model</span>
+                            <span id="planSelectedModel" class="plan-value">-</span>
+                        </div>
+                        <div class="plan-item">
+                            <span class="plan-label">Battery</span>
+                            <span id="planBattery" class="plan-value">-</span>
+                        </div>
+                        <div class="plan-item">
+                            <span class="plan-label">SRP</span>
+                            <span id="planSrp" class="plan-value">-</span>
+                        </div>
+                        <div class="plan-item">
+                            <span class="plan-label">Min DP</span>
+                            <span id="planMinDp" class="plan-value readonly">-</span>
+                        </div>
+                        <label class="plan-item">
+                            <span class="plan-label">Months to Pay</span>
+                            <select id="monthsToPay" required>
+                                <option value="">Select plan</option>
+                                <option value="6">6 months</option>
+                                <option value="12">12 months</option>
+                                <option value="18">18 months</option>
+                                <option value="24">24 months</option>
+                            </select>
+                        </label>
+                        <div class="plan-item">
+                            <span class="plan-label">Monthly Hulog</span>
+                            <span id="planMonthlyAmortization" class="plan-value emphasis">-</span>
+                        </div>
+                    </div>
+                    <p id="step2PlanError" class="form-error plan-error" aria-live="polite"></p>
+                </article>
+
                 <div class="form-grid personal-grid">
                     <label>
                         <span>First Name</span>
@@ -158,18 +195,6 @@
                         <input id="nationality" type="text" required>
                     </label>
 
-                    <label>
-                        <span>Months to Pay</span>
-                        <select id="monthsToPay" required>
-                            <option value="">Select plan</option>
-                            <option value="3">3 months</option>
-                            <option value="6">6 months</option>
-                            <option value="9">9 months</option>
-                            <option value="12">12 months</option>
-                            <option value="18">18 months</option>
-                            <option value="24">24 months</option>
-                        </select>
-                    </label>
                 </div>
 
                 <div class="action-row right">

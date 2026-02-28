@@ -2,11 +2,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const bookingStorageKeys = ["ecodrive_bookings", "ecodrive_orders", "orders"];
     const selectedBookingKey = "ecodrive_admin_selected_booking";
     const API_BASE = String(
-        (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
+        localStorage.getItem("ecodrive_api_base")
+        || localStorage.getItem("ecodrive_kyc_api_base")
+        || (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
             ? window.EcodriveSession.getApiBase()
-            : localStorage.getItem("ecodrive_api_base")
-                || localStorage.getItem("ecodrive_kyc_api_base")
-                || "")
+            : "")
     )
         .trim()
         .replace(/\/+$/, "");
@@ -15,69 +15,51 @@ document.addEventListener("DOMContentLoaded", function () {
     const detailsContent = document.getElementById("detailsContent");
     const approveBtn = document.getElementById("approveBtn");
     const rejectBtn = document.getElementById("rejectBtn");
+    const modeInstallmentLayout = document.getElementById("modeInstallmentLayout");
+    const modeCashLayout = document.getElementById("modeCashLayout");
 
-    const detailOrderId = document.getElementById("detailOrderId");
-    const detailCreatedAt = document.getElementById("detailCreatedAt");
-    const detailName = document.getElementById("detailName");
-    const detailEmail = document.getElementById("detailEmail");
-    const detailModel = document.getElementById("detailModel");
-    const detailColor = document.getElementById("detailColor");
-    const detailService = document.getElementById("detailService");
-    const detailSchedule = document.getElementById("detailSchedule");
-    const detailPlan = document.getElementById("detailPlan");
-    const detailPayment = document.getElementById("detailPayment");
-    const detailPaymentStatus = document.getElementById("detailPaymentStatus");
-    const detailStatus = document.getElementById("detailStatus");
-    const detailTrackingEta = document.getElementById("detailTrackingEta");
-    const detailTrackingLocation = document.getElementById("detailTrackingLocation");
-    const detailTotal = document.getElementById("detailTotal");
-    const detailAddress = document.getElementById("detailAddress");
-    const paymentStatusSelect = document.getElementById("paymentStatusSelect");
-    const savePaymentStatusBtn = document.getElementById("savePaymentStatusBtn");
-    const paymentStatusFeedback = document.getElementById("paymentStatusFeedback");
-    const fulfillmentStatusSelect = document.getElementById("fulfillmentStatusSelect");
-    const fulfillmentEtaInput = document.getElementById("fulfillmentEtaInput");
-    const fulfillmentLocationInput = document.getElementById("fulfillmentLocationInput");
-    const saveFulfillmentStatusBtn = document.getElementById("saveFulfillmentStatusBtn");
-    const fulfillmentStatusFeedback = document.getElementById("fulfillmentStatusFeedback");
+    const instOrderDate = document.getElementById("instOrderDate");
+    const instOrderStatus = document.getElementById("instOrderStatus");
+    const instDeliveryMethod = document.getElementById("instDeliveryMethod");
+    const instDeliveryStatus = document.getElementById("instDeliveryStatus");
+    const instEstimatedDelivery = document.getElementById("instEstimatedDelivery");
+    const instModelName = document.getElementById("instModelName");
+    const instModelImage = document.getElementById("instModelImage");
+    const instTotalPrice = document.getElementById("instTotalPrice");
+    const instPaymentMethod = document.getElementById("instPaymentMethod");
+    const instInstallmentPlan = document.getElementById("instInstallmentPlan");
+    const instBreakdownTableBody = document.getElementById("instBreakdownTableBody");
+    const instBreakdownFallback = document.getElementById("instBreakdownFallback");
+    const instCustomerName = document.getElementById("instCustomerName");
+    const instCustomerPhone = document.getElementById("instCustomerPhone");
+    const instCustomerLocation = document.getElementById("instCustomerLocation");
+    const instAccountStatus = document.getElementById("instAccountStatus");
+    const instCustomerType = document.getElementById("instCustomerType");
+    const instSummaryTotalOrder = document.getElementById("instSummaryTotalOrder");
+    const instSummaryPaidInstallment = document.getElementById("instSummaryPaidInstallment");
+    const instSummaryOutstandingBalance = document.getElementById("instSummaryOutstandingBalance");
+
+    const cashOrderDate = document.getElementById("cashOrderDate");
+    const cashOrderStatus = document.getElementById("cashOrderStatus");
+    const cashDeliveryMethod = document.getElementById("cashDeliveryMethod");
+    const cashDeliveryStatus = document.getElementById("cashDeliveryStatus");
+    const cashEstimatedDelivery = document.getElementById("cashEstimatedDelivery");
+    const cashModelName = document.getElementById("cashModelName");
+    const cashModelImage = document.getElementById("cashModelImage");
+    const cashTotalPrice = document.getElementById("cashTotalPrice");
+    const cashPaymentMethod = document.getElementById("cashPaymentMethod");
+    const cashCustomerName = document.getElementById("cashCustomerName");
+    const cashCustomerPhone = document.getElementById("cashCustomerPhone");
+    const cashCustomerLocation = document.getElementById("cashCustomerLocation");
+    const cashAccountStatus = document.getElementById("cashAccountStatus");
+    const cashCustomerType = document.getElementById("cashCustomerType");
+    const cashPaymentTotalPrice = document.getElementById("cashPaymentTotalPrice");
+    const cashPaymentDeliveryFee = document.getElementById("cashPaymentDeliveryFee");
+    const cashPaymentGrandTotal = document.getElementById("cashPaymentGrandTotal");
+
     const adminGenerateReceiptBtn = document.getElementById("adminGenerateReceiptBtn");
     let currentBooking = null;
     let receiptPdfLibPromise = null;
-
-    const PAYMENT_STATUS_LABELS = {
-        awaiting_payment_confirmation: "Awaiting Payment Confirmation",
-        pending_cod: "Pending COD",
-        installment_review: "Installment Review",
-        paid: "Paid",
-        failed: "Failed",
-        refunded: "Refunded",
-        not_applicable: "Not Applicable"
-    };
-
-    const FULFILLMENT_STATUS_PRESETS = {
-        delivery: [
-            "Preparing for Dispatch",
-            "Rider Assigned",
-            "Out for Delivery",
-            "Arriving Soon",
-            "Delivered"
-        ],
-        pickup: [
-            "Preparing for Pick up",
-            "Ready for Pick up",
-            "Picked Up"
-        ],
-        installment: [
-            "Application Approved",
-            "Documents Verified",
-            "Ready for Release",
-            "Released"
-        ],
-        fallback: [
-            "In Process",
-            "Completed"
-        ]
-    };
 
     const RECEIPT_PDF_SCRIPT_SOURCES = [
         "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
@@ -107,6 +89,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function getApiUrl(path) {
         return API_BASE ? `${API_BASE}${path}` : path;
+    }
+
+    function buildApiHeaders(baseHeaders) {
+        const headers = Object.assign({}, baseHeaders || {});
+        const token = (window.EcodriveSession && typeof window.EcodriveSession.getToken === "function")
+            ? String(window.EcodriveSession.getToken() || "").trim()
+            : "";
+        if (token) {
+            headers.Authorization = "Bearer " + token;
+        }
+        return headers;
     }
 
     function getRecordOrderId(record) {
@@ -201,6 +194,555 @@ document.addEventListener("DOMContentLoaded", function () {
         return "Full Payment";
     }
 
+    function getBookingMode(record) {
+        const payment = String(record && record.payment || "").toLowerCase();
+        const service = String(record && record.service || "").toLowerCase();
+        if (
+            payment.includes("installment")
+            || service.includes("installment")
+            || Boolean(getInstallmentPayload(record))
+        ) {
+            return "installment";
+        }
+        return "cash";
+    }
+
+    function setTextContent(target, value, fallback) {
+        if (!target) {
+            return;
+        }
+        const text = String(value || "").trim();
+        target.textContent = text || String(fallback || "-");
+    }
+
+    function toCurrencyNumber(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return 0;
+        }
+        return Number(numeric.toFixed(2));
+    }
+
+    function getInstallmentPayload(record) {
+        if (!record || typeof record !== "object") {
+            return null;
+        }
+        return record.installment && typeof record.installment === "object"
+            ? record.installment
+            : null;
+    }
+
+    function getCustomerLocation(record) {
+        const address = String(record && record.shippingAddress || "").trim();
+        if (address) {
+            return address;
+        }
+
+        const installment = getInstallmentPayload(record);
+        if (installment) {
+            const locationParts = [
+                installment.street,
+                installment.barangay,
+                installment.city,
+                installment.province
+            ]
+                .map(function (part) {
+                    return String(part || "").trim();
+                })
+                .filter(Boolean);
+            if (locationParts.length > 0) {
+                return locationParts.join(", ");
+            }
+        }
+        return "N/A";
+    }
+
+    function getAccountStatusLabel(record) {
+        const raw = String(
+            (record && (record.accountStatus || record.customerAccountStatus || record.account_status)) || ""
+        ).trim();
+        return raw || "Active";
+    }
+
+    function getCustomerTypeLabel(mode) {
+        return mode === "installment" ? "Installment Buyer" : "Cash Buyer";
+    }
+
+    function normalizeBikeImagePath(value) {
+        const raw = String(value || "").trim().replace(/\\/g, "/");
+        if (!raw) {
+            return "../Userhomefolder/image 1.png";
+        }
+        if (/^https?:\/\//i.test(raw) || raw.startsWith("data:")) {
+            return raw;
+        }
+
+        const cleaned = raw.replace(/^\.\//, "");
+        if (cleaned.startsWith("../Userhomefolder/")) {
+            return cleaned;
+        }
+        if (cleaned.startsWith("Userhomefolder/")) {
+            return "../" + cleaned;
+        }
+        if (/^(?:\.\.\/)?image\s+\d+\.(png|jpg|jpeg|webp)$/i.test(cleaned)) {
+            const filename = cleaned.replace(/^\.\.\//, "");
+            return "../Userhomefolder/" + filename;
+        }
+        if (cleaned.startsWith("../")) {
+            return cleaned;
+        }
+        if (cleaned.startsWith("/")) {
+            return "." + cleaned;
+        }
+        return "../" + cleaned;
+    }
+
+    function setBikeImage(target, booking) {
+        if (!target) {
+            return;
+        }
+        target.src = normalizeBikeImagePath(
+            booking && (booking.bikeImage || booking.image || booking.img)
+        );
+        target.alt = getModelLabelFromRecord(booking) + " image";
+    }
+
+    function applyStatusPill(target, value) {
+        if (!target) {
+            return;
+        }
+        const text = String(value || "").trim() || "-";
+        const normalized = text.toLowerCase();
+        target.classList.remove("success", "warning", "danger", "info");
+        if (
+            normalized.includes("paid")
+            || normalized.includes("active")
+            || normalized.includes("approve")
+            || normalized.includes("released")
+            || normalized.includes("complete")
+            || normalized.includes("deliver")
+        ) {
+            target.classList.add("success");
+        } else if (
+            normalized.includes("reject")
+            || normalized.includes("cancel")
+            || normalized.includes("failed")
+        ) {
+            target.classList.add("danger");
+        } else if (
+            normalized.includes("pending")
+            || normalized.includes("review")
+            || normalized.includes("process")
+            || normalized.includes("under")
+        ) {
+            target.classList.add("warning");
+        } else {
+            target.classList.add("info");
+        }
+        target.textContent = text;
+    }
+
+    function getEstimatedDeliveryLabel(record) {
+        const eta = normalizeProgressText(record && record.trackingEta);
+        if (eta) {
+            return eta;
+        }
+        const serviceText = String(record && record.service || "").toLowerCase();
+        if (serviceText.includes("pick")) {
+            return "Ready once approved";
+        }
+        if (serviceText.includes("install")) {
+            return "Based on installment review";
+        }
+        return "1-2 days";
+    }
+
+    function resolveCashPaymentBreakdown(record) {
+        const subtotalRaw = Number(record && record.subtotal);
+        const totalRaw = Number(record && record.total);
+        const hasSubtotal = Number.isFinite(subtotalRaw) && subtotalRaw > 0;
+        const hasTotal = Number.isFinite(totalRaw) && totalRaw > 0;
+
+        let subtotal = hasSubtotal ? subtotalRaw : (hasTotal ? totalRaw : 0);
+        let shippingFee = Number(record && record.shippingFee);
+        const hasShippingFee = Number.isFinite(shippingFee);
+        const isDelivery = String(record && record.service || "").toLowerCase().includes("delivery");
+
+        if (!hasShippingFee) {
+            if (hasTotal && hasSubtotal && totalRaw >= subtotalRaw) {
+                shippingFee = totalRaw - subtotalRaw;
+            } else if (isDelivery) {
+                shippingFee = 250;
+            } else {
+                shippingFee = 0;
+            }
+        }
+        shippingFee = toCurrencyNumber(shippingFee);
+
+        let grandTotal = hasTotal ? totalRaw : (subtotal + shippingFee);
+        if (grandTotal < subtotal) {
+            grandTotal = subtotal;
+        }
+
+        subtotal = toCurrencyNumber(subtotal);
+        grandTotal = toCurrencyNumber(grandTotal);
+
+        return {
+            subtotal: subtotal,
+            shippingFee: shippingFee,
+            grandTotal: grandTotal
+        };
+    }
+
+    function parseInstallmentMetrics(record) {
+        const installment = getInstallmentPayload(record);
+        const monthsRaw = Number(
+            installment && (installment.monthsToPay || installment.months || installment.installmentMonths)
+        );
+        const monthsToPay = Number.isFinite(monthsRaw) && monthsRaw > 0
+            ? Math.floor(monthsRaw)
+            : 0;
+
+        const monthlyRaw = toCurrencyNumber(
+            installment && (
+                installment.monthlyAmortization
+                || installment.monthlyAmount
+                || installment.monthlyPayment
+                || installment.monthly
+            )
+        );
+        const minDp = toCurrencyNumber(
+            installment && (
+                installment.planMinDp
+                || installment.minDp
+                || installment.downPayment
+                || installment.dp
+            )
+        );
+        const srpFallback = toCurrencyNumber((record && (record.subtotal || record.total)) || 0);
+        const srp = toCurrencyNumber(
+            installment && (installment.planSrp || installment.srp || installment.srpValue)
+        ) || srpFallback;
+
+        const paidCountRaw = Number(
+            installment && (
+                installment.paidInstallments
+                || installment.paidCount
+                || installment.monthsPaid
+                || installment.installmentsPaid
+            )
+        );
+        let paidCount = Number.isFinite(paidCountRaw) && paidCountRaw > 0
+            ? Math.floor(paidCountRaw)
+            : 0;
+
+        const paymentHistory = Array.isArray(installment && installment.paymentHistory)
+            ? installment.paymentHistory
+            : [];
+        if (paymentHistory.length > 0) {
+            const historyPaidCount = paymentHistory.filter(function (item) {
+                return String(item && item.status || "").toLowerCase().includes("paid");
+            }).length;
+            if (historyPaidCount > paidCount) {
+                paidCount = historyPaidCount;
+            }
+        }
+
+        if (monthsToPay > 0 && paidCount > monthsToPay) {
+            paidCount = monthsToPay;
+        }
+
+        const totalRaw = toCurrencyNumber(record && record.total);
+        const fallbackMonthly = (monthsToPay > 0 && totalRaw > 0)
+            ? toCurrencyNumber(Math.max((totalRaw - minDp) / monthsToPay, 0))
+            : 0;
+        const monthlyAmount = monthlyRaw > 0 ? monthlyRaw : fallbackMonthly;
+
+        let paidAmount = toCurrencyNumber(
+            installment && (installment.totalPaid || installment.paidAmount || installment.totalPaidAmount)
+        );
+        if (paidAmount <= 0 && paymentHistory.length > 0) {
+            paidAmount = toCurrencyNumber(paymentHistory.reduce(function (sum, item) {
+                return sum + toCurrencyNumber(item && (item.amount || item.value || item.monthlyAmount));
+            }, 0));
+        }
+        if (paidAmount <= 0 && monthlyAmount > 0 && paidCount > 0) {
+            paidAmount = toCurrencyNumber(monthlyAmount * paidCount);
+        }
+
+        const totalInstallmentAmount = (monthsToPay > 0 && monthlyAmount > 0)
+            ? toCurrencyNumber(monthlyAmount * monthsToPay)
+            : toCurrencyNumber(Math.max(totalRaw - minDp, 0));
+
+        const outstandingBalance = Math.max(
+            toCurrencyNumber(totalInstallmentAmount - paidAmount),
+            0
+        );
+
+        const hasBreakdownData = Boolean(installment && monthsToPay > 0 && monthlyAmount > 0);
+        const initialDueAmount = toCurrencyNumber(
+            (minDp > 0 ? minDp : 0)
+            + (monthlyAmount > 0 ? monthlyAmount : 0)
+        );
+        const fallbackInitialDue = toCurrencyNumber(totalRaw || srp || 0);
+
+        return {
+            installment: installment,
+            monthsToPay: monthsToPay,
+            monthlyAmount: monthlyAmount,
+            minDp: minDp,
+            srp: srp,
+            paidCount: paidCount,
+            paidAmount: paidAmount,
+            totalInstallmentAmount: totalInstallmentAmount,
+            outstandingBalance: outstandingBalance,
+            hasBreakdownData: hasBreakdownData,
+            initialDueAmount: initialDueAmount > 0 ? initialDueAmount : fallbackInitialDue
+        };
+    }
+
+    function getInstallmentReceiptSummary(record, metricsInput) {
+        if (getBookingMode(record) !== "installment") {
+            return null;
+        }
+
+        const metrics = (metricsInput && typeof metricsInput === "object")
+            ? metricsInput
+            : parseInstallmentMetrics(record);
+        const monthsToPayRaw = Number(metrics && metrics.monthsToPay);
+        const monthsToPay = Number.isFinite(monthsToPayRaw) && monthsToPayRaw > 0
+            ? Math.floor(monthsToPayRaw)
+            : 0;
+        const paidCountRaw = Number(metrics && metrics.paidCount);
+        const paidCount = Number.isFinite(paidCountRaw) && paidCountRaw > 0
+            ? Math.min(monthsToPay > 0 ? monthsToPay : paidCountRaw, Math.floor(paidCountRaw))
+            : 0;
+        const monthlyPayment = toCurrencyNumber(metrics && metrics.monthlyAmount);
+        const downPayment = toCurrencyNumber(metrics && metrics.minDp);
+        const totalRaw = toCurrencyNumber(record && record.total);
+
+        let totalInstallmentPayable = toCurrencyNumber(metrics && metrics.totalInstallmentAmount);
+        if (!(totalInstallmentPayable > 0) && monthsToPay > 0 && monthlyPayment > 0) {
+            totalInstallmentPayable = toCurrencyNumber(monthlyPayment * monthsToPay);
+        }
+        if (!(totalInstallmentPayable > 0)) {
+            totalInstallmentPayable = totalRaw;
+        }
+
+        let paidAmount = toCurrencyNumber(metrics && metrics.paidAmount);
+        if (!(paidAmount > 0) && monthlyPayment > 0 && paidCount > 0) {
+            paidAmount = toCurrencyNumber(monthlyPayment * paidCount);
+        }
+
+        const outstandingBalance = Math.max(
+            toCurrencyNumber(totalInstallmentPayable - paidAmount),
+            0
+        );
+        const totalPayableWithDownPayment = toCurrencyNumber(
+            totalInstallmentPayable + (downPayment > 0 ? downPayment : 0)
+        );
+        const totalPayableForReceipt = totalPayableWithDownPayment > 0
+            ? totalPayableWithDownPayment
+            : totalInstallmentPayable;
+
+        return {
+            monthsToPay: monthsToPay,
+            paidCount: paidCount,
+            monthlyPayment: monthlyPayment,
+            downPayment: downPayment,
+            paidAmount: paidAmount,
+            totalInstallmentPayable: totalInstallmentPayable,
+            outstandingBalance: outstandingBalance,
+            totalPayableForReceipt: totalPayableForReceipt,
+            progressLabel: monthsToPay > 0
+                ? `${paidCount}/${monthsToPay}`
+                : `${paidCount}/-`,
+            paidVsTotalLabel: `${formatPeso(paidAmount)} / ${formatPeso(totalInstallmentPayable)}`
+        };
+    }
+
+    function addMonthsSafe(baseDate, monthsToAdd) {
+        const source = baseDate instanceof Date ? baseDate : new Date();
+        const monthOffset = Number(monthsToAdd || 0);
+        const result = new Date(
+            source.getFullYear(),
+            source.getMonth() + monthOffset,
+            source.getDate(),
+            source.getHours(),
+            source.getMinutes(),
+            0,
+            0
+        );
+        return Number.isNaN(result.getTime()) ? new Date() : result;
+    }
+
+    function formatShortDate(dateValue) {
+        const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+        if (Number.isNaN(date.getTime())) {
+            return "N/A";
+        }
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        });
+    }
+
+    function buildInstallmentScheduleRows(record, metrics) {
+        const rows = [];
+        const totalMonths = Number(metrics && metrics.monthsToPay) || 0;
+        if (totalMonths < 1) {
+            return rows;
+        }
+
+        const scheduleDateText = String(
+            record && (record.scheduleDate || record.bookingDate || record.date)
+        ).trim();
+        const scheduleTimeText = String(
+            record && (record.scheduleTime || record.bookingTime || record.time)
+        ).trim();
+        const scheduleDate = buildLocalDateTimeFromParts(scheduleDateText, scheduleTimeText);
+        const createdAtDate = new Date(record && record.createdAt || "");
+        const baseDate = scheduleDate
+            || (!Number.isNaN(createdAtDate.getTime()) ? createdAtDate : new Date());
+
+        const paidCount = Number(metrics && metrics.paidCount) || 0;
+        const monthlyAmount = toCurrencyNumber(metrics && metrics.monthlyAmount);
+
+        for (let monthIndex = 0; monthIndex < totalMonths; monthIndex += 1) {
+            const dueDate = addMonthsSafe(baseDate, monthIndex);
+            const isPaid = monthIndex < paidCount;
+            rows.push({
+                month: monthIndex + 1,
+                dueDate: formatShortDate(dueDate),
+                amount: monthlyAmount,
+                status: isPaid ? "Paid" : "Pending",
+                action: isPaid ? "Paid" : "Mark as paid",
+                isPaid: isPaid
+            });
+        }
+
+        return rows;
+    }
+
+    function renderInstallmentBreakdownRows(rows) {
+        if (!instBreakdownTableBody) {
+            return;
+        }
+        instBreakdownTableBody.innerHTML = "";
+
+        const list = Array.isArray(rows) ? rows : [];
+        if (list.length < 1) {
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        list.forEach(function (item) {
+            const tr = document.createElement("tr");
+            const amountLabel = formatPeso(item.amount || 0);
+            const statusClass = String(item.status || "").toLowerCase().includes("paid")
+                ? "success"
+                : "warning";
+            const monthValue = Number(item.month || 0);
+            const actionHtml = item.isPaid
+                ? "<span class=\"readonly-chip\">" + escapeHtml(String(item.action || "Paid")) + "</span>"
+                : "<button type=\"button\" class=\"inst-mark-paid-btn\" data-month=\""
+                    + escapeHtml(String(monthValue))
+                    + "\">Mark as paid</button>";
+
+            tr.innerHTML = ""
+                + "<td>" + escapeHtml(String(item.month || "-")) + "</td>"
+                + "<td>" + escapeHtml(String(item.dueDate || "-")) + "</td>"
+                + "<td>" + escapeHtml(amountLabel) + "</td>"
+                + "<td><span class=\"status-pill " + statusClass + "\">" + escapeHtml(String(item.status || "-")) + "</span></td>"
+                + "<td>" + actionHtml + "</td>";
+            fragment.appendChild(tr);
+        });
+        instBreakdownTableBody.appendChild(fragment);
+    }
+
+    function renderInstallmentMode(record) {
+        const metrics = parseInstallmentMetrics(record);
+        const rows = buildInstallmentScheduleRows(record, metrics);
+        const orderStatusText = getStatusLabel(record);
+        const customerLocation = getCustomerLocation(record);
+
+        setTextContent(instOrderDate, formatDateTime(getRecordCreatedAt(record)), "N/A");
+        applyStatusPill(instOrderStatus, orderStatusText);
+        setTextContent(instDeliveryMethod, String(record && record.service || "-"), "-");
+        setTextContent(instDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
+        setTextContent(instEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
+
+        setTextContent(instModelName, getModelLabelFromRecord(record), "-");
+        setBikeImage(instModelImage, record);
+        const installmentInitialDue = metrics.initialDueAmount || toCurrencyNumber(record && record.total || 0);
+        setTextContent(instTotalPrice, formatPeso(installmentInitialDue), "-");
+        setTextContent(instPaymentMethod, String(record && record.payment || "-"), "-");
+        setTextContent(
+            instInstallmentPlan,
+            metrics.monthsToPay > 0 ? (metrics.monthsToPay + " months") : "Not set",
+            "Not set"
+        );
+
+        setTextContent(instCustomerName, buildNameFromRecord(record), "-");
+        setTextContent(instCustomerPhone, String(record && record.phone || "-"), "-");
+        setTextContent(instCustomerLocation, customerLocation, "N/A");
+        applyStatusPill(instAccountStatus, getAccountStatusLabel(record));
+        setTextContent(instCustomerType, getCustomerTypeLabel("installment"), "Installment Buyer");
+
+        setTextContent(instSummaryTotalOrder, "1", "1");
+        setTextContent(
+            instSummaryPaidInstallment,
+            (metrics.paidCount || 0) + " / " + (metrics.monthsToPay || 0),
+            "0 / 0"
+        );
+        setTextContent(instSummaryOutstandingBalance, formatPeso(metrics.outstandingBalance || 0), "-");
+
+        renderInstallmentBreakdownRows(rows);
+        if (instBreakdownFallback) {
+            instBreakdownFallback.hidden = metrics.hasBreakdownData && rows.length > 0;
+        }
+    }
+
+    function renderCashMode(record) {
+        const cashBreakdown = resolveCashPaymentBreakdown(record);
+        const orderStatusText = getStatusLabel(record);
+
+        setTextContent(cashOrderDate, formatDateTime(getRecordCreatedAt(record)), "N/A");
+        applyStatusPill(cashOrderStatus, orderStatusText);
+        setTextContent(cashDeliveryMethod, String(record && record.service || "-"), "-");
+        setTextContent(cashDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
+        setTextContent(cashEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
+
+        setTextContent(cashModelName, getModelLabelFromRecord(record), "-");
+        setBikeImage(cashModelImage, record);
+        setTextContent(cashTotalPrice, formatPeso(cashBreakdown.subtotal), "-");
+        setTextContent(cashPaymentMethod, String(record && record.payment || "-"), "-");
+
+        setTextContent(cashCustomerName, buildNameFromRecord(record), "-");
+        setTextContent(cashCustomerPhone, String(record && record.phone || "-"), "-");
+        setTextContent(cashCustomerLocation, getCustomerLocation(record), "N/A");
+        applyStatusPill(cashAccountStatus, getAccountStatusLabel(record));
+        setTextContent(cashCustomerType, getCustomerTypeLabel("cash"), "Cash Buyer");
+
+        setTextContent(cashPaymentTotalPrice, formatPeso(cashBreakdown.subtotal), "-");
+        setTextContent(cashPaymentDeliveryFee, formatPeso(cashBreakdown.shippingFee), "-");
+        setTextContent(cashPaymentGrandTotal, formatPeso(cashBreakdown.grandTotal), "-");
+    }
+
+    function updatePrimaryActionLabels(mode) {
+        if (!approveBtn || !rejectBtn) {
+            return;
+        }
+        if (mode === "installment") {
+            approveBtn.textContent = "Approve Installment Application";
+            rejectBtn.textContent = "Reject Application";
+            return;
+        }
+        approveBtn.textContent = "Accept Booking";
+        rejectBtn.textContent = "Reject Booking";
+    }
+
     function getStatusLabel(record) {
         const status = String(record && record.status || "").trim();
         const fulfillment = String(record && record.fulfillmentStatus || "").trim();
@@ -210,70 +752,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return status || fulfillment || "Pending review";
     }
 
-    function formatPaymentStatus(value) {
-        const normalized = normalizePaymentStatusValue(value);
-        if (!normalized) {
-            return "-";
-        }
-        if (Object.prototype.hasOwnProperty.call(PAYMENT_STATUS_LABELS, normalized)) {
-            return PAYMENT_STATUS_LABELS[normalized];
-        }
-        return normalized;
-    }
-
-    function normalizePaymentStatusValue(value) {
-        return String(value || "")
-            .trim()
-            .toLowerCase()
-            .replace(/[\s\-]+/g, "_");
-    }
-
-    function setPaymentStatusFeedback(message, tone) {
-        if (!paymentStatusFeedback) {
-            return;
-        }
-        paymentStatusFeedback.textContent = String(message || "");
-        paymentStatusFeedback.classList.remove("success", "error", "muted");
-        if (tone === "success" || tone === "error" || tone === "muted") {
-            paymentStatusFeedback.classList.add(tone);
-        }
-    }
-
-    function setFulfillmentStatusFeedback(message, tone) {
-        if (!fulfillmentStatusFeedback) {
-            return;
-        }
-        fulfillmentStatusFeedback.textContent = String(message || "");
-        fulfillmentStatusFeedback.classList.remove("success", "error", "muted");
-        if (tone === "success" || tone === "error" || tone === "muted") {
-            fulfillmentStatusFeedback.classList.add(tone);
-        }
-    }
-
-    function normalizeServiceKey(value) {
-        const normalized = String(value || "").trim().toLowerCase();
-        if (normalized.includes("pick")) {
-            return "pickup";
-        }
-        if (normalized.includes("install")) {
-            return "installment";
-        }
-        if (normalized.includes("delivery")) {
-            return "delivery";
-        }
-        return "fallback";
-    }
-
     function normalizeProgressText(value) {
         return String(value || "").trim().replace(/\s+/g, " ");
-    }
-
-    function normalizeTrackingEta(value) {
-        return normalizeProgressText(value).slice(0, 80);
-    }
-
-    function normalizeTrackingLocation(value) {
-        return normalizeProgressText(value).slice(0, 120);
     }
 
     function formatTrackingField(value, fallback) {
@@ -284,75 +764,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return String(fallback || "-");
     }
 
-    function getFulfillmentPresetOptions(serviceValue) {
-        const serviceKey = normalizeServiceKey(serviceValue);
-        if (Object.prototype.hasOwnProperty.call(FULFILLMENT_STATUS_PRESETS, serviceKey)) {
-            return FULFILLMENT_STATUS_PRESETS[serviceKey];
-        }
-        return FULFILLMENT_STATUS_PRESETS.fallback;
-    }
-
-    function renderFulfillmentOptionsForBooking(booking) {
-        if (!fulfillmentStatusSelect) {
-            return;
-        }
-
-        const options = getFulfillmentPresetOptions(booking && booking.service);
-        const currentValue = normalizeProgressText(booking && booking.fulfillmentStatus);
-        const optionValues = options.slice();
-        const seen = new Set(optionValues.map(function (item) {
-            return normalizeProgressText(item).toLowerCase();
-        }));
-
-        if (currentValue && !seen.has(currentValue.toLowerCase())) {
-            optionValues.unshift(currentValue);
-        }
-
-        fulfillmentStatusSelect.innerHTML = "";
-        optionValues.forEach(function (label) {
-            const option = document.createElement("option");
-            option.value = label;
-            option.textContent = label;
-            fulfillmentStatusSelect.appendChild(option);
-        });
-
-        if (currentValue && optionValues.includes(currentValue)) {
-            fulfillmentStatusSelect.value = currentValue;
-        } else if (optionValues.length > 0) {
-            fulfillmentStatusSelect.value = optionValues[0];
-        }
-    }
-
-    function buildFulfillmentStatusPayload(baseStatus) {
-        const statusText = normalizeProgressText(baseStatus);
-        if (!statusText) {
-            return "";
-        }
-        return statusText.slice(0, 80);
-    }
-
-    function canUpdateFulfillmentStatus(booking) {
-        if (!booking || typeof booking !== "object") {
-            return false;
-        }
-        const merged = (
-            String(booking.status || "")
-            + " "
-            + String(booking.fulfillmentStatus || "")
-            + " "
-            + String(booking.reviewDecision || "")
-        ).toLowerCase();
-        if (merged.includes("reject") || merged.includes("cancel")) {
-            return false;
-        }
-        return (
-            merged.includes("approve")
-            || merged.includes("complete")
-            || merged.includes("deliver")
-            || merged.includes("picked up")
-            || merged.includes("released")
-        );
-    }
 
     function canPrintReceiptStatus(statusValue, fulfillmentValue) {
         const merged = (
@@ -451,7 +862,34 @@ document.addEventListener("DOMContentLoaded", function () {
         const trackingEta = escapeHtml(String((booking && booking.trackingEta) || "Not set"));
         const trackingLocation = escapeHtml(String((booking && booking.trackingLocation) || "Not set"));
         const shippingAddress = escapeHtml(String((booking && booking.shippingAddress) || "-"));
-        const total = escapeHtml(formatPeso((booking && booking.total) || 0));
+        const installmentSummary = getInstallmentReceiptSummary(booking);
+        const totalAmount = installmentSummary
+            ? installmentSummary.totalPayableForReceipt
+            : toCurrencyNumber((booking && booking.total) || 0);
+        const total = escapeHtml(formatPeso(totalAmount));
+        const installmentInfoRows = installmentSummary
+            ? (
+                "<div class=\"row\"><span class=\"label\">Monthly Payment</span><span class=\"value\">" + escapeHtml(formatPeso(installmentSummary.monthlyPayment)) + "</span></div>"
+                + "<div class=\"row\"><span class=\"label\">Paid Installment</span><span class=\"value\">" + escapeHtml(installmentSummary.progressLabel) + "</span></div>"
+                + "<div class=\"row\"><span class=\"label\">Total Paid</span><span class=\"value\">" + escapeHtml(installmentSummary.paidVsTotalLabel) + "</span></div>"
+            )
+            : "";
+        const installmentTotalsRows = installmentSummary
+            ? (
+                "<div class=\"row\"><span class=\"label\">Installment Total</span><span class=\"value\">" + escapeHtml(formatPeso(installmentSummary.totalInstallmentPayable)) + "</span></div>"
+                + (
+                    installmentSummary.downPayment > 0
+                        ? "<div class=\"row\"><span class=\"label\">Downpayment</span><span class=\"value\">" + escapeHtml(formatPeso(installmentSummary.downPayment)) + "</span></div>"
+                        : ""
+                )
+                + "<div class=\"row\"><span class=\"label\">Outstanding</span><span class=\"value\">" + escapeHtml(formatPeso(installmentSummary.outstandingBalance)) + "</span></div>"
+                + "<div class=\"row strong\"><span class=\"label\">TOTAL PAYABLE</span><span class=\"value\">" + escapeHtml(formatPeso(installmentSummary.totalPayableForReceipt)) + "</span></div>"
+            )
+            : (
+                "<div class=\"row\"><span class=\"label\">Subtotal</span><span class=\"value\">" + total + "</span></div>"
+                + "<div class=\"row\"><span class=\"label\">Discount</span><span class=\"value\">" + escapeHtml(formatPeso(0)) + "</span></div>"
+                + "<div class=\"row strong\"><span class=\"label\">TOTAL</span><span class=\"value\">" + total + "</span></div>"
+            );
         const serviceLine = String((booking && booking.service) || "").toLowerCase().includes("delivery")
             ? "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
             : "";
@@ -487,14 +925,13 @@ document.addEventListener("DOMContentLoaded", function () {
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
+            + installmentInfoRows
             + "<div class=\"hr\"></div>"
             + "<div class=\"items-head strong\"><span class=\"item-name\">Item</span><span class=\"item-qty\">Qty</span><span class=\"item-amount\">Amount</span></div>"
             + "<div class=\"item\"><span class=\"item-name\">" + model + "</span><span class=\"item-qty\">1</span><span class=\"item-amount\">" + total + "</span></div>"
             + "<div class=\"hr\"></div>"
             + "<div class=\"totals\">"
-            + "<div class=\"row\"><span class=\"label\">Subtotal</span><span class=\"value\">" + total + "</span></div>"
-            + "<div class=\"row\"><span class=\"label\">Discount</span><span class=\"value\">" + escapeHtml(formatPeso(0)) + "</span></div>"
-            + "<div class=\"row strong\"><span class=\"label\">TOTAL</span><span class=\"value\">" + total + "</span></div>"
+            + installmentTotalsRows
             + "</div>"
             + "<div class=\"hr\"></div>"
             + "<div class=\"foot\">Printed: " + escapeHtml(printedAt) + "<br>Generated by Admin Portal<br>THANK YOU</div>"
@@ -577,7 +1014,12 @@ document.addEventListener("DOMContentLoaded", function () {
             booking && (booking.receiptIssuedAt || booking.receipt_issued_at || booking.createdAt)
         );
         const generatedAt = formatReceiptIssuedDate(new Date().toISOString());
-        const amountLabel = formatReceiptAmountText((booking && booking.total) || 0);
+        const installmentSummary = getInstallmentReceiptSummary(booking);
+        const amountLabel = formatReceiptAmountText(
+            installmentSummary
+                ? installmentSummary.totalPayableForReceipt
+                : ((booking && booking.total) || 0)
+        );
         const deliveryAddress = String((booking && booking.service) || "").toLowerCase().includes("delivery")
             ? String((booking && booking.shippingAddress) || "-")
             : "";
@@ -632,13 +1074,39 @@ document.addEventListener("DOMContentLoaded", function () {
         writeLine("Progress: " + String((booking && booking.fulfillmentStatus) || "-"));
         writeLine("ETA: " + String((booking && booking.trackingEta) || "Not set"));
         writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));
+        if (installmentSummary) {
+            writeLine("Monthly Payment: " + formatReceiptAmountText(installmentSummary.monthlyPayment));
+            writeLine("Paid Installment: " + installmentSummary.progressLabel);
+            writeLine(
+                "Total Paid: "
+                + formatReceiptAmountText(installmentSummary.paidAmount)
+                + " / "
+                + formatReceiptAmountText(installmentSummary.totalInstallmentPayable)
+            );
+        }
         writeRule();
         writeLine("1 x " + getModelLabelFromRecord(booking));
         writeLine("Amount: " + amountLabel);
         writeRule();
-        writeLine("Subtotal: " + amountLabel, "bold");
-        writeLine("Discount: " + formatReceiptAmountText(0));
-        writeLine("TOTAL: " + amountLabel, "bold");
+        if (installmentSummary) {
+            writeLine(
+                "Installment Total: "
+                + formatReceiptAmountText(installmentSummary.totalInstallmentPayable)
+            );
+            if (installmentSummary.downPayment > 0) {
+                writeLine("Downpayment: " + formatReceiptAmountText(installmentSummary.downPayment));
+            }
+            writeLine("Outstanding: " + formatReceiptAmountText(installmentSummary.outstandingBalance));
+            writeLine(
+                "TOTAL PAYABLE: "
+                + formatReceiptAmountText(installmentSummary.totalPayableForReceipt),
+                "bold"
+            );
+        } else {
+            writeLine("Subtotal: " + amountLabel, "bold");
+            writeLine("Discount: " + formatReceiptAmountText(0));
+            writeLine("TOTAL: " + amountLabel, "bold");
+        }
         writeRule();
         writeCenter("Generated: " + generatedAt, 8, "normal");
         writeCenter("Generated by Admin Portal", 8, "normal");
@@ -915,7 +1383,10 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch(
                 getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}`),
-                { method: "GET" }
+                {
+                    method: "GET",
+                    headers: buildApiHeaders()
+                }
             );
 
             if (response.status === 404 || response.status === 405) {
@@ -939,7 +1410,10 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch(
                 getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}/${action}`),
-                { method: "POST" }
+                {
+                    method: "POST",
+                    headers: buildApiHeaders()
+                }
             );
 
             if (response.status === 404 || response.status === 405) {
@@ -967,23 +1441,30 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    async function updateBookingPaymentStatusViaApi(orderId, paymentStatus) {
+    async function markInstallmentMonthPaidViaApi(orderId, monthNumber) {
         try {
             const response = await fetch(
-                getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}/payment-status`),
+                getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}/installment/mark-paid`),
                 {
                     method: "POST",
-                    headers: {
+                    headers: buildApiHeaders({
                         "Content-Type": "application/json"
-                    },
+                    }),
                     body: JSON.stringify({
-                        paymentStatus: paymentStatus
+                        month: monthNumber
                     })
                 }
             );
 
             if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable", booking: null };
+                const payload404 = await response.json().catch(function () {
+                    return {};
+                });
+                return {
+                    mode: "error",
+                    message: payload404.message || "Installment API endpoint is unavailable. Please restart the API server.",
+                    booking: null
+                };
             }
 
             const payload = await response.json().catch(function () {
@@ -992,50 +1473,16 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!response.ok || payload.success !== true || !payload.booking) {
                 return {
                     mode: "error",
-                    message: payload.message || "Unable to update payment status.",
+                    message: payload.message || "Unable to mark installment as paid.",
                     booking: null
                 };
             }
 
-            return { mode: "ok", booking: payload.booking };
-        } catch (_error) {
-            return { mode: "unavailable", booking: null };
-        }
-    }
-
-    async function updateBookingFulfillmentStatusViaApi(orderId, fulfillmentStatus, trackingEta, trackingLocation) {
-        try {
-            const response = await fetch(
-                getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}/fulfillment-status`),
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        fulfillmentStatus: fulfillmentStatus,
-                        trackingEta: trackingEta,
-                        trackingLocation: trackingLocation
-                    })
-                }
-            );
-
-            if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable", booking: null };
-            }
-
-            const payload = await response.json().catch(function () {
-                return {};
-            });
-            if (!response.ok || payload.success !== true || !payload.booking) {
-                return {
-                    mode: "error",
-                    message: payload.message || "Unable to update fulfillment status.",
-                    booking: null
-                };
-            }
-
-            return { mode: "ok", booking: payload.booking };
+            return {
+                mode: "ok",
+                booking: payload.booking,
+                message: payload.message || "Installment updated."
+            };
         } catch (_error) {
             return { mode: "unavailable", booking: null };
         }
@@ -1046,86 +1493,27 @@ document.addEventListener("DOMContentLoaded", function () {
         detailsContent.hidden = show;
         approveBtn.disabled = show;
         rejectBtn.disabled = show;
-        if (paymentStatusSelect) {
-            paymentStatusSelect.disabled = show;
-        }
-        if (savePaymentStatusBtn) {
-            savePaymentStatusBtn.disabled = show;
-        }
-        if (fulfillmentStatusSelect) {
-            fulfillmentStatusSelect.disabled = show;
-        }
-        if (fulfillmentEtaInput) {
-            fulfillmentEtaInput.disabled = show;
-        }
-        if (fulfillmentLocationInput) {
-            fulfillmentLocationInput.disabled = show;
-        }
-        if (saveFulfillmentStatusBtn) {
-            saveFulfillmentStatusBtn.disabled = show;
-        }
         if (show) {
             updateReceiptActionButtons(null);
         }
     }
 
     function renderBookingDetails(booking) {
-        detailOrderId.textContent = getRecordOrderId(booking) || "-";
-        detailCreatedAt.textContent = formatDateTime(getRecordCreatedAt(booking));
-        detailName.textContent = buildNameFromRecord(booking);
-        detailEmail.textContent = getRecordEmail(booking) || "-";
-        detailModel.textContent = getModelLabelFromRecord(booking);
-        if (detailColor) {
-            detailColor.textContent = getBikeColorLabelFromRecord(booking) || "-";
+        const bookingMode = getBookingMode(booking);
+        if (modeInstallmentLayout) {
+            modeInstallmentLayout.hidden = bookingMode !== "installment";
         }
-        detailService.textContent = String(booking.service || "-");
-        detailSchedule.textContent = formatScheduleFromRecord(booking);
-        detailPlan.textContent = getPlanLabel(booking);
-        detailPayment.textContent = String(booking.payment || "-");
-        if (detailPaymentStatus) {
-            detailPaymentStatus.textContent = formatPaymentStatus(booking.paymentStatus);
+        if (modeCashLayout) {
+            modeCashLayout.hidden = bookingMode !== "cash";
         }
-        if (paymentStatusSelect) {
-            const normalizedPaymentStatus = normalizePaymentStatusValue(booking.paymentStatus);
-            if (normalizedPaymentStatus && paymentStatusSelect.querySelector(`option[value="${normalizedPaymentStatus}"]`)) {
-                paymentStatusSelect.value = normalizedPaymentStatus;
-            }
-        }
-        renderFulfillmentOptionsForBooking(booking);
-        const allowFulfillmentUpdate = canUpdateFulfillmentStatus(booking);
-        if (fulfillmentStatusSelect) {
-            fulfillmentStatusSelect.disabled = !allowFulfillmentUpdate;
-        }
-        if (fulfillmentEtaInput) {
-            fulfillmentEtaInput.disabled = !allowFulfillmentUpdate;
-        }
-        if (fulfillmentLocationInput) {
-            fulfillmentLocationInput.disabled = !allowFulfillmentUpdate;
-        }
-        if (saveFulfillmentStatusBtn) {
-            saveFulfillmentStatusBtn.disabled = !allowFulfillmentUpdate;
-        }
-        detailStatus.textContent = getStatusLabel(booking);
-        if (detailTrackingEta) {
-            detailTrackingEta.textContent = formatTrackingField(booking.trackingEta, "Not set");
-        }
-        if (detailTrackingLocation) {
-            detailTrackingLocation.textContent = formatTrackingField(booking.trackingLocation, "Not set");
-        }
-        detailTotal.textContent = formatPeso(booking.total || 0);
-        detailAddress.textContent = String(booking.shippingAddress || "N/A");
-        if (fulfillmentEtaInput) {
-            fulfillmentEtaInput.value = normalizeTrackingEta(booking.trackingEta);
-        }
-        if (fulfillmentLocationInput) {
-            fulfillmentLocationInput.value = normalizeTrackingLocation(booking.trackingLocation);
-        }
-        setPaymentStatusFeedback("", "muted");
-        if (allowFulfillmentUpdate) {
-            setFulfillmentStatusFeedback("", "muted");
+
+        if (bookingMode === "installment") {
+            renderInstallmentMode(booking);
         } else {
-            setFulfillmentStatusFeedback("Approve this booking first before updating fulfillment progress.", "muted");
+            renderCashMode(booking);
         }
+
+        updatePrimaryActionLabels(bookingMode);
         updateReceiptActionButtons(booking);
     }
 
@@ -1229,134 +1617,53 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
 
-        if (savePaymentStatusBtn && paymentStatusSelect) {
-            savePaymentStatusBtn.addEventListener("click", async function () {
-                if (!currentBooking) {
+        if (instBreakdownTableBody) {
+            instBreakdownTableBody.addEventListener("click", async function (event) {
+                const button = event.target && event.target.closest
+                    ? event.target.closest(".inst-mark-paid-btn")
+                    : null;
+                if (!button || !(button instanceof HTMLButtonElement)) {
                     return;
                 }
-                const nextStatus = normalizePaymentStatusValue(paymentStatusSelect.value);
-                if (!nextStatus) {
-                    setPaymentStatusFeedback("Select a valid payment status first.", "error");
-                    return;
-                }
-                const currentStatus = normalizePaymentStatusValue(currentBooking.paymentStatus);
-                if (nextStatus === currentStatus) {
-                    setPaymentStatusFeedback("Payment status is already up to date.", "muted");
+                if (!currentBooking || getBookingMode(currentBooking) !== "installment") {
                     return;
                 }
 
-                savePaymentStatusBtn.disabled = true;
-                paymentStatusSelect.disabled = true;
-                setPaymentStatusFeedback("Updating payment status...", "muted");
+                const monthNumber = Number(button.getAttribute("data-month") || 0);
+                if (!Number.isFinite(monthNumber) || monthNumber < 1) {
+                    window.alert("Invalid installment month.");
+                    return;
+                }
+                if (!window.confirm(`Mark month ${monthNumber} as paid?`)) {
+                    return;
+                }
 
-                const result = await updateBookingPaymentStatusViaApi(orderId, nextStatus);
+                const initialLabel = button.textContent || "Mark as paid";
+                const activeButtons = Array.from(instBreakdownTableBody.querySelectorAll(".inst-mark-paid-btn"));
+                activeButtons.forEach(function (target) {
+                    target.disabled = true;
+                });
+                button.textContent = "Saving...";
+
+                const result = await markInstallmentMonthPaidViaApi(orderId, monthNumber);
                 if (result.mode === "ok" && result.booking) {
                     currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
                     localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
                     renderBookingDetails(currentBooking);
-                    setPaymentStatusFeedback("Payment status updated successfully.", "success");
-                    savePaymentStatusBtn.disabled = false;
-                    paymentStatusSelect.disabled = false;
+                    window.alert(result.message || `Month ${monthNumber} marked as paid.`);
                     return;
                 }
 
                 if (result.mode === "error") {
-                    setPaymentStatusFeedback(result.message || "Unable to update payment status.", "error");
-                    savePaymentStatusBtn.disabled = false;
-                    paymentStatusSelect.disabled = false;
-                    return;
+                    window.alert(result.message || "Unable to mark installment as paid.");
+                } else {
+                    window.alert("API unavailable. Unable to update installment payment.");
                 }
 
-                setPaymentStatusFeedback("API unavailable. Unable to update payment status.", "error");
-                savePaymentStatusBtn.disabled = false;
-                paymentStatusSelect.disabled = false;
-            });
-        }
-
-        if (saveFulfillmentStatusBtn && fulfillmentStatusSelect) {
-            saveFulfillmentStatusBtn.addEventListener("click", async function () {
-                if (!currentBooking) {
-                    return;
-                }
-
-                const baseStatus = normalizeProgressText(fulfillmentStatusSelect.value);
-                const nextTrackingEta = fulfillmentEtaInput
-                    ? normalizeTrackingEta(fulfillmentEtaInput.value)
-                    : "";
-                const locationNote = fulfillmentLocationInput
-                    ? normalizeTrackingLocation(fulfillmentLocationInput.value)
-                    : "";
-                const nextFulfillmentStatus = buildFulfillmentStatusPayload(baseStatus);
-                if (!nextFulfillmentStatus) {
-                    setFulfillmentStatusFeedback("Select a fulfillment status first.", "error");
-                    return;
-                }
-
-                const currentFulfillmentStatus = normalizeProgressText(currentBooking.fulfillmentStatus);
-                const currentTrackingEta = normalizeTrackingEta(currentBooking.trackingEta);
-                const currentTrackingLocation = normalizeTrackingLocation(currentBooking.trackingLocation);
-                const isStatusSame = nextFulfillmentStatus.toLowerCase() === currentFulfillmentStatus.toLowerCase();
-                const isEtaSame = nextTrackingEta.toLowerCase() === currentTrackingEta.toLowerCase();
-                const isLocationSame = locationNote.toLowerCase() === currentTrackingLocation.toLowerCase();
-                if (isStatusSame && isEtaSame && isLocationSame) {
-                    setFulfillmentStatusFeedback("Fulfillment, ETA, and location are already up to date.", "muted");
-                    return;
-                }
-
-                saveFulfillmentStatusBtn.disabled = true;
-                fulfillmentStatusSelect.disabled = true;
-                if (fulfillmentEtaInput) {
-                    fulfillmentEtaInput.disabled = true;
-                }
-                if (fulfillmentLocationInput) {
-                    fulfillmentLocationInput.disabled = true;
-                }
-                setFulfillmentStatusFeedback("Updating fulfillment status, ETA, and location...", "muted");
-
-                const result = await updateBookingFulfillmentStatusViaApi(
-                    orderId,
-                    nextFulfillmentStatus,
-                    nextTrackingEta,
-                    locationNote
-                );
-                if (result.mode === "ok" && result.booking) {
-                    currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
-                    localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
-                    renderBookingDetails(currentBooking);
-                    setFulfillmentStatusFeedback("Fulfillment, ETA, and location updated successfully.", "success");
-                    saveFulfillmentStatusBtn.disabled = false;
-                    fulfillmentStatusSelect.disabled = false;
-                    if (fulfillmentEtaInput) {
-                        fulfillmentEtaInput.disabled = false;
-                    }
-                    if (fulfillmentLocationInput) {
-                        fulfillmentLocationInput.disabled = false;
-                    }
-                    return;
-                }
-
-                if (result.mode === "error") {
-                    setFulfillmentStatusFeedback(result.message || "Unable to update fulfillment status.", "error");
-                    saveFulfillmentStatusBtn.disabled = false;
-                    fulfillmentStatusSelect.disabled = false;
-                    if (fulfillmentEtaInput) {
-                        fulfillmentEtaInput.disabled = false;
-                    }
-                    if (fulfillmentLocationInput) {
-                        fulfillmentLocationInput.disabled = false;
-                    }
-                    return;
-                }
-
-                setFulfillmentStatusFeedback("API unavailable. Unable to update fulfillment status.", "error");
-                saveFulfillmentStatusBtn.disabled = false;
-                fulfillmentStatusSelect.disabled = false;
-                if (fulfillmentEtaInput) {
-                    fulfillmentEtaInput.disabled = false;
-                }
-                if (fulfillmentLocationInput) {
-                    fulfillmentLocationInput.disabled = false;
-                }
+                activeButtons.forEach(function (target) {
+                    target.disabled = false;
+                });
+                button.textContent = initialLabel;
             });
         }
     }
