@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const chatModePill = document.getElementById("admin-chat-mode-pill");
     const chatTakeoverBtn = document.getElementById("admin-chat-takeover");
     const chatReleaseBtn = document.getElementById("admin-chat-release");
+    const chatClearBtn = document.getElementById("admin-chat-clear");
     const chatStatusEl = document.getElementById("admin-chat-status");
     const chatMessagesEl = document.getElementById("admin-chat-messages");
     const chatForm = document.getElementById("admin-chat-form");
@@ -112,6 +113,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (chatReleaseBtn) {
             chatReleaseBtn.disabled = mode !== CHAT_MODE_ADMIN || !chatState.selectedUser;
+        }
+        if (chatClearBtn) {
+            chatClearBtn.disabled = !chatState.selectedUser;
         }
     }
 
@@ -237,6 +241,9 @@ document.addEventListener("DOMContentLoaded", () => {
             chatSendBtn.disabled = true;
             chatSendBtn.textContent = "Send";
         }
+        if (chatClearBtn) {
+            chatClearBtn.disabled = true;
+        }
     }
 
     async function fetchUsersFromApi() {
@@ -348,6 +355,47 @@ document.addEventListener("DOMContentLoaded", () => {
                 return {
                     mode: "error",
                     message: payload.message || "Unable to complete chat action."
+                };
+            }
+
+            return {
+                mode: "ok",
+                payload: payload
+            };
+        } catch (_error) {
+            return { mode: "unavailable" };
+        }
+    }
+
+    async function clearAdminChatThread(userEmail) {
+        const email = String(userEmail || "").trim().toLowerCase();
+        if (!email) {
+            return { mode: "error", message: "User email is missing." };
+        }
+
+        try {
+            const response = await fetch(
+                getApiUrl("/api/chat/thread/clear"),
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        email: email
+                    })
+                }
+            );
+
+            if (response.status === 404 || response.status === 405) {
+                return { mode: "unavailable" };
+            }
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success !== true) {
+                return {
+                    mode: "error",
+                    message: payload.message || "Unable to clear chat conversation."
                 };
             }
 
@@ -581,6 +629,45 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    if (chatClearBtn) {
+        chatClearBtn.addEventListener("click", async () => {
+            if (!chatState.selectedUser || !chatState.selectedUser.email) {
+                return;
+            }
+            if (!window.confirm("Delete this user's entire chat conversation?")) {
+                return;
+            }
+
+            chatClearBtn.disabled = true;
+            const originalText = chatClearBtn.textContent;
+            chatClearBtn.textContent = "Deleting...";
+
+            const result = await clearAdminChatThread(chatState.selectedUser.email);
+
+            chatClearBtn.textContent = originalText;
+            setChatMode(chatState.mode);
+
+            if (result.mode === "ok") {
+                const payload = result.payload || {};
+                const thread = payload.thread || {};
+                setChatMode(thread.mode);
+                renderChatMessages([], true);
+                chatState.latestMessageId = 0;
+                if (chatInput) {
+                    chatInput.value = "";
+                }
+                setChatStatus(payload.message || "Chat conversation deleted.", "success");
+                return;
+            }
+
+            if (result.mode === "unavailable") {
+                setChatStatus("Chat API unavailable. Start the backend server.", "error");
+            } else {
+                setChatStatus(result.message || "Unable to delete conversation.", "error");
+            }
+        });
+    }
+
     if (chatForm) {
         chatForm.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -646,6 +733,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setChatMode(CHAT_MODE_BOT);
     if (chatSendBtn) {
         chatSendBtn.disabled = true;
+    }
+    if (chatClearBtn) {
+        chatClearBtn.disabled = true;
     }
     void loadUsers();
 });
