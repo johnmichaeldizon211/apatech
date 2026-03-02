@@ -292,7 +292,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return cleaned;
         }
         if (cleaned.startsWith("/")) {
-            return "." + cleaned;
+            return cleaned;
         }
         return "../" + cleaned;
     }
