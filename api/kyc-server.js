@@ -105,6 +105,7 @@ const DB_NAME = String(process.env.DB_NAME || DB_URL_CONFIG.database || "ecodriv
 const DB_SSL = parseBooleanEnv(process.env.DB_SSL, Boolean(DB_URL_CONFIG.sslRequired));
 const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 let dbPool = null;
+let dbSchemaReadyPromise = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || "587");
@@ -1504,6 +1505,13 @@ async function sendBookingRejectedEmail(record, options) {
     } catch (error) {
         return { sent: false, reason: error.message || "SMTP send failed." };
     }
+}
+
+function ensureDbSchemaReady() {
+    if (!dbSchemaReadyPromise) {
+        dbSchemaReadyPromise = ensureDbSchema();
+    }
+    return dbSchemaReadyPromise;
 }
 
 function formatPaymentStatusForEmail(value) {
@@ -6360,7 +6368,7 @@ function bootstrapRuntime(triggerLabelInput) {
     }
     runtimeBootstrapped = true;
 
-    void ensureDbSchema();
+    void ensureDbSchemaReady();
 
     if (IS_SERVERLESS_RUNTIME) {
         console.info("[runtime] Serverless runtime detected; installment reminder scheduler disabled.");
@@ -6977,6 +6985,7 @@ async function handleKycVerifyFace(req, res) {
 
 async function requestListener(req, res) {
     bootstrapRuntime("request");
+    await ensureDbSchemaReady();
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     const pathname = parsedUrl.pathname;
