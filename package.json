@@ -1,0 +1,14 @@
+{
+  "name": "apatech",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ecodrive frontend + API deployment package for Vercel",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node api/kyc-server.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5",
+    "nodemailer": "^6.9.16"
+  }
+}

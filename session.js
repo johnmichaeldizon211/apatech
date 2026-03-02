@@ -49,7 +49,10 @@
 
     function isDeprecatedApiBase(baseInput) {
         var host = getHostFromApiBase(baseInput);
-        return host === "apatech-production.up.railway.app";
+        return (
+            host === "apatech-production.up.railway.app" ||
+            host === "apatech.onrender.com"
+        );
     }
 
     function isSameOriginApiBase(baseInput) {

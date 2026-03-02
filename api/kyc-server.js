@@ -143,6 +143,12 @@ const INSTALLMENT_REMINDER_BATCH_LIMIT = parsePositiveInt(
 );
 let installmentReminderTimer = null;
 let installmentReminderInFlight = false;
+const IS_SERVERLESS_RUNTIME = Boolean(
+    String(process.env.VERCEL || "").trim() ||
+    String(process.env.AWS_LAMBDA_FUNCTION_NAME || "").trim() ||
+    String(process.env.NOW_REGION || "").trim()
+);
+let runtimeBootstrapped = false;
 
 const DEFAULT_PRODUCT_CATALOG = [
     { model: "BLITZ 2000", price: 68000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 1.png", detailUrl: "/Userhomefolder/Ebikes/ebike1.0.html" },
@@ -6251,6 +6257,47 @@ function startInstallmentReminderScheduler() {
     void runInstallmentReminderSweep("startup");
 }
 
+function bootstrapRuntime(triggerLabelInput) {
+    if (runtimeBootstrapped) {
+        return;
+    }
+    runtimeBootstrapped = true;
+
+    void ensureDbSchema();
+
+    if (IS_SERVERLESS_RUNTIME) {
+        console.info("[runtime] Serverless runtime detected; installment reminder scheduler disabled.");
+    } else {
+        startInstallmentReminderScheduler();
+    }
+
+    const dbStatus = isDbConfigured() ? "configured" : "missing-config";
+    const smtpStatus = isSmtpConfigured() ? "enabled" : "demo-fallback";
+    const installmentReminderStatus = INSTALLMENT_REMINDER_ENABLED
+        ? (isSmtpConfigured() ? "enabled" : "smtp-missing")
+        : "disabled";
+    const smsStatus = isSemaphoreConfigured()
+        ? "semaphore-direct"
+        : (isSmsWebhookConfigured() ? "webhook-relay" : "demo-fallback");
+    const semaphoreStatus = isSemaphoreConfigured() ? "configured" : "missing-config";
+    const otpMode = DEMO_OTP_ENABLED ? "demo-allowed" : "provider-required";
+    const corsStatus = CORS_ALLOWED_ORIGINS.size > 0 ? `${CORS_ALLOWED_ORIGINS.size}-origins` : "none";
+    const adminStatus = getAdminCredentials() ? "configured" : "missing";
+    const runtimeType = IS_SERVERLESS_RUNTIME ? "serverless" : "server";
+    const triggerLabel = String(triggerLabelInput || "startup").trim().toLowerCase() || "startup";
+    const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
+
+    if (ALLOW_DEMO_OTP && IS_PRODUCTION) {
+        console.warn("[security] ALLOW_DEMO_OTP is enabled but ignored in production mode.");
+    }
+    if (adminStatus === "missing") {
+        console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
+    }
+    console.log(
+        `API runtime ready at ${apiUrl} (Type: ${runtimeType}, Trigger: ${triggerLabel}, DB: ${dbStatus}, SMTP: ${smtpStatus}, InstallmentReminder: ${installmentReminderStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
+    );
+}
+
 function getProductCategoryFilter(parsedUrl) {
     const raw = String(parsedUrl.searchParams.get("category") || "").trim();
     if (!raw) {
@@ -6831,7 +6878,9 @@ async function handleKycVerifyFace(req, res) {
     }
 }
 
-const server = http.createServer(async (req, res) => {
+async function requestListener(req, res) {
+    bootstrapRuntime("request");
+
     const parsedUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     const pathname = parsedUrl.pathname;
 
@@ -7097,32 +7146,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     sendJson(res, 404, { success: false, message: "Endpoint not found." });
-});
+}
 
-server.listen(PORT, () => {
-    void ensureDbSchema();
-    const dbStatus = isDbConfigured() ? "configured" : "missing-config";
-    const smtpStatus = isSmtpConfigured() ? "enabled" : "demo-fallback";
-    const installmentReminderStatus = INSTALLMENT_REMINDER_ENABLED
-        ? (isSmtpConfigured() ? "enabled" : "smtp-missing")
-        : "disabled";
-    const smsStatus = isSemaphoreConfigured()
-        ? "semaphore-direct"
-        : (isSmsWebhookConfigured() ? "webhook-relay" : "demo-fallback");
-    const semaphoreStatus = isSemaphoreConfigured() ? "configured" : "missing-config";
-    const otpMode = DEMO_OTP_ENABLED ? "demo-allowed" : "provider-required";
-    const corsStatus = CORS_ALLOWED_ORIGINS.size > 0 ? `${CORS_ALLOWED_ORIGINS.size}-origins` : "none";
-    const adminStatus = getAdminCredentials() ? "configured" : "missing";
-    const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
-    if (ALLOW_DEMO_OTP && IS_PRODUCTION) {
-        console.warn("[security] ALLOW_DEMO_OTP is enabled but ignored in production mode.");
-    }
-    if (adminStatus === "missing") {
-        console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
-    }
-    console.log(
-        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, InstallmentReminder: ${installmentReminderStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
-    );
-    startInstallmentReminderScheduler();
-});
+const server = http.createServer(requestListener);
+
+function startServer() {
+    server.listen(PORT, () => {
+        bootstrapRuntime("startup");
+    });
+}
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = requestListener;
+module.exports.default = requestListener;
+module.exports.requestListener = requestListener;
+module.exports.startServer = startServer;
+module.exports.server = server;
 
