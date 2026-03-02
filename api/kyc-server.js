@@ -3136,7 +3136,7 @@ async function findChatUserById(pool, userId) {
         return null;
     }
 
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
         `SELECT id, full_name, email
          FROM users
          WHERE id = ? AND role = 'user'
@@ -3153,7 +3153,7 @@ async function findChatUserByEmail(pool, email) {
         return null;
     }
 
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
         `SELECT id, full_name, email
          FROM users
          WHERE email = ? AND role = 'user'
@@ -3172,7 +3172,7 @@ async function getOrCreateChatThreadForUser(pool, userRow) {
         return null;
     }
 
-    const [existingRows] = await pool.execute(
+    const [existingRows] = await pool.query(
         `SELECT *
          FROM chat_threads
          WHERE user_email = ?
@@ -3183,13 +3183,13 @@ async function getOrCreateChatThreadForUser(pool, userRow) {
     if (Array.isArray(existingRows) && existingRows.length) {
         const existing = existingRows[0];
         if (Number(existing.user_id || 0) !== userId) {
-            await pool.execute(
+            await pool.query(
                 `UPDATE chat_threads
                  SET user_id = ?, updated_at = NOW()
                  WHERE id = ?`,
                 [userId, Number(existing.id || 0)]
             );
-            const [updatedRows] = await pool.execute(
+            const [updatedRows] = await pool.query(
                 `SELECT *
                  FROM chat_threads
                  WHERE id = ?
@@ -3203,7 +3203,7 @@ async function getOrCreateChatThreadForUser(pool, userRow) {
         return mapChatThreadRow(existing);
     }
 
-    await pool.execute(
+    await pool.query(
         `INSERT INTO chat_threads (
             user_id,
             user_email,
@@ -3212,7 +3212,7 @@ async function getOrCreateChatThreadForUser(pool, userRow) {
         [userId, userEmail, CHAT_THREAD_MODE_BOT]
     );
 
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
         `SELECT *
          FROM chat_threads
          WHERE user_email = ?
@@ -3235,19 +3235,16 @@ async function listChatMessagesForThread(pool, threadId, options) {
     const afterId = parsePositiveId(opts.afterId);
     const limit = parseChatMessageLimit(opts.limit);
 
-    const queryParts = [
-        "SELECT * FROM chat_messages WHERE thread_id = ?"
-    ];
+    const safeLimit = Math.max(1, Number(limit) || DEFAULT_CHAT_MESSAGE_LIMIT);
+    let query = "SELECT * FROM chat_messages WHERE thread_id = ?";
     const params = [parsedThreadId];
     if (afterId > 0) {
-        queryParts.push("AND id > ?");
+        query += " AND id > ?";
         params.push(afterId);
     }
-    queryParts.push("ORDER BY id ASC");
-    queryParts.push("LIMIT ?");
-    params.push(limit);
+    query += " ORDER BY id ASC LIMIT " + String(safeLimit);
 
-    const [rows] = await pool.execute(queryParts.join(" "), params);
+    const [rows] = await pool.query(query, params);
     if (!Array.isArray(rows)) {
         return [];
     }
