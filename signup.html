@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up - Ecodrive</title>
-    <link rel="stylesheet" href="signup.css?v=20260224-2">
+    <link rel="stylesheet" href="signup.css?v=20260302-1">
 </head>
 <body>
 
@@ -56,59 +56,27 @@
         </form>
 
         <section id="signup-verification-step" class="verification-step" hidden>
-            <h3>Verify your contact details</h3>
-            <p class="verification-intro">
-                Choose where to receive your 4-digit code. One verified method is enough to create your account.
-            </p>
-
-            <div class="method-switch" role="radiogroup" aria-label="Signup verification method">
-                <button
-                    type="button"
-                    class="method-btn is-active"
-                    data-method="email"
-                    aria-pressed="true"
-                >
-                    Email
-                </button>
-                <button
-                    type="button"
-                    class="method-btn"
-                    data-method="mobile"
-                    aria-pressed="false"
-                >
-                    Mobile Number
-                </button>
-            </div>
-
-            <div class="verification-card" id="verification-card">
-                <div class="verification-head single">
-                    <div>
-                        <p class="verification-label" id="verify-contact-label">Email Address</p>
-                        <p class="verification-value" id="verify-contact-value">-</p>
-                    </div>
-                    <span class="verification-badge" id="verification-badge">Not verified</span>
-                </div>
-                <div class="verification-actions">
-                    <button type="button" class="secondary-btn" id="send-code-btn">Send Code</button>
-                </div>
+            <div class="otp-card" id="verification-card">
+                <h3>OTP verification</h3>
+                <p class="verification-intro">
+                    Please enter the OTP (One-Time Password) sent to your registered email to complete your verification.
+                </p>
+                <p class="verification-contact">
+                    Code sent to <span id="verify-contact-value">-</span>
+                </p>
                 <div class="otp-inputs" id="otp-inputs">
                     <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="0" aria-label="Verification code digit 1">
                     <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="1" aria-label="Verification code digit 2">
                     <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="2" aria-label="Verification code digit 3">
                     <input type="text" class="otp-digit" inputmode="numeric" maxlength="1" data-otp-index="3" aria-label="Verification code digit 4">
                 </div>
-                <div class="verification-actions">
-                    <button type="button" class="secondary-btn" id="verify-code-btn">Verify Code</button>
+                <div class="otp-meta">
+                    <p class="otp-timer" id="otp-timer">Remaining time: 00:00s</p>
+                    <button type="button" class="text-btn" id="resend-code-btn" disabled>Resend</button>
                 </div>
-                <div class="verification-actions">
-                    <button type="button" class="secondary-btn" id="resend-code-btn">Send Again</button>
-                </div>
+                <button type="button" class="create-btn otp-verify-btn" id="verify-code-btn" disabled>Verify</button>
+                <button type="button" class="secondary-btn otp-cancel-btn" id="back-to-form-btn">Cancel</button>
                 <p class="verification-status" id="verification-status" aria-live="polite"></p>
-            </div>
-
-            <div class="verification-footer">
-                <button type="button" class="secondary-btn" id="back-to-form-btn">Back to form</button>
-                <button type="button" class="create-btn" id="create-btn" disabled>Create account</button>
             </div>
         </section>
     </div>
@@ -122,7 +90,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="session.js?v=20260227-3"></script>
-<script src="signup.js?v=20260227-3"></script>
+<script src="signup.js?v=20260302-2"></script>
 </body>
 </html>
 

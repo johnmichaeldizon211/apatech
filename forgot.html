@@ -25,26 +25,7 @@
     <h2>Forgot Password?</h2>
 
     <section class="step is-active" data-step="contact" id="step-contact">
-        <p class="step-text">Choose where to send your 4-digit code.</p>
-
-        <div class="method-switch" role="radiogroup" aria-label="Recovery method">
-            <button
-                type="button"
-                class="method-btn is-active"
-                data-method="email"
-                aria-pressed="true"
-            >
-                Email
-            </button>
-            <button
-                type="button"
-                class="method-btn"
-                data-method="mobile"
-                aria-pressed="false"
-            >
-                Mobile Number
-            </button>
-        </div>
+        <p class="step-text">Enter your email to receive your 4-digit reset code.</p>
 
         <label for="contact-input" id="contact-label">Email Address</label>
         <input id="contact-input" type="email" placeholder="Enter your email" autocomplete="email">
@@ -54,7 +35,7 @@
     <section class="step" data-step="otp" id="step-otp" hidden>
         <p class="step-text">
             Enter the 4-digit code sent to
-            <strong id="masked-contact">your contact</strong>.
+            <strong id="masked-contact">your email</strong>.
         </p>
 
         <div class="otp-inputs" id="otp-inputs">
@@ -87,6 +68,6 @@
     </div>
 </main>
 <script src="session.js?v=20260227-3"></script>
-<script src="forgot.js?v=20260227-3"></script>
+<script src="forgot.js?v=20260302-1"></script>
 </body>
 </html>

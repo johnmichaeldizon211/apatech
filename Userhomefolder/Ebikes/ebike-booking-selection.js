@@ -1,6 +1,15 @@
 (function () {
     const PRODUCT_STORAGE_KEY = "ecodrive_product_catalog";
     const COLOR_VARIANT_STORAGE_KEY = "ecodrive_color_variant_availability_v1";
+    const MODEL_SPEC_STORAGE_KEY = "ecodrive_model_spec_catalog_v1";
+    const SPEC_FIELDS = [
+        { key: "power", label: "Power" },
+        { key: "battery", label: "Battery" },
+        { key: "batteryType", label: "Battery Type" },
+        { key: "speed", label: "Speed" },
+        { key: "range", label: "Range" },
+        { key: "chargingTime", label: "Charging time" }
+    ];
     const API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
         || localStorage.getItem("ecodrive_kyc_api_base")
@@ -71,6 +80,154 @@
             return {};
         }
         return parsed;
+    }
+
+    function normalizeSpecValue(value) {
+        return String(value || "")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function sanitizeSpecEntry(input) {
+        const source = input && typeof input === "object" ? input : {};
+        return {
+            power: normalizeSpecValue(source.power),
+            battery: normalizeSpecValue(source.battery),
+            batteryType: normalizeSpecValue(source.batteryType || source.battery_type),
+            speed: normalizeSpecValue(source.speed),
+            range: normalizeSpecValue(source.range),
+            chargingTime: normalizeSpecValue(source.chargingTime || source.charging_time)
+        };
+    }
+
+    function readModelSpecState() {
+        const parsed = safeParse(localStorage.getItem(MODEL_SPEC_STORAGE_KEY));
+        if (!parsed || typeof parsed !== "object") {
+            return {};
+        }
+        return parsed;
+    }
+
+    function normalizeSpecLabel(value) {
+        return String(value || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, " ")
+            .trim();
+    }
+
+    function resolveSpecKeyByLabel(label) {
+        const normalized = normalizeSpecLabel(label);
+        if (!normalized) {
+            return "";
+        }
+        if (normalized === "power") {
+            return "power";
+        }
+        if (normalized === "battery") {
+            return "battery";
+        }
+        if (normalized === "battery type") {
+            return "batteryType";
+        }
+        if (normalized === "speed") {
+            return "speed";
+        }
+        if (normalized === "range") {
+            return "range";
+        }
+        if (normalized === "charging time" || normalized === "charging") {
+            return "chargingTime";
+        }
+        return "";
+    }
+
+    function setSpecListItem(li, label, value) {
+        if (!li) {
+            return;
+        }
+        li.textContent = "";
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}:`;
+        li.appendChild(strong);
+        li.appendChild(document.createTextNode(` ${value}`));
+    }
+
+    function buildSpecBindings() {
+        const specList = document.querySelector(".spec-list");
+        if (!specList) {
+            return null;
+        }
+
+        const bindings = {};
+        const rows = Array.from(specList.querySelectorAll("li"));
+        rows.forEach(function (li) {
+            const strong = li.querySelector("strong");
+            if (!strong) {
+                return;
+            }
+            const label = String(strong.textContent || "").replace(/\s*:\s*$/, "").trim();
+            const key = resolveSpecKeyByLabel(label);
+            if (!key || bindings[key]) {
+                return;
+            }
+            bindings[key] = {
+                li: li,
+                label: label || key
+            };
+        });
+
+        SPEC_FIELDS.forEach(function (field) {
+            if (bindings[field.key]) {
+                return;
+            }
+            const li = document.createElement("li");
+            specList.appendChild(li);
+            bindings[field.key] = {
+                li: li,
+                label: field.label
+            };
+        });
+
+        return bindings;
+    }
+
+    function applyModelSpecs() {
+        const modelName = getCurrentModelName();
+        const modelKey = normalizeModelKey(modelName);
+        if (!modelKey) {
+            return;
+        }
+
+        const state = readModelSpecState();
+        const rawEntry = state[modelKey];
+        if (!rawEntry || typeof rawEntry !== "object") {
+            return;
+        }
+
+        const entry = sanitizeSpecEntry(rawEntry);
+        const hasAnyValue = SPEC_FIELDS.some(function (field) {
+            return Boolean(entry[field.key]);
+        });
+        if (!hasAnyValue) {
+            return;
+        }
+
+        const bindings = buildSpecBindings();
+        if (!bindings) {
+            return;
+        }
+
+        SPEC_FIELDS.forEach(function (field) {
+            const value = entry[field.key];
+            if (!value) {
+                return;
+            }
+            const binding = bindings[field.key];
+            if (!binding || !binding.li) {
+                return;
+            }
+            setSpecListItem(binding.li, binding.label || field.label, value);
+        });
     }
 
     function getCurrentModelName() {
@@ -305,9 +462,9 @@
     function getSubtitleByBikeId() {
         const match = window.location.pathname.match(/ebike(\d+)\.0\.html/i);
         const bikeId = match ? Number(match[1]) : 0;
-        if (bikeId >= 1 && bikeId <= 8) return "2-Wheel";
-        if (bikeId >= 9 && bikeId <= 12) return "3-Wheel";
-        if (bikeId >= 13 && bikeId <= 16) return "4-Wheel";
+        if (bikeId >= 1 && bikeId <= 5) return "2-Wheel";
+        if (bikeId === 6) return "4-Wheel";
+        if (bikeId >= 7 && bikeId <= 16) return "3-Wheel";
         return "E-Bike";
     }
 

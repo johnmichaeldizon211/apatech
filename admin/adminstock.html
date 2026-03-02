@@ -69,6 +69,38 @@
                     <label for="stock-info-input">Info</label>
                     <textarea id="stock-info-input" rows="2" placeholder="Short info about this e-bike model"></textarea>
 
+                    <p class="stock-spec-title">Specifications</p>
+                    <div class="stock-spec-grid">
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-power-input">Power</label>
+                            <input id="stock-spec-power-input" type="text" placeholder="1200 watts">
+                        </div>
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-battery-input">Battery</label>
+                            <input id="stock-spec-battery-input" type="text" placeholder="60volts 20ah">
+                        </div>
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-battery-type-input">Battery Type</label>
+                            <input id="stock-spec-battery-type-input" type="text" placeholder="S.L.A (Sealed Lead Acid)">
+                        </div>
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-speed-input">Speed</label>
+                            <input id="stock-spec-speed-input" type="text" placeholder="40 - 50 km/h">
+                        </div>
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-range-input">Range</label>
+                            <input id="stock-spec-range-input" type="text" placeholder="50 km">
+                        </div>
+                        <div class="stock-spec-item">
+                            <label for="stock-spec-charging-time-input">Charging Time</label>
+                            <input id="stock-spec-charging-time-input" type="text" placeholder="6 - 8 hrs">
+                        </div>
+                    </div>
+
+                    <label for="stock-color-count-input">Number of Colors</label>
+                    <input id="stock-color-count-input" type="number" min="1" max="12" step="1" value="1">
+                    <div id="stock-color-input-list" class="stock-color-input-list" aria-live="polite"></div>
+
                     <label for="stock-image-file-input">Image File</label>
                     <input id="stock-image-file-input" type="file" accept="image/png,image/jpeg,image/webp">
 

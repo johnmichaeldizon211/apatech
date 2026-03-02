@@ -24,17 +24,17 @@
         { id: 3, model: "FUN 1500 FI", price: 24000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html", isActive: true },
         { id: 4, model: "CANDY 800", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html", isActive: true },
         { id: 5, model: "BLITZ 200R", price: 40000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html", isActive: true },
-        { id: 6, model: "TRAVELLER 1500", price: 78000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html", isActive: true },
-        { id: 7, model: "ECONO 500 MP", price: 51000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html", isActive: true },
-        { id: 8, model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html", isActive: true },
+        { id: 6, model: "TRAVELLER 1500", price: 78000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html", isActive: true },
+        { id: 7, model: "ECONO 500 MP", price: 51000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html", isActive: true },
+        { id: 8, model: "ECONO 350 MINI-II", price: 39000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html", isActive: true },
         { id: 9, model: "ECARGO 100", price: 72500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 9.png", detailUrl: "/Userhomefolder/Ebikes/ebike9.0.html", isActive: true },
         { id: 10, model: "ECONO 650 MP", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 10.png", detailUrl: "/Userhomefolder/Ebikes/ebike10.0.html", isActive: true },
         { id: 11, model: "ECAB 100V V2", price: 51500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 11.png", detailUrl: "/Userhomefolder/Ebikes/ebike11.0.html", isActive: true },
         { id: 12, model: "ECONO 800 MP II", price: 67000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 12.png", detailUrl: "/Userhomefolder/Ebikes/ebike12.0.html", isActive: true },
-        { id: 13, model: "E-CARGO 800", price: 65000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html", isActive: true },
-        { id: 14, model: "E-CAB MAX 1500", price: 130000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html", isActive: true },
-        { id: 15, model: "E-CAB 1000", price: 75000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html", isActive: true },
-        { id: 16, model: "ECONO 800 MP", price: 60000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
+        { id: 13, model: "E-CARGO 800", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html", isActive: true },
+        { id: 14, model: "E-CAB MAX 1500", price: 130000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html", isActive: true },
+        { id: 15, model: "E-CAB 1000", price: 75000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html", isActive: true },
+        { id: 16, model: "ECONO 800 MP", price: 60000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
     ];
     const DEFAULT_IMAGE_BY_MODEL = DEFAULT_PRODUCTS.reduce(function (map, item) {
         const key = String(item && item.model || "").trim().toLowerCase();
@@ -95,9 +95,6 @@
         }
         if (bikeId === 6) {
             return "4-Wheel";
-        }
-        if (bikeId === 8) {
-            return "2-Wheel";
         }
         if (bikeId >= 7 && bikeId <= 16) {
             return "3-Wheel";
@@ -170,20 +167,52 @@
         return 4;
     }
 
+    function getProductDedupKey(item) {
+        const detail = String(item && item.detailUrl || "").trim().toLowerCase();
+        if (detail) {
+            return "detail:" + detail;
+        }
+        return "model:" + String(item && item.model || "").trim().toLowerCase() + "|category:" + String(item && item.category || "").trim();
+    }
+
+    function pickPreferredDuplicate(existingItem, candidateItem) {
+        if (!existingItem) {
+            return candidateItem;
+        }
+        const existingActive = existingItem.isActive !== false;
+        const candidateActive = candidateItem.isActive !== false;
+        if (existingActive !== candidateActive) {
+            return candidateActive ? candidateItem : existingItem;
+        }
+        const existingId = Number(existingItem.id) || 0;
+        const candidateId = Number(candidateItem.id) || 0;
+        if (candidateId >= existingId) {
+            return candidateItem;
+        }
+        return existingItem;
+    }
+
     function sanitizeCatalog(input) {
         const rows = Array.isArray(input) ? input : [];
-        return rows
+        const normalizedRows = rows
             .map(function (item, index) {
                 return normalizeProduct(item, index + 1);
             })
-            .filter(Boolean)
-            .sort(function (left, right) {
-                const categoryDiff = getCategoryOrder(left.category) - getCategoryOrder(right.category);
-                if (categoryDiff !== 0) {
-                    return categoryDiff;
-                }
-                return String(left.model || "").localeCompare(String(right.model || ""));
-            });
+            .filter(Boolean);
+
+        const dedupedMap = new Map();
+        normalizedRows.forEach(function (item) {
+            const key = getProductDedupKey(item);
+            dedupedMap.set(key, pickPreferredDuplicate(dedupedMap.get(key), item));
+        });
+
+        return Array.from(dedupedMap.values()).sort(function (left, right) {
+            const categoryDiff = getCategoryOrder(left.category) - getCategoryOrder(right.category);
+            if (categoryDiff !== 0) {
+                return categoryDiff;
+            }
+            return String(left.model || "").localeCompare(String(right.model || ""));
+        });
     }
 
     function readCatalogFromLocal() {

@@ -237,6 +237,40 @@ body::after {
     resize: vertical;
 }
 
+.stock-spec-title {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f2f74;
+}
+
+.stock-spec-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stock-spec-item {
+    display: grid;
+    gap: 4px;
+}
+
+.stock-color-input-list {
+    display: grid;
+    gap: 6px;
+}
+
+.stock-color-input-item {
+    display: grid;
+    gap: 4px;
+}
+
+.stock-color-input-item label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #334155;
+}
+
 .form-actions {
     margin-top: 4px;
     display: flex;
@@ -308,6 +342,7 @@ body::after {
     grid-template-columns: 1fr auto;
     gap: 8px;
     align-items: center;
+    isolation: isolate;
 }
 
 .color-item-main {
@@ -325,9 +360,10 @@ body::after {
     height: 44px;
     border-radius: 8px;
     border: 1.5px solid #c5d2ef;
-    background: #ffffff;
+    background: transparent;
     object-fit: contain;
     flex-shrink: 0;
+    mix-blend-mode: normal;
 }
 
 .color-item-title-wrap {
@@ -419,6 +455,7 @@ body::after {
     display: flex;
     flex-direction: column;
     align-items: center;
+    isolation: isolate;
 }
 
 .model {
@@ -462,6 +499,8 @@ body::after {
     height: 80px;
     object-fit: contain;
     margin-top: 4px;
+    mix-blend-mode: normal;
+    filter: none;
 }
 
 .status {
@@ -519,6 +558,10 @@ body::after {
 
 @media (max-width: 1100px) {
     .top-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .stock-spec-grid {
         grid-template-columns: 1fr;
     }
 

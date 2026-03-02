@@ -131,31 +131,6 @@ body::after {
     margin-bottom: 22px;
 }
 
-.method-switch {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 16px;
-}
-
-.method-btn {
-    width: 100%;
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid #cfd5e4;
-    background: #f6f8ff;
-    color: #2442ab;
-    font-size: 12px;
-    cursor: pointer;
-    margin-top: 0;
-}
-
-.method-btn.is-active {
-    background: #2348C7;
-    border-color: #2348C7;
-    color: #fff;
-}
-
 label {
     display: block;
     font-size: 12px;
@@ -299,10 +274,6 @@ button:disabled {
     .return,
     label {
         font-size: 12px;
-    }
-
-    .method-switch {
-        grid-template-columns: 1fr;
     }
 
     button {

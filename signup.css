@@ -58,39 +58,18 @@ body {
 }
 
 .verification-step h3 {
-    font-size: 18px;
-    margin: 4px 0 8px;
-}
-
-.verification-intro {
-    font-size: 12px;
-    color: #5c5c5c;
+    font-size: clamp(24px, 4.2vw, 44px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    color: #1f2157;
     margin: 0 0 10px;
 }
 
-.method-switch {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 10px;
-}
-
-.method-btn {
-    border: 1px solid #cfd6ef;
-    border-radius: 999px;
-    background: #f8faff;
-    color: #2a3c79;
-    font: inherit;
-    font-size: 13px;
-    padding: 8px 10px;
-    cursor: pointer;
-    font-weight: 600;
-}
-
-.method-btn.is-active {
-    border-color: #1f3ba7;
-    background: #1f3ba7;
-    color: #ffffff;
+.verification-intro {
+    font-size: 16px;
+    color: #6b6d7d;
+    line-height: 1.45;
+    margin: 0 0 14px;
 }
 
 form label {
@@ -227,6 +206,23 @@ form input {
     .create-btn {
         font-size: 13px;
     }
+
+    .otp-card {
+        padding: 18px 13px 14px;
+    }
+
+    .verification-intro {
+        font-size: 14px;
+    }
+
+    .otp-inputs {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .otp-digit {
+        font-size: 21px;
+    }
 }
 
 .error {
@@ -237,79 +233,104 @@ form input {
     min-height: 12px;
 }
 
-.verification-card {
-    border: 1px solid #e3e6f4;
-    border-radius: 10px;
-    padding: 10px;
-    margin-bottom: 10px;
-    background: #fafbff;
+.otp-card {
+    border: 1px solid #e8e9f0;
+    border-radius: 12px;
+    padding: 22px 16px 16px;
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(21, 28, 55, 0.08);
 }
 
-.verification-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-}
-
-.verification-head.single {
-    align-items: center;
-}
-
-.verification-label {
+.verification-contact {
     margin: 0;
-    font-size: 11px;
-    color: #5d6479;
-}
-
-.verification-value {
-    margin: 3px 0 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    color: #626b83;
     word-break: break-all;
 }
 
-.verification-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 24px;
-    padding: 0 8px;
-    border-radius: 999px;
-    background: #f1f3f8;
-    color: #5c6273;
-    font-size: 11px;
+.verification-contact span {
     font-weight: 600;
-}
-
-.verification-badge.success {
-    background: #dcf8e5;
-    color: #0f7a35;
-}
-
-.verification-actions {
-    margin-top: 8px;
+    color: #2d3660;
 }
 
 .otp-inputs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 8px;
+    grid-template-columns: repeat(4, 54px);
+    gap: 12px;
+    margin: 18px 0 14px;
+    justify-content: flex-start;
 }
 
 .otp-digit {
+    border: 2px solid #d9dcea;
+    border-radius: 8px;
     text-align: center;
-    font-size: 18px;
+    font-size: 24px;
     font-weight: 600;
-    letter-spacing: 1px;
-    padding: 10px 8px;
+    color: #2e3561;
+    letter-spacing: 0.03em;
+    padding: 9px 8px;
+    margin: 0;
+}
+
+.otp-digit:focus {
+    outline: none;
+    border-color: #6277d0;
+    box-shadow: 0 0 0 3px rgba(98, 119, 208, 0.16);
+}
+
+.otp-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 16px;
+}
+
+.otp-timer {
+    margin: 0;
+    font-size: 13px;
+    color: #626b83;
+}
+
+.text-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    color: #4f63c8;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.text-btn:hover:not([disabled]) {
+    color: #2f45b3;
+}
+
+.text-btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
+.otp-verify-btn {
+    border-radius: 999px;
+    padding: 12px 14px;
+}
+
+.otp-cancel-btn {
+    border-radius: 999px;
+    padding: 11px 14px;
+    margin-top: 10px;
 }
 
 .verification-status {
-    margin: 8px 0 0;
+    margin: 10px 0 0;
     font-size: 12px;
-    min-height: 16px;
+    min-height: 18px;
     color: #5d6479;
 }
 
@@ -319,16 +340,6 @@ form input {
 
 .verification-status.success {
     color: #138000;
-}
-
-.verification-footer {
-    margin-top: 10px;
-    display: grid;
-    gap: 8px;
-}
-
-#resend-code-btn {
-    margin-top: -2px;
 }
 
 input.invalid {
@@ -392,6 +403,12 @@ input.invalid {
         left: 12px;
         top: 12px;
         text-align: center;
+    }
+
+    .otp-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
     }
 }
 

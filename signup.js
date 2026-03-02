@@ -13,16 +13,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var passwordInput = document.getElementById("password");
 
     var continueBtn = document.getElementById("continue-btn");
-    var createBtn = document.getElementById("create-btn");
     var backToFormBtn = document.getElementById("back-to-form-btn");
 
-    var methodButtons = Array.from(document.querySelectorAll(".method-btn"));
-    var verifyContactLabel = document.getElementById("verify-contact-label");
     var verifyContactValue = document.getElementById("verify-contact-value");
-    var verificationBadge = document.getElementById("verification-badge");
     var verificationStatus = document.getElementById("verification-status");
+    var otpTimer = document.getElementById("otp-timer");
 
-    var sendCodeBtn = document.getElementById("send-code-btn");
     var verifyCodeBtn = document.getElementById("verify-code-btn");
     var resendCodeBtn = document.getElementById("resend-code-btn");
     var otpInputs = Array.from(document.querySelectorAll("#otp-inputs .otp-digit"));
@@ -41,10 +37,9 @@ document.addEventListener("DOMContentLoaded", function () {
         !form ||
         !verificationStep ||
         !continueBtn ||
-        !createBtn ||
-        !sendCodeBtn ||
         !verifyCodeBtn ||
-        !resendCodeBtn
+        !resendCodeBtn ||
+        !backToFormBtn
     ) {
         return;
     }
@@ -62,11 +57,11 @@ document.addEventListener("DOMContentLoaded", function () {
     var isFormValid = false;
 
     var verificationState = {
-        selectedMethod: "email",
         requestId: "",
         verified: false,
-        method: "",
-        expiresAt: 0
+        method: "email",
+        expiresAt: 0,
+        timerId: 0
     };
 
     function getApiUrl(path) {
@@ -171,10 +166,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }).join("");
     }
 
-    function getSelectedMethodApiValue() {
-        return verificationState.selectedMethod === "mobile" ? "mobile" : "email";
-    }
-
     function collectSignupPayload() {
         return {
             firstName: String(firstNameInput.value || "").trim(),
@@ -198,60 +189,80 @@ document.addEventListener("DOMContentLoaded", function () {
         return visible + "*".repeat(Math.max(1, left.length - visible.length)) + "@" + right;
     }
 
-    function maskPhone(phone) {
-        var normalized = normalizePhone(phone);
-        if (normalized.length < 4) {
-            return normalized;
+    function stopOtpCountdown() {
+        if (verificationState.timerId) {
+            window.clearInterval(verificationState.timerId);
+            verificationState.timerId = 0;
         }
-        return normalized.slice(0, 4) + "***" + normalized.slice(-2);
+    }
+
+    function formatRemainingTime(ms) {
+        var totalSeconds = Math.ceil(Math.max(0, Number(ms || 0)) / 1000);
+        var minutes = Math.floor(totalSeconds / 60);
+        var seconds = totalSeconds % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+    }
+
+    function updateOtpTimer() {
+        var expiresAt = Number(verificationState.expiresAt || 0);
+        var hasRequest = Boolean(verificationState.requestId);
+        var remainingMs = hasRequest ? Math.max(0, expiresAt - Date.now()) : 0;
+
+        if (otpTimer) {
+            otpTimer.textContent = "Remaining time: " + formatRemainingTime(remainingMs) + "s";
+        }
+
+        if (verifyCodeBtn) {
+            verifyCodeBtn.disabled = !hasRequest || remainingMs <= 0;
+        }
+
+        if (remainingMs === 0 && hasRequest) {
+            stopOtpCountdown();
+            verificationState.requestId = "";
+            verificationState.verified = false;
+            verificationState.method = "email";
+            setVerificationStatus("Code expired. Please resend a new code.", "error");
+            if (verifyCodeBtn) {
+                verifyCodeBtn.disabled = true;
+            }
+            if (resendCodeBtn) {
+                resendCodeBtn.disabled = false;
+            }
+        }
+    }
+
+    function startOtpCountdown() {
+        stopOtpCountdown();
+        updateOtpTimer();
+        verificationState.timerId = window.setInterval(updateOtpTimer, 1000);
     }
 
     function resetVerificationState() {
+        stopOtpCountdown();
         verificationState.requestId = "";
         verificationState.verified = false;
-        verificationState.method = "";
+        verificationState.method = "email";
         verificationState.expiresAt = 0;
         clearOtpInputs();
+        if (otpTimer) {
+            otpTimer.textContent = "Remaining time: 00:00s";
+        }
+        if (verifyCodeBtn) {
+            verifyCodeBtn.disabled = true;
+            verifyCodeBtn.textContent = "Verify";
+        }
+        if (resendCodeBtn) {
+            resendCodeBtn.disabled = true;
+        }
         setVerificationStatus("", "");
         refreshVerificationUi();
     }
 
-    function refreshCreateButton() {
-        var canCreate = isFormValid && verificationState.verified && Boolean(verificationState.requestId);
-        createBtn.disabled = !canCreate;
-    }
-
     function refreshVerificationUi() {
         var payload = collectSignupPayload();
-        var selected = verificationState.selectedMethod;
-        var label = selected === "mobile" ? "Mobile Number" : "Email Address";
-        var value = selected === "mobile" ? maskPhone(payload.phone) : maskEmail(payload.email);
-        var sendLabel = selected === "mobile" ? "Send Mobile Code" : "Send Email Code";
-        var verifiedLabel = verificationState.verified
-            ? ("Verified via " + (verificationState.method === "mobile" ? "Mobile" : "Email"))
-            : "Not verified";
-
-        if (verifyContactLabel) {
-            verifyContactLabel.textContent = label;
-        }
         if (verifyContactValue) {
-            verifyContactValue.textContent = value || "-";
+            verifyContactValue.textContent = maskEmail(payload.email) || "-";
         }
-        if (sendCodeBtn) {
-            sendCodeBtn.textContent = sendLabel;
-        }
-        if (verificationBadge) {
-            verificationBadge.textContent = verifiedLabel;
-            verificationBadge.classList.toggle("success", Boolean(verificationState.verified));
-        }
-
-        methodButtons.forEach(function (button) {
-            var active = button.dataset.method === selected;
-            button.classList.toggle("is-active", active);
-            button.setAttribute("aria-pressed", String(active));
-        });
-
-        refreshCreateButton();
     }
 
     function validateForm() {
@@ -286,7 +297,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         isFormValid = !firstNameMsg && !middleInitialMsg && !lastNameMsg && !emailMsg && !phoneMsg && !addressMsg && !passwordMsg;
         continueBtn.disabled = !isFormValid;
-        refreshCreateButton();
         return isFormValid;
     }
 
@@ -331,10 +341,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         var payload = collectSignupPayload();
-        var apiMethod = getSelectedMethodApiValue();
-        var defaultLabel = sendCodeBtn.textContent;
-        sendCodeBtn.disabled = true;
-        sendCodeBtn.textContent = "Sending...";
+        resendCodeBtn.disabled = true;
+        verifyCodeBtn.disabled = true;
         setVerificationStatus("", "");
 
         try {
@@ -342,7 +350,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    method: apiMethod,
+                    method: "email",
                     email: payload.email,
                     phone: payload.phone
                 })
@@ -354,23 +362,35 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (!response.ok || body.success !== true) {
                 var message = body.message || "Unable to send verification code.";
-                if (response.status === 409 && message.toLowerCase().includes("mobile")) {
+                var lowerMessage = String(message || "").toLowerCase();
+                if (response.status === 409 && (lowerMessage.includes("mobile") || lowerMessage.includes("phone"))) {
                     setFieldError(phoneInput, phoneErr, message, true);
-                } else if (response.status === 409) {
+                    showFormStep();
+                    showToast("Please use another mobile number.", "error");
+                    resendCodeBtn.disabled = false;
+                    return;
+                }
+                if (response.status === 409) {
                     setFieldError(emailInput, emailErr, message, true);
-                } else if (message.toLowerCase().includes("email")) {
+                    showFormStep();
+                    showToast(message, "error");
+                    resendCodeBtn.disabled = false;
+                    return;
+                }
+                if (lowerMessage.includes("email")) {
                     setFieldError(emailInput, emailErr, message, true);
-                } else if (message.toLowerCase().includes("mobile")) {
+                } else if (lowerMessage.includes("mobile")) {
                     setFieldError(phoneInput, phoneErr, message, true);
                 }
                 setVerificationStatus(message, "error");
                 showToast(message, "error");
+                resendCodeBtn.disabled = false;
                 return;
             }
 
             verificationState.requestId = String(body.requestId || "");
             verificationState.verified = false;
-            verificationState.method = apiMethod;
+            verificationState.method = "email";
             verificationState.expiresAt = Date.now() + (
                 Number.isFinite(Number(body.expiresInMs)) && Number(body.expiresInMs) > 0
                     ? Number(body.expiresInMs)
@@ -380,6 +400,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (otpInputs[0]) {
                 otpInputs[0].focus();
             }
+            startOtpCountdown();
 
             var deliveryMode = String(((body.delivery || {}).mode || "")).trim().toLowerCase();
             var serverMessage = String(body.message || "").trim();
@@ -395,33 +416,32 @@ document.addEventListener("DOMContentLoaded", function () {
                 setVerificationStatus(demoMessage, "success");
                 showToast(demoMessage, "success");
             } else {
-                var sentMessage = serverMessage || "Verification code sent.";
+                var sentMessage = serverMessage || "Verification code sent to your email.";
                 setVerificationStatus(sentMessage, "success");
                 showToast(sentMessage, "success");
             }
+            resendCodeBtn.disabled = false;
         } catch (_error) {
             var apiMessage = getApiUnavailableMessage();
             setVerificationStatus(apiMessage, "error");
             showToast(apiMessage, "error");
+            resendCodeBtn.disabled = false;
         } finally {
-            sendCodeBtn.disabled = false;
-            sendCodeBtn.textContent = defaultLabel;
             refreshVerificationUi();
+            updateOtpTimer();
         }
     }
 
     async function verifySignupCode() {
         if (!verificationState.requestId) {
-            setVerificationStatus("Send a code first.", "error");
-            return;
-        }
-        if (verificationState.method !== getSelectedMethodApiValue()) {
-            setVerificationStatus("Send a new code for the selected method.", "error");
+            setVerificationStatus("Send or resend a code first.", "error");
             return;
         }
         if (Date.now() > Number(verificationState.expiresAt || 0)) {
-            resetVerificationState();
-            setVerificationStatus("Code expired. Send a new code.", "error");
+            verificationState.requestId = "";
+            verificationState.verified = false;
+            setVerificationStatus("Code expired. Please resend a new code.", "error");
+            updateOtpTimer();
             return;
         }
 
@@ -433,6 +453,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         var payload = collectSignupPayload();
         var defaultLabel = verifyCodeBtn.textContent;
+        var shouldRestoreVerifyButton = true;
         verifyCodeBtn.disabled = true;
         verifyCodeBtn.textContent = "Verifying...";
 
@@ -443,7 +464,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 body: JSON.stringify({
                     requestId: verificationState.requestId,
                     code: code,
-                    method: getSelectedMethodApiValue(),
+                    method: "email",
                     email: payload.email,
                     phone: payload.phone
                 })
@@ -458,15 +479,19 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             verificationState.verified = true;
-            verificationState.method = getSelectedMethodApiValue();
-            setVerificationStatus(body.message || "Code verified.", "success");
-            refreshVerificationUi();
+            verificationState.method = "email";
+            stopOtpCountdown();
+            setVerificationStatus(body.message || "Code verified. Creating your account...", "success");
+            shouldRestoreVerifyButton = false;
+            await submitSignup();
         } catch (_error) {
             setVerificationStatus(getApiUnavailableMessage(), "error");
         } finally {
-            verifyCodeBtn.disabled = false;
-            verifyCodeBtn.textContent = defaultLabel;
-            refreshCreateButton();
+            if (shouldRestoreVerifyButton) {
+                verifyCodeBtn.disabled = false;
+                verifyCodeBtn.textContent = defaultLabel;
+            }
+            refreshVerificationUi();
         }
     }
 
@@ -481,17 +506,19 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        if (!verificationState.verified || !verificationState.requestId || !verificationState.method) {
-            showToast("Verify one contact method first (email or mobile).", "error");
+        if (!verificationState.verified || !verificationState.requestId || verificationState.method !== "email") {
+            showToast("Email verification is required before signup.", "error");
+            verifyCodeBtn.disabled = false;
+            verifyCodeBtn.textContent = "Verify";
             return;
         }
 
-        createBtn.disabled = true;
-        createBtn.textContent = "Creating...";
+        verifyCodeBtn.disabled = true;
+        verifyCodeBtn.textContent = "Creating...";
 
         var payload = collectSignupPayload();
         payload.verificationRequestId = verificationState.requestId;
-        payload.verificationMethod = verificationState.method;
+        payload.verificationMethod = "email";
 
         var response;
         try {
@@ -502,8 +529,8 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         } catch (_error) {
             showToast(getApiUnavailableMessage(), "error");
-            refreshCreateButton();
-            createBtn.textContent = "Create account";
+            verifyCodeBtn.disabled = false;
+            verifyCodeBtn.textContent = "Verify";
             return;
         }
 
@@ -526,15 +553,15 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 showToast(message, "error");
             }
-            refreshCreateButton();
-            createBtn.textContent = "Create account";
+            verifyCodeBtn.disabled = false;
+            verifyCodeBtn.textContent = "Verify";
             return;
         }
 
         if (!window.EcodriveSession || typeof window.EcodriveSession.setSession !== "function") {
             showToast("Session layer failed to load. Try refreshing the page.", "error");
-            createBtn.textContent = "Create account";
-            refreshCreateButton();
+            verifyCodeBtn.disabled = false;
+            verifyCodeBtn.textContent = "Verify";
             return;
         }
 
@@ -602,14 +629,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    methodButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-            verificationState.selectedMethod = button.dataset.method === "mobile" ? "mobile" : "email";
-            setVerificationStatus("", "");
-            refreshVerificationUi();
-        });
-    });
-
     form.addEventListener("submit", function (event) {
         event.preventDefault();
         submitted = true;
@@ -621,20 +640,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         resetVerificationState();
         showVerificationStep();
-        if (sendCodeBtn) {
-            sendCodeBtn.focus();
-        }
-        showToast("Choose email or mobile then verify to continue.", "success");
+        void sendSignupCode();
     });
 
-    if (backToFormBtn) {
-        backToFormBtn.addEventListener("click", function () {
-            showFormStep();
-        });
-    }
-
-    sendCodeBtn.addEventListener("click", function () {
-        void sendSignupCode();
+    backToFormBtn.addEventListener("click", function () {
+        resetVerificationState();
+        showFormStep();
     });
 
     verifyCodeBtn.addEventListener("click", function () {
@@ -645,11 +656,8 @@ document.addEventListener("DOMContentLoaded", function () {
         void sendSignupCode();
     });
 
-    createBtn.addEventListener("click", function () {
-        void submitSignup();
-    });
-
     showFormStep();
     refreshVerificationUi();
     validateForm();
+    resetVerificationState();
 });

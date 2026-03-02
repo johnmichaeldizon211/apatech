@@ -62,7 +62,7 @@ document.addEventListener("DOMContentLoaded", function () {
         clearError();
 
         var loginIdValue = normalizeLoginIdentifier(loginIdInput.value);
-        var passwordValue = String(passwordInput.value || "").trim();
+        var passwordValue = String(passwordInput.value || "");
         var remember = rememberInput ? Boolean(rememberInput.checked) : false;
 
         if (!loginIdValue || !passwordValue) {
@@ -92,9 +92,17 @@ document.addEventListener("DOMContentLoaded", function () {
             return {};
         });
         if (!response.ok || payload.success !== true) {
+            var activeApiBase = getActiveApiBase() || "(relative /api)";
             var backendMessage = String(payload.message || "").trim();
+            if (response.status === 404 || response.status === 405) {
+                setError(
+                    "Login API endpoint not found. Active API base: "
+                    + activeApiBase
+                    + ". Please start the API server and point to the correct port."
+                );
+                return;
+            }
             if (/admin credentials are not initialized/i.test(backendMessage)) {
-                var activeApiBase = getActiveApiBase() || "(relative /api)";
                 setError(
                     backendMessage
                     + " Active API base: "

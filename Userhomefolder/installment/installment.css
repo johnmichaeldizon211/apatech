@@ -522,6 +522,12 @@ input {
     justify-content: flex-end;
 }
 
+.action-row.between {
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
 .action-btn {
     border: none;
     border-radius: 999px;
@@ -541,6 +547,17 @@ input {
 
 .action-btn:hover {
     filter: brightness(0.96);
+}
+
+.action-btn.secondary {
+    border: 1.8px solid #2f4fa5;
+    background: #eef3ff;
+    color: #173f88;
+    box-shadow: none;
+}
+
+.action-btn.secondary:hover {
+    filter: brightness(0.98);
 }
 
 .action-btn:disabled {
@@ -684,6 +701,11 @@ input {
 
     .installment-card {
         padding: 14px;
+    }
+
+    .action-row.between {
+        justify-content: center;
+        flex-wrap: wrap;
     }
 
     .submitted-card h1 {

@@ -730,20 +730,6 @@ body.modal-open {
     font-weight: 600;
 }
 
-.next-btn {
-    position: fixed;
-    right: 10px;
-    bottom: 10px;
-    border: 1px solid #94a3b8;
-    border-radius: 8px;
-    background: #eef2f7;
-    color: #334155;
-    padding: 4px 9px;
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-}
-
 @media (max-width: 900px) {
     .layout {
         grid-template-columns: 1fr;

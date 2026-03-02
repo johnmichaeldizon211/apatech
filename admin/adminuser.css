@@ -284,20 +284,6 @@ body {
     color: #5b6474;
 }
 
-.next-btn {
-    position: fixed;
-    right: 10px;
-    bottom: 10px;
-    border: 1px solid #94a3b8;
-    border-radius: 8px;
-    background: #eef2f7;
-    color: #334155;
-    padding: 4px 9px;
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-}
-
 .chat-modal {
     position: fixed;
     inset: 0;

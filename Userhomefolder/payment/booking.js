@@ -8,6 +8,9 @@
     const codPaymentButton = paymentButtons.find(function (button) {
         return (button.getAttribute("data-payment") || "").toUpperCase() === "CASH ON DELIVERY";
     }) || null;
+    const codPaymentLabel = codPaymentButton
+        ? (codPaymentButton.querySelector("span:last-child") || codPaymentButton.querySelector("span"))
+        : null;
     const formError = document.getElementById("form-error");
     const fullNameInput = document.getElementById("full-name");
     const emailInput = document.getElementById("email");
@@ -150,7 +153,7 @@
 
     function formatPeso(amount) {
         const value = Number(amount || 0);
-        return "&#8369;" + value.toLocaleString("en-PH", {
+        return "\u20B1" + value.toLocaleString("en-PH", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
@@ -473,17 +476,17 @@
             3: { model: "FUN 1500 FI", total: 24000, image: "../image 3.png", subtitle: "2-Wheel" },
             4: { model: "CANDY 800", total: 39000, image: "../image 4.png", subtitle: "2-Wheel" },
             5: { model: "BLITZ 200R", total: 40000, image: "../image 5.png", subtitle: "2-Wheel" },
-            6: { model: "TRAVELLER 1500", total: 78000, image: "../image 6.png", subtitle: "2-Wheel" },
-            7: { model: "ECONO 500 MP", total: 51000, image: "../image 7.png", subtitle: "2-Wheel" },
-            8: { model: "ECONO 350 MINI-II", total: 39000, image: "../image 8.png", subtitle: "2-Wheel" },
+            6: { model: "TRAVELLER 1500", total: 78000, image: "../image 6.png", subtitle: "4-Wheel" },
+            7: { model: "ECONO 500 MP", total: 51000, image: "../image 7.png", subtitle: "3-Wheel" },
+            8: { model: "ECONO 350 MINI-II", total: 39000, image: "../image 8.png", subtitle: "3-Wheel" },
             9: { model: "ECARGO 100", total: 72500, image: "../image 9.png", subtitle: "3-Wheel" },
             10: { model: "ECONO 650 MP", total: 65000, image: "../image 10.png", subtitle: "3-Wheel" },
             11: { model: "ECAB 100V V2", total: 51500, image: "../image 11.png", subtitle: "3-Wheel" },
             12: { model: "ECONO 800 MP II", total: 67000, image: "../image 12.png", subtitle: "3-Wheel" },
-            13: { model: "E-CARGO 800", total: 65000, image: "../image 13.png", subtitle: "4-Wheel" },
-            14: { model: "E-CAB MAX 1500", total: 130000, image: "../image 14.png", subtitle: "4-Wheel" },
-            15: { model: "E-CAB 1000", total: 75000, image: "../image 15.png", subtitle: "4-Wheel" },
-            16: { model: "ECONO 800 MP", total: 60000, image: "../image 16.png", subtitle: "4-Wheel" }
+            13: { model: "E-CARGO 800", total: 65000, image: "../image 13.png", subtitle: "3-Wheel" },
+            14: { model: "E-CAB MAX 1500", total: 130000, image: "../image 14.png", subtitle: "3-Wheel" },
+            15: { model: "E-CAB 1000", total: 75000, image: "../image 15.png", subtitle: "3-Wheel" },
+            16: { model: "ECONO 800 MP", total: 60000, image: "../image 16.png", subtitle: "3-Wheel" }
         };
         return map[id] || null;
     }
@@ -909,12 +912,21 @@
         }) || null;
     }
 
-    function syncPaymentAvailability() {
-        const codBlocked = selectedService === "Pick Up";
-        if (codPaymentButton) {
-            codPaymentButton.disabled = codBlocked;
-            codPaymentButton.setAttribute("aria-disabled", codBlocked ? "true" : "false");
+    function syncCodPaymentLabel() {
+        if (!codPaymentButton || !codPaymentLabel) {
+            return;
         }
+        codPaymentLabel.textContent = selectedService === "Pick Up"
+            ? "CASH"
+            : "CASH ON DELIVERY";
+    }
+
+    function syncPaymentAvailability() {
+        if (codPaymentButton) {
+            codPaymentButton.disabled = false;
+            codPaymentButton.setAttribute("aria-disabled", "false");
+        }
+        syncCodPaymentLabel();
 
         const activePaymentButton = paymentButtons.find(function (button) {
             return !button.disabled && (button.getAttribute("data-payment") || "") === selectedPayment;
@@ -1306,11 +1318,6 @@
         setBookingSubmitState(true);
         try {
             if (!validateInputs()) {
-                return;
-            }
-            if (selectedService === "Pick Up" && selectedPayment === "CASH ON DELIVERY") {
-                syncPaymentAvailability();
-                showError(null, "Cash on Delivery is not available for Pick up.");
                 return;
             }
 

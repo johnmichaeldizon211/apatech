@@ -111,24 +111,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return String((record && (record.email || record.userEmail)) || "").trim().toLowerCase();
     }
 
-    function readBookingsFromLocalStorage() {
-        const merged = [];
-
-        bookingStorageKeys.forEach(function (key) {
-            const parsed = safeParse(localStorage.getItem(key));
-            if (Array.isArray(parsed)) {
-                merged.push.apply(merged, parsed);
-            }
-        });
-
-        const latest = safeParse(localStorage.getItem("latestBooking"));
-        if (latest && typeof latest === "object") {
-            merged.push(latest);
-        }
-
-        return merged;
-    }
-
     function dedupeBookings(items) {
         const list = Array.isArray(items) ? items : [];
         const deduped = [];
@@ -216,15 +198,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return parsed;
     }
 
-    function getLocalUsersTotal() {
-        const parsed = safeParse(localStorage.getItem(usersKey));
-        const users = Array.isArray(parsed) ? parsed : [];
-        return users.filter(function (user) {
-            const role = String((user && user.role) || "user").trim().toLowerCase();
-            return role !== "admin";
-        }).length;
-    }
-
     function buildDashboardPayloadFromRecords(bookingsInput, totalUsersInput) {
         const bookings = dedupeBookings(bookingsInput);
         const monthlySeries = buildMonthSkeleton();
@@ -292,11 +265,6 @@ document.addEventListener("DOMContentLoaded", function () {
             stats: stats,
             salesOverview: monthlySeries
         };
-    }
-
-    function buildLocalDashboardPayload() {
-        const localBookings = readBookingsFromLocalStorage();
-        return buildDashboardPayloadFromRecords(localBookings, getLocalUsersTotal());
     }
 
     function renderStats(statsInput) {

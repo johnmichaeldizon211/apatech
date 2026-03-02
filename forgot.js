@@ -1,7 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
     var OTP_TTL_MS = 5 * 60 * 1000;
-    var methodButtons = Array.from(document.querySelectorAll(".method-btn"));
-    var contactLabel = document.getElementById("contact-label");
+
     var contactInput = document.getElementById("contact-input");
     var sendCodeBtn = document.getElementById("send-code-btn");
     var verifyCodeBtn = document.getElementById("verify-code-btn");
@@ -78,30 +77,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }).join("");
     }
 
-    function normalizePhone(value) {
-        var cleaned = String(value || "").replace(/[^\d+]/g, "");
-        if (/^\+639\d{9}$/.test(cleaned)) {
-            return "0" + cleaned.slice(3);
-        }
-        if (/^639\d{9}$/.test(cleaned)) {
-            return "0" + cleaned.slice(2);
-        }
-        return cleaned;
-    }
-
-    function maskContact(method, contact) {
-        if (method === "mobile") {
-            var mobile = normalizePhone(contact);
-            if (mobile.length >= 11) {
-                return mobile.slice(0, 4) + "***" + mobile.slice(-2);
-            }
-            return "***" + mobile.slice(-2);
-        }
-
-        var email = String(contact || "").trim().toLowerCase();
-        var parts = email.split("@");
+    function maskEmail(email) {
+        var normalizedEmail = String(email || "").trim().toLowerCase();
+        var parts = normalizedEmail.split("@");
         if (parts.length !== 2) {
-            return email;
+            return normalizedEmail;
         }
         var left = parts[0];
         var right = parts[1];
@@ -109,17 +89,10 @@ document.addEventListener("DOMContentLoaded", function () {
         return visible + "*".repeat(Math.max(1, left.length - visible.length)) + "@" + right;
     }
 
-    function validateContact(method, value) {
+    function validateContact(value) {
         var raw = String(value || "").trim();
         if (!raw) {
-            return method === "mobile" ? "Mobile number is required." : "Email is required.";
-        }
-        if (method === "mobile") {
-            var normalized = raw.replace(/[\s-]/g, "");
-            if (!/^(\+639|09)\d{9}$/.test(normalized)) {
-                return "Use 09XXXXXXXXX or +639XXXXXXXXX.";
-            }
-            return "";
+            return "Email is required.";
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
             return "Please enter a valid email address.";
@@ -140,35 +113,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return "";
     }
 
-    function setMethod(method) {
-        state.method = method === "mobile" ? "mobile" : "email";
-        state.contact = "";
-        state.requestId = "";
-        state.accountEmail = "";
-        state.otpExpiresAt = 0;
-        state.otpVerified = false;
-        clearOtpInputs();
-
-        if (state.method === "mobile") {
-            contactLabel.textContent = "Mobile Number";
-            contactInput.type = "tel";
-            contactInput.placeholder = "Enter your mobile number";
-        } else {
-            contactLabel.textContent = "Email Address";
-            contactInput.type = "email";
-            contactInput.placeholder = "Enter your email";
-        }
-
-        methodButtons.forEach(function (button) {
-            var active = button.dataset.method === state.method;
-            button.classList.toggle("is-active", active);
-            button.setAttribute("aria-pressed", String(active));
-        });
-
-        contactInput.value = "";
-        goToStep("contact");
-    }
-
     function bindOtpInputs() {
         otpInputs.forEach(function (input, index) {
             input.addEventListener("input", function () {
@@ -186,19 +130,13 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    methodButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-            clearMessage();
-            setMethod(button.dataset.method);
-        });
-    });
     bindOtpInputs();
-    setMethod("email");
+    goToStep("contact");
 
     sendCodeBtn.addEventListener("click", async function () {
         clearMessage();
-        var contact = String(contactInput.value || "").trim();
-        var contactError = validateContact(state.method, contact);
+        var contact = String(contactInput.value || "").trim().toLowerCase();
+        var contactError = validateContact(contact);
         if (contactError) {
             showMessage(contactError, "error");
             return;
@@ -215,7 +153,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    method: state.method,
+                    method: "email",
                     contact: contact
                 })
             });
@@ -228,9 +166,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            state.method = "email";
             state.contact = contact;
             state.requestId = String(payload.requestId || "");
-            state.accountEmail = String(payload.accountEmail || "").trim().toLowerCase();
+            state.accountEmail = String(payload.accountEmail || contact).trim().toLowerCase();
             state.otpVerified = false;
 
             var expiresInMs = Number(payload.expiresInMs);
@@ -240,12 +179,13 @@ document.addEventListener("DOMContentLoaded", function () {
                     : OTP_TTL_MS
             );
 
-            maskedContact.textContent = maskContact(state.method, contact);
+            maskedContact.textContent = maskEmail(contact);
             clearOtpInputs();
             goToStep("otp");
             if (otpInputs[0]) {
                 otpInputs[0].focus();
             }
+
             var deliveryMode = String(((payload.delivery || {}).mode || "")).trim().toLowerCase();
             var serverMessage = String(payload.message || "").trim();
             var isDemoDelivery = deliveryMode === "demo" || /demo/i.test(serverMessage);
@@ -258,10 +198,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (deliveryReason) {
                     demoMessage += " " + deliveryReason;
                 }
-                demoMessage += " Configure email/SMS provider for real delivery.";
+                demoMessage += " Configure email provider for real delivery.";
                 showMessage(demoMessage, "success");
             } else {
-                showMessage(serverMessage || "Code sent. Please check your email/mobile.", "success");
+                showMessage(serverMessage || "Code sent. Please check your email.", "success");
             }
         } catch (_error) {
             showMessage("API is unavailable. Please start the backend server.", "error");
@@ -273,7 +213,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     resendCodeBtn.addEventListener("click", function () {
         if (!state.contact) {
-            showMessage("Enter email/mobile first.", "error");
+            showMessage("Enter email first.", "error");
             goToStep("contact");
             return;
         }
@@ -361,7 +301,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 body: JSON.stringify({
                     requestId: state.requestId,
                     email: state.accountEmail,
-                    method: state.method,
+                    method: "email",
                     contact: state.contact,
                     newPassword: newPassword
                 })

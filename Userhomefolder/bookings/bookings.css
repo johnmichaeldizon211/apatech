@@ -233,6 +233,22 @@ body {
     letter-spacing: 0.2px;
 }
 
+.table-row .status-wrap {
+    display: grid;
+    gap: 1px;
+}
+
+.table-row .status-main {
+    font-weight: 700;
+}
+
+.table-row .status-note {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1f4c98;
+    letter-spacing: 0.2px;
+}
+
 .service-pill {
     display: inline-flex;
     align-items: center;

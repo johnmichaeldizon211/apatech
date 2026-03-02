@@ -52,6 +52,27 @@
         return host === "apatech-production.up.railway.app";
     }
 
+    function isSameOriginApiBase(baseInput) {
+        var base = trimSlashes(baseInput);
+        var currentOrigin = getCurrentOrigin();
+        if (!base || !currentOrigin) {
+            return false;
+        }
+        try {
+            return trimSlashes(new URL(base).origin) === currentOrigin;
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function isLegacyLocalFrontendApiBase(baseInput) {
+        var base = trimSlashes(baseInput);
+        if (!base) {
+            return false;
+        }
+        return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0):5500$/i.test(base);
+    }
+
     function shouldPreferCurrentOriginBase(storedBaseInput) {
         var storedBase = trimSlashes(storedBaseInput);
         if (!storedBase || !global.location) {
@@ -68,12 +89,12 @@
             return true;
         }
 
-        // When frontend is opened from local static server, prefer deployed API host.
+        // On localhost, prefer local API and avoid sticky remote fallback base.
         if (isLocalHost(currentHost)) {
-            if (trimSlashes(storedBase) === trimSlashes(DEFAULT_REMOTE_API_BASE)) {
+            if (!isLocalHost(storedHost)) {
                 return true;
             }
-            return isLocalApiBase(storedBase);
+            return isSameOriginApiBase(storedBase) || isLegacyLocalFrontendApiBase(storedBase);
         }
 
         if (isLocalHost(storedHost)) {
@@ -365,6 +386,10 @@
         if (!isLocalApiBase(getApiBase())) {
             return false;
         }
+        var requestUrl = getRequestUrl(input);
+        if (/\/api\/(login|signup|request-password-otp|verify-password-otp|reset-password)(?:\?|$)/i.test(requestUrl)) {
+            return false;
+        }
         return Boolean(buildRemoteFallbackUrl(input));
     }
 
@@ -481,10 +506,7 @@
                     if (!fallbackUrl || !isLikelyNetworkError(error)) {
                         throw error;
                     }
-                    return originalFetch(fallbackUrl, requestInit).then(function (response) {
-                        setApiBase(DEFAULT_REMOTE_API_BASE, true);
-                        return response;
-                    });
+                    return originalFetch(fallbackUrl, requestInit);
                 })
                 .then(function (response) {
                     if (response.status === 401 && !shouldBePublicPage(global.location && global.location.pathname)) {

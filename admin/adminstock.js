@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", function () {
     const storageKey = "ecodrive_product_catalog";
     const colorStorageKey = "ecodrive_color_variant_availability_v1";
+    const specStorageKey = "ecodrive_model_spec_catalog_v1";
     const apiBase = String(
         (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
             ? window.EcodriveSession.getApiBase()
@@ -28,9 +29,17 @@ document.addEventListener("DOMContentLoaded", function () {
     const categoryInput = document.getElementById("stock-category-input");
     const priceInput = document.getElementById("stock-price-input");
     const infoInput = document.getElementById("stock-info-input");
+    const specPowerInput = document.getElementById("stock-spec-power-input");
+    const specBatteryInput = document.getElementById("stock-spec-battery-input");
+    const specBatteryTypeInput = document.getElementById("stock-spec-battery-type-input");
+    const specSpeedInput = document.getElementById("stock-spec-speed-input");
+    const specRangeInput = document.getElementById("stock-spec-range-input");
+    const specChargingTimeInput = document.getElementById("stock-spec-charging-time-input");
     const imageFileInput = document.getElementById("stock-image-file-input");
     const imageInput = document.getElementById("stock-image-input");
     const detailInput = document.getElementById("stock-detail-input");
+    const colorCountInput = document.getElementById("stock-color-count-input");
+    const colorInputListEl = document.getElementById("stock-color-input-list");
     const saveBtn = document.getElementById("stock-save-btn");
     const cancelBtn = document.getElementById("stock-cancel-btn");
     const addStatusEl = document.getElementById("stock-add-status");
@@ -52,9 +61,17 @@ document.addEventListener("DOMContentLoaded", function () {
         !categoryInput ||
         !priceInput ||
         !infoInput ||
+        !specPowerInput ||
+        !specBatteryInput ||
+        !specBatteryTypeInput ||
+        !specSpeedInput ||
+        !specRangeInput ||
+        !specChargingTimeInput ||
         !imageFileInput ||
         !imageInput ||
         !detailInput ||
+        !colorCountInput ||
+        !colorInputListEl ||
         !saveBtn ||
         !cancelBtn ||
         !addStatusEl ||
@@ -68,6 +85,17 @@ document.addEventListener("DOMContentLoaded", function () {
     let products = [];
     let apiAvailable = false;
     let colorVariantsByModel = {};
+    let modelSpecsByModel = {};
+    const minAddColorCount = 1;
+    const maxAddColorCount = 12;
+    const modelSpecFieldDefs = [
+        { key: "power", label: "Power" },
+        { key: "battery", label: "Battery" },
+        { key: "batteryType", label: "Battery Type" },
+        { key: "speed", label: "Speed" },
+        { key: "range", label: "Range" },
+        { key: "chargingTime", label: "Charging Time" }
+    ];
 
     function safeParse(raw) {
         try {
@@ -120,9 +148,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         if (bikeId === 6) {
             return "4-Wheel";
-        }
-        if (bikeId === 8) {
-            return "2-Wheel";
         }
         if (bikeId >= 7 && bikeId <= 16) {
             return "3-Wheel";
@@ -262,7 +287,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function sanitizeProducts(input) {
         const rows = Array.isArray(input) ? input : [];
-        return rows
+        const normalized = rows
             .map(function (row, index) {
                 return normalizeProduct(row, index + 1);
             })
@@ -274,6 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 return String(left.model || "").localeCompare(String(right.model || ""));
             });
+        return dedupeProductsByModelAndCategory(normalized);
     }
 
     function readProductsFromLocal() {
@@ -293,6 +319,148 @@ document.addEventListener("DOMContentLoaded", function () {
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, " ")
             .trim();
+    }
+
+    function normalizeModelSpecValue(value) {
+        return normalizeText(value).slice(0, 120);
+    }
+
+    function sanitizeModelSpecEntry(input) {
+        const source = input && typeof input === "object" ? input : {};
+        return {
+            power: normalizeModelSpecValue(source.power),
+            battery: normalizeModelSpecValue(source.battery),
+            batteryType: normalizeModelSpecValue(source.batteryType || source.battery_type),
+            speed: normalizeModelSpecValue(source.speed),
+            range: normalizeModelSpecValue(source.range),
+            chargingTime: normalizeModelSpecValue(source.chargingTime || source.charging_time)
+        };
+    }
+
+    function sanitizeModelSpecMap(input) {
+        const source = input && typeof input === "object" ? input : {};
+        const output = {};
+
+        Object.keys(source).forEach(function (key) {
+            const modelKey = normalizeModelKey(key);
+            if (!modelKey) {
+                return;
+            }
+
+            const entry = sanitizeModelSpecEntry(source[key]);
+            const hasValue = modelSpecFieldDefs.some(function (field) {
+                return Boolean(entry[field.key]);
+            });
+            if (hasValue) {
+                output[modelKey] = entry;
+            }
+        });
+
+        return output;
+    }
+
+    function readModelSpecsFromLocal() {
+        return sanitizeModelSpecMap(safeParse(localStorage.getItem(specStorageKey)));
+    }
+
+    function saveModelSpecsToLocal(map) {
+        localStorage.setItem(specStorageKey, JSON.stringify(sanitizeModelSpecMap(map)));
+    }
+
+    function collectAddModelSpecs() {
+        const entry = sanitizeModelSpecEntry({
+            power: specPowerInput.value,
+            battery: specBatteryInput.value,
+            batteryType: specBatteryTypeInput.value,
+            speed: specSpeedInput.value,
+            range: specRangeInput.value,
+            chargingTime: specChargingTimeInput.value
+        });
+
+        for (let index = 0; index < modelSpecFieldDefs.length; index += 1) {
+            const field = modelSpecFieldDefs[index];
+            if (!entry[field.key]) {
+                return { error: `${field.label} is required.` };
+            }
+        }
+
+        return { entry: entry };
+    }
+
+    function toTimestamp(value) {
+        const raw = String(value || "").trim();
+        if (!raw) {
+            return 0;
+        }
+        const date = new Date(raw);
+        const time = date.getTime();
+        return Number.isFinite(time) ? time : 0;
+    }
+
+    function scoreProductCompleteness(product) {
+        let score = 0;
+        if (String(product.detailUrl || "").trim()) {
+            score += 4;
+        }
+        if (String(product.imageUrl || "").trim()) {
+            score += 2;
+        }
+        if (String(product.info || "").trim()) {
+            score += 1;
+        }
+        if (toIsActive(product.isActive)) {
+            score += 1;
+        }
+        return score;
+    }
+
+    function pickPreferredProduct(existing, candidate) {
+        const existingScore = scoreProductCompleteness(existing);
+        const candidateScore = scoreProductCompleteness(candidate);
+        if (candidateScore > existingScore) {
+            return candidate;
+        }
+        if (candidateScore < existingScore) {
+            return existing;
+        }
+
+        const existingTime = toTimestamp(existing.createdAt);
+        const candidateTime = toTimestamp(candidate.createdAt);
+        if (candidateTime > existingTime) {
+            return candidate;
+        }
+        if (candidateTime < existingTime) {
+            return existing;
+        }
+
+        return Number(candidate.id || 0) > Number(existing.id || 0) ? candidate : existing;
+    }
+
+    function dedupeProductsByModelAndCategory(list) {
+        const ordered = Array.isArray(list) ? list : [];
+        const byKey = {};
+        const keyOrder = [];
+
+        ordered.forEach(function (product) {
+            const modelKey = normalizeModelKey(product.model);
+            const categoryKey = normalizeCategory(product.category);
+            const dedupeKey = `${modelKey}__${categoryKey}`;
+            if (!modelKey) {
+                return;
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(byKey, dedupeKey)) {
+                byKey[dedupeKey] = product;
+                keyOrder.push(dedupeKey);
+                return;
+            }
+
+            byKey[dedupeKey] = pickPreferredProduct(byKey[dedupeKey], product);
+        });
+
+        return keyOrder.map(function (key) {
+            return byKey[key];
+        });
     }
 
     function normalizeColorKey(value) {
@@ -357,6 +525,93 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
         return output;
+    }
+
+    function clampAddColorCount(value) {
+        const parsed = Number.parseInt(String(value || "").trim(), 10);
+        if (!Number.isFinite(parsed)) {
+            return minAddColorCount;
+        }
+        return Math.max(minAddColorCount, Math.min(maxAddColorCount, parsed));
+    }
+
+    function getAddColorInputValues() {
+        return Array.from(colorInputListEl.querySelectorAll(".stock-color-name-input"))
+            .map(function (input) {
+                return normalizeText(input.value).slice(0, 64);
+            });
+    }
+
+    function renderAddColorInputs(requestedCount, preferredValues) {
+        const count = clampAddColorCount(requestedCount);
+        const values = Array.isArray(preferredValues) && preferredValues.length
+            ? preferredValues
+            : getAddColorInputValues();
+
+        colorCountInput.value = String(count);
+        colorInputListEl.innerHTML = "";
+
+        const fragment = document.createDocumentFragment();
+        for (let index = 0; index < count; index += 1) {
+            const row = document.createElement("div");
+            row.className = "stock-color-input-item";
+
+            const label = document.createElement("label");
+            const inputId = `stock-color-name-${index + 1}`;
+            label.setAttribute("for", inputId);
+            label.textContent = `Color ${index + 1}`;
+
+            const input = document.createElement("input");
+            input.id = inputId;
+            input.type = "text";
+            input.className = "stock-color-name-input";
+            input.maxLength = 64;
+            input.placeholder = index === 0 ? "Black" : `Color ${index + 1}`;
+            input.autocomplete = "off";
+            input.value = normalizeText(values[index] || "").slice(0, 64);
+
+            row.appendChild(label);
+            row.appendChild(input);
+            fragment.appendChild(row);
+        }
+
+        colorInputListEl.appendChild(fragment);
+    }
+
+    function collectAddColorVariants(defaultImageUrl) {
+        const count = clampAddColorCount(colorCountInput.value);
+        renderAddColorInputs(count);
+        const inputs = Array.from(colorInputListEl.querySelectorAll(".stock-color-name-input"));
+        const seen = {};
+        const variants = [];
+        const imageUrl = resolveAssetPath(String(defaultImageUrl || "").trim() || "/Userhomefolder/image 1.png");
+
+        for (let index = 0; index < inputs.length; index += 1) {
+            const label = normalizeText(inputs[index].value).slice(0, 64);
+            if (!label) {
+                return { error: `Color ${index + 1} name is required.` };
+            }
+
+            const key = normalizeColorKey(label);
+            if (!key) {
+                return { error: `Color ${index + 1} name is invalid.` };
+            }
+            if (seen[key]) {
+                return { error: "Duplicate color names are not allowed." };
+            }
+
+            seen[key] = true;
+            variants.push({
+                key: key,
+                label: formatColorLabel(label, index),
+                imageUrl: imageUrl,
+                isActive: true
+            });
+        }
+
+        return {
+            variants: sanitizeColorVariantList(variants)
+        };
     }
 
     function readColorVariantsFromLocal() {
@@ -430,6 +685,138 @@ document.addEventListener("DOMContentLoaded", function () {
         return resolveAssetPath(raw);
     }
 
+    function stripLightBackdropFromImage(imageEl) {
+        if (!imageEl) {
+            return;
+        }
+        const processState = String(imageEl.getAttribute("data-bg-processed") || "");
+        if (processState === "processing" || processState === "1") {
+            return;
+        }
+
+        const source = String(imageEl.currentSrc || imageEl.src || "").trim();
+        if (!source || /^data:image\/svg\+xml/i.test(source)) {
+            imageEl.setAttribute("data-bg-processed", "1");
+            return;
+        }
+
+        imageEl.setAttribute("data-bg-processed", "processing");
+
+        const probe = new Image();
+        probe.crossOrigin = "anonymous";
+        probe.decoding = "async";
+        probe.onload = function () {
+            try {
+                const width = Number(probe.naturalWidth || 0);
+                const height = Number(probe.naturalHeight || 0);
+                if (!width || !height || (width * height) > 2200000) {
+                    imageEl.setAttribute("data-bg-processed", "1");
+                    return;
+                }
+
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                if (!ctx) {
+                    imageEl.setAttribute("data-bg-processed", "1");
+                    return;
+                }
+
+                ctx.drawImage(probe, 0, 0, width, height);
+                const frame = ctx.getImageData(0, 0, width, height);
+                const pixels = frame.data;
+                const total = width * height;
+                const visited = new Uint8Array(total);
+                const stack = [];
+
+                function push(index) {
+                    if (index < 0 || index >= total || visited[index]) {
+                        return;
+                    }
+                    visited[index] = 1;
+                    stack.push(index);
+                }
+
+                push(0);
+                push(width - 1);
+                push(total - width);
+                push(total - 1);
+
+                while (stack.length) {
+                    const index = stack.pop();
+                    const offset = index * 4;
+                    const alpha = pixels[offset + 3];
+                    if (!alpha) {
+                        continue;
+                    }
+
+                    const red = pixels[offset];
+                    const green = pixels[offset + 1];
+                    const blue = pixels[offset + 2];
+                    const max = Math.max(red, green, blue);
+                    const min = Math.min(red, green, blue);
+                    const luminance = (red + green + blue) / 3;
+                    const saturation = max - min;
+
+                    if (luminance < 220 || saturation > 60) {
+                        continue;
+                    }
+
+                    pixels[offset + 3] = 0;
+
+                    const x = index % width;
+                    if (x > 0) {
+                        push(index - 1);
+                    }
+                    if (x < width - 1) {
+                        push(index + 1);
+                    }
+                    if (index >= width) {
+                        push(index - width);
+                    }
+                    if (index < total - width) {
+                        push(index + width);
+                    }
+                }
+
+                for (let offset = 0; offset < pixels.length; offset += 4) {
+                    const alpha = pixels[offset + 3];
+                    if (!alpha) {
+                        continue;
+                    }
+
+                    const red = pixels[offset];
+                    const green = pixels[offset + 1];
+                    const blue = pixels[offset + 2];
+                    const max = Math.max(red, green, blue);
+                    const min = Math.min(red, green, blue);
+                    const luminance = (red + green + blue) / 3;
+                    const saturation = max - min;
+
+                    if (luminance >= 238 && saturation <= 35) {
+                        pixels[offset + 3] = Math.round(alpha * 0.35);
+                    } else if (luminance >= 228 && saturation <= 45) {
+                        pixels[offset + 3] = Math.round(alpha * 0.68);
+                    }
+                }
+
+                ctx.putImageData(frame, 0, 0);
+                const processedUrl = canvas.toDataURL("image/png");
+                if (processedUrl) {
+                    imageEl.src = processedUrl;
+                }
+            } catch (_error) {
+                // keep original source on failure
+            }
+            imageEl.setAttribute("data-bg-processed", "1");
+        };
+        probe.onerror = function () {
+            imageEl.setAttribute("data-bg-processed", "1");
+        };
+        probe.src = source;
+    }
+
     async function readColorVariantsFromDetailPage(product) {
         const detailUrl = resolveAssetPath(String(product && product.detailUrl || "").trim());
         if (!detailUrl) {
@@ -444,7 +831,10 @@ document.addEventListener("DOMContentLoaded", function () {
             const markup = await response.text();
             const parser = new DOMParser();
             const doc = parser.parseFromString(markup, "text/html");
-            const dots = Array.from(doc.querySelectorAll(".dot"));
+            const primaryColorPicker = doc.querySelector(".color-picker");
+            const dots = primaryColorPicker
+                ? Array.from(primaryColorPicker.querySelectorAll(".dot"))
+                : Array.from(doc.querySelectorAll(".dot"));
             if (!dots.length) {
                 return [];
             }
@@ -479,9 +869,12 @@ document.addEventListener("DOMContentLoaded", function () {
             imageUrl: product.imageUrl || "/Userhomefolder/image 1.png",
             isActive: true
         }]);
-        const discovered = detectedList.length ? detectedList : fallback;
+        const sanitizedExisting = sanitizeColorVariantList(existingList);
+        const discovered = detectedList.length
+            ? detectedList
+            : (sanitizedExisting.length ? sanitizedExisting : fallback);
         const existingByKey = {};
-        existingList.forEach(function (item) {
+        sanitizedExisting.forEach(function (item) {
             existingByKey[item.key] = item;
         });
 
@@ -495,13 +888,22 @@ document.addEventListener("DOMContentLoaded", function () {
             };
         });
 
-        existingList.forEach(function (item) {
-            const exists = merged.some(function (candidate) {
-                return candidate.key === item.key;
-            });
-            if (!exists) {
-                merged.push(item);
+        const mergedByKey = {};
+        merged.forEach(function (item) {
+            mergedByKey[item.key] = true;
+        });
+
+        sanitizedExisting.forEach(function (item, index) {
+            if (mergedByKey[item.key]) {
+                return;
             }
+
+            merged.push({
+                key: item.key,
+                label: item.label || formatColorLabel(item.key, index),
+                imageUrl: item.imageUrl || product.imageUrl || "",
+                isActive: toIsActive(item.isActive)
+            });
         });
 
         return sanitizeColorVariantList(merged);
@@ -595,6 +997,9 @@ document.addEventListener("DOMContentLoaded", function () {
             image.alt = `${variant.label} preview`;
             image.src = resolveAssetPath(variant.imageUrl || "/Userhomefolder/image 1.png");
             image.loading = "lazy";
+            image.onload = function () {
+                stripLightBackdropFromImage(image);
+            };
             image.onerror = function () {
                 image.onerror = null;
                 image.src = resolveAssetPath("/Userhomefolder/image 1.png");
@@ -639,11 +1044,28 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function syncColorVariantsFromProducts() {
         const snapshot = sanitizeColorVariantMap(colorVariantsByModel);
-        const tasks = products.map(async function (product) {
+        const preferredProductsByModel = {};
+        products.forEach(function (product) {
             const modelKey = normalizeModelKey(product.model);
             if (!modelKey) {
-                return null;
+                return;
             }
+
+            const previous = preferredProductsByModel[modelKey];
+            if (!previous) {
+                preferredProductsByModel[modelKey] = product;
+                return;
+            }
+
+            const previousHasDetail = Boolean(String(previous.detailUrl || "").trim());
+            const currentHasDetail = Boolean(String(product.detailUrl || "").trim());
+            if (!previousHasDetail && currentHasDetail) {
+                preferredProductsByModel[modelKey] = product;
+            }
+        });
+
+        const tasks = Object.keys(preferredProductsByModel).map(async function (modelKey) {
+            const product = preferredProductsByModel[modelKey];
             const existingList = Array.isArray(snapshot[modelKey]) ? snapshot[modelKey] : [];
             const detectedList = await readColorVariantsFromDetailPage(product);
             const mergedList = mergeColorVariants(product, detectedList, existingList);
@@ -759,6 +1181,8 @@ document.addEventListener("DOMContentLoaded", function () {
         categoryInput.value = "2-Wheel";
         imageFileInput.value = "";
         imageInput.value = "/Userhomefolder/image 1.png";
+        colorCountInput.value = String(minAddColorCount);
+        renderAddColorInputs(minAddColorCount, [""]);
         setAddStatus("", "");
     }
 
@@ -789,6 +1213,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const image = document.createElement("img");
         image.src = resolveAssetPath(product.imageUrl || "/Userhomefolder/image 1.png");
         image.alt = product.model;
+        image.loading = "lazy";
+        image.onload = function () {
+            stripLightBackdropFromImage(image);
+        };
         image.onerror = function () {
             image.onerror = null;
             image.src = resolveAssetPath("/Userhomefolder/image 1.png");
@@ -1096,6 +1524,23 @@ document.addEventListener("DOMContentLoaded", function () {
             setAddStatus("That model already exists in the selected category.", "error");
             return;
         }
+
+        const colorVariantResult = collectAddColorVariants(imageUrl);
+        if (colorVariantResult.error) {
+            setAddStatus(colorVariantResult.error, "error");
+            return;
+        }
+        const addColorVariants = Array.isArray(colorVariantResult.variants)
+            ? colorVariantResult.variants
+            : [];
+
+        const specResult = collectAddModelSpecs();
+        if (specResult.error) {
+            setAddStatus(specResult.error, "error");
+            return;
+        }
+        const addModelSpecs = specResult.entry;
+
         if (!apiAvailable) {
             setAddStatus("Cannot add model while API is unavailable.", "error");
             return;
@@ -1119,10 +1564,33 @@ document.addEventListener("DOMContentLoaded", function () {
             if (apiResult.mode === "ok" && apiResult.product) {
                 products = sanitizeProducts(products.concat(apiResult.product));
                 saveProductsToLocal(products);
+
+                const modelKey = normalizeModelKey(model);
+                if (modelKey && addColorVariants.length) {
+                    colorVariantsByModel[modelKey] = sanitizeColorVariantList(
+                        addColorVariants.map(function (variant) {
+                            return Object.assign({}, variant, {
+                                imageUrl: resolveAssetPath(variant.imageUrl || imageUrl)
+                            });
+                        })
+                    );
+                    saveColorVariantsToLocal(colorVariantsByModel);
+                }
+
+                if (modelKey) {
+                    modelSpecsByModel[modelKey] = sanitizeModelSpecEntry(addModelSpecs);
+                    saveModelSpecsToLocal(modelSpecsByModel);
+                }
+
                 renderStats();
                 renderStockCards();
                 await syncColorVariantsFromProducts();
-                setStatus(`Added ${model}.`, "success");
+                if (modelKey) {
+                    colorModelSelectEl.value = modelKey;
+                    renderColorVariantList();
+                }
+
+                setStatus(`Added ${model} with ${addColorVariants.length} color(s).`, "success");
                 resetAddForm();
                 toggleAddPanel(false);
                 return;
@@ -1158,6 +1626,14 @@ document.addEventListener("DOMContentLoaded", function () {
             setAddStatus(`Selected image: ${file.name}`, "muted");
         });
 
+        colorCountInput.addEventListener("input", function () {
+            renderAddColorInputs(colorCountInput.value);
+        });
+
+        colorCountInput.addEventListener("change", function () {
+            renderAddColorInputs(colorCountInput.value);
+        });
+
         addForm.addEventListener("submit", function (event) {
             void handleAddSubmit(event);
         });
@@ -1185,6 +1661,11 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        if (event.key === specStorageKey) {
+            modelSpecsByModel = readModelSpecsFromLocal();
+            return;
+        }
+
         if (event.key !== storageKey || apiAvailable) {
             return;
         }
@@ -1200,6 +1681,7 @@ document.addEventListener("DOMContentLoaded", function () {
         bindAddForm();
         bindColorManager();
         colorVariantsByModel = readColorVariantsFromLocal();
+        modelSpecsByModel = readModelSpecsFromLocal();
         renderColorManager();
         setColorStatus("Loading color variants...", "muted");
 

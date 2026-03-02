@@ -543,7 +543,16 @@
                             ? installmentInitialDue
                             : rawTotal;
                         const totalDisplayNote = installmentInitialDue > 0
-                            ? "DP + 1st hulog"
+                            ? "Down payment"
+                            : "";
+                        const installmentMetrics = parseInstallmentReceiptMetrics({
+                            payment: item.payment || item.paymentMethod || "",
+                            service: service,
+                            total: rawTotal,
+                            installment: installment
+                        });
+                        const statusDisplayNote = installmentMetrics
+                            ? ("Hulog: " + installmentMetrics.progressLabel)
                             : "";
                         return {
                             orderId: String(rawOrderId || ("#EC-" + (1000 + index))),
@@ -558,6 +567,7 @@
                             total: rawTotal,
                             totalDisplayAmount: totalDisplayAmount,
                             totalDisplayNote: totalDisplayNote,
+                            statusDisplayNote: statusDisplayNote,
                             service: service,
                             payment: String(item.payment || item.paymentMethod || "Unspecified"),
                             installment: installment,
@@ -667,7 +677,7 @@
 
             function formatPeso(amount) {
                 const value = Number(amount || 0);
-                return "&#8369;" + value.toLocaleString("en-PH", {
+                return "\u20B1" + value.toLocaleString("en-PH", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 });
@@ -714,25 +724,8 @@
                     || installment.downPayment
                     || installment.dp
                 );
-                const monthlyAmount = toCurrencyNumber(
-                    installment.monthlyAmortization
-                    || installment.monthlyAmount
-                    || installment.monthlyPayment
-                    || installment.monthly
-                );
-                const computed = toCurrencyNumber(
-                    (minDp > 0 ? minDp : 0)
-                    + (monthlyAmount > 0 ? monthlyAmount : 0)
-                );
-
-                if (computed > 0) {
-                    return computed;
-                }
                 if (minDp > 0) {
                     return minDp;
-                }
-                if (monthlyAmount > 0) {
-                    return monthlyAmount;
                 }
                 return 0;
             }
@@ -778,35 +771,21 @@
                 const paymentHistory = Array.isArray(installment.paymentHistory)
                     ? installment.paymentHistory
                     : [];
-                const historyPaidCount = paymentHistory.filter(function (entry) {
-                    return String(entry && entry.status || "").toLowerCase().includes("paid");
-                }).length;
-
-                const paidCountRaw = Number(
-                    installment.paidInstallments
-                    || installment.paidCount
-                    || installment.monthsPaid
-                    || installment.installmentsPaid
-                    || 0
-                );
-                let paidCount = Number.isFinite(paidCountRaw) && paidCountRaw > 0
-                    ? Math.floor(paidCountRaw)
-                    : 0;
-                if (historyPaidCount > paidCount) {
-                    paidCount = historyPaidCount;
-                }
+                const paidHistoryEntries = paymentHistory.filter(function (entry) {
+                    const monthRaw = Number(entry && (entry.month || entry.installmentMonth) || 0);
+                    const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+                    const status = String(entry && entry.status || "").toLowerCase();
+                    return month > 0 && status.includes("paid");
+                });
+                let paidCount = paidHistoryEntries.length;
                 if (monthsToPay > 0 && paidCount > monthsToPay) {
                     paidCount = monthsToPay;
                 }
 
-                let paidAmount = toCurrencyNumber(
-                    installment.totalPaid
-                    || installment.paidAmount
-                    || installment.totalPaidAmount
-                );
-                if (!(paidAmount > 0) && paymentHistory.length > 0) {
+                let paidAmount = 0;
+                if (paidHistoryEntries.length > 0) {
                     paidAmount = toCurrencyNumber(
-                        paymentHistory.reduce(function (sum, entry) {
+                        paidHistoryEntries.reduce(function (sum, entry) {
                             return sum + toCurrencyNumber(
                                 entry && (entry.amount || entry.value || entry.monthlyAmount)
                             );
@@ -849,7 +828,7 @@
 
             function formatReceiptAmountText(amount) {
                 const value = Number(amount || 0);
-                return "PHP " + value.toLocaleString("en-PH", {
+                return "\u20B1" + value.toLocaleString("en-PH", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 });
@@ -911,12 +890,14 @@
                 const service = escapeHtml(String(item.service || "-"));
                 const payment = escapeHtml(String(item.payment || "-"));
                 const schedule = escapeHtml(String(item.schedule || "-"));
-                const status = escapeHtml(String(item.status || "-"));
                 const fulfillment = escapeHtml(String(item.fulfillmentStatus || "-"));
                 const trackingEta = escapeHtml(String(item.trackingEta || "Not set"));
                 const trackingLocation = escapeHtml(String(item.trackingLocation || "Not set"));
                 const shippingAddress = escapeHtml(String(item.shippingAddress || "-"));
                 const installmentMetrics = parseInstallmentReceiptMetrics(item);
+                const statusLabel = installmentMetrics
+                    ? (String(item.status || "-") + " (Hulog: " + installmentMetrics.progressLabel + ")")
+                    : String(item.status || "-");
                 const totalAmount = installmentMetrics
                     ? installmentMetrics.totalPayableForReceipt
                     : toCurrencyNumber(item.total || 0);
@@ -984,7 +965,7 @@
                     + "<div class=\"row\"><span class=\"label\">Payment</span><span class=\"value\">" + payment + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
                     + serviceLine
-                    + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + status + "</span></div>"
+                    + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
@@ -1082,6 +1063,9 @@
                 const issuedAt = formatReceiptIssuedDate(item.receiptIssuedAt || item.createdAt);
                 const generatedAt = formatReceiptIssuedDate(new Date().toISOString());
                 const installmentMetrics = parseInstallmentReceiptMetrics(item);
+                const statusLabel = installmentMetrics
+                    ? (String(item.status || "-") + " (Hulog: " + installmentMetrics.progressLabel + ")")
+                    : String(item.status || "-");
                 const amountLabel = formatReceiptAmountText(
                     installmentMetrics
                         ? installmentMetrics.totalPayableForReceipt
@@ -1143,7 +1127,7 @@
                 if (deliveryAddress) {
                     writeLine("Address: " + deliveryAddress);
                 }
-                writeLine("Status: " + String(item.status || "-"));
+                writeLine("Status: " + statusLabel);
                 writeLine("Progress: " + String(item.fulfillmentStatus || "-"));
                 writeLine("ETA: " + String(item.trackingEta || "Not set"));
                 writeLine("Location: " + String(item.trackingLocation || "Not set"));
@@ -1418,13 +1402,20 @@
                         + "<span class=\"total\">" + formatPeso(totalDisplayAmount) + "</span>"
                         + totalDisplayNoteHtml
                         + "</span>";
+                    const statusNoteHtml = item.statusDisplayNote
+                        ? "<small class=\"status-note\">" + escapeHtml(String(item.statusDisplayNote)) + "</small>"
+                        : "";
+                    const statusHtml = "<span class=\"status-wrap\">"
+                        + "<span class=\"status-main\">" + escapeHtml(item.status) + "</span>"
+                        + statusNoteHtml
+                        + "</span>";
 
                     htmlParts.push(
                         "<article class=\"table-row row-grid\">" +
                             "<span class=\"product\">" + escapeHtml(modelDisplay.toUpperCase()) + "</span>" +
                             "<span>" + escapeHtml(formatDate(item.createdAt)) + "</span>" +
                             "<span>" + escapeHtml(item.schedule) + "</span>" +
-                            "<span>" + escapeHtml(item.status) + "</span>" +
+                            "<span>" + statusHtml + "</span>" +
                             totalHtml +
                             "<span><span class=\"service-pill\">" + escapeHtml(item.service) + "</span></span>" +
                             "<span class=\"fulfillment-wrap\">" + fulfillmentHtml + "</span>" +
@@ -1557,17 +1548,17 @@
                 { model: "FUN 350R II", price: 24000, category: "2-Wheel", aliases: ["fun 350r ii", "fun 350r", "fun 350"] },
                 { model: "CANDY 800", price: 39000, category: "2-Wheel", aliases: ["candy 800"] },
                 { model: "BLITZ 200R", price: 40000, category: "2-Wheel", aliases: ["blitz 200r"] },
-                { model: "TRAVELLER 1500 (2-Wheel)", price: 78000, category: "2-Wheel", aliases: ["traveller 1500", "traveler 1500 2 wheel", "traveller 1500 2 wheel"] },
-                { model: "ECONO 500 MP", price: 51000, category: "2-Wheel", aliases: ["econo 500 mp"] },
-                { model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", aliases: ["econo 350 mini ii", "econo 350 mini", "mini ii"] },
+                { model: "TRAVELLER 1500 (4-Wheel)", price: 78000, category: "4-Wheel", aliases: ["traveller 1500", "traveler 1500 4 wheel", "traveller 1500 4 wheel"] },
+                { model: "ECONO 500 MP", price: 51000, category: "3-Wheel", aliases: ["econo 500 mp"] },
+                { model: "ECONO 350 MINI-II", price: 39000, category: "3-Wheel", aliases: ["econo 350 mini ii", "econo 350 mini", "mini ii"] },
                 { model: "ECARGO 100", price: 72500, category: "3-Wheel", aliases: ["ecargo 100", "e cargo 100"] },
                 { model: "E-CAB 1000 (3-Wheel)", price: 65000, category: "3-Wheel", aliases: ["e cab 1000", "ecab 1000", "e-cab 1000 3 wheel"] },
                 { model: "ECAB 1000 II", price: 90000, category: "3-Wheel", aliases: ["ecab 1000 ii", "ecab 1000 2"] },
                 { model: "ECONO 800 MP II", price: 45000, category: "3-Wheel", aliases: ["econo 800 mp ii", "econo 800 mp 2"] },
-                { model: "E-CARGO 800J", price: 65000, category: "4-Wheel", aliases: ["e cargo 800j", "ecargo 800j", "e-cargo 800j"] },
-                { model: "TRAVELER 1500 (4-Wheel)", price: 130000, category: "4-Wheel", aliases: ["traveler 1500", "traveller 1500", "traveler 1500 4 wheel", "traveller 1500 4 wheel"] },
-                { model: "E-CAB 1000 (4-Wheel)", price: 75000, category: "4-Wheel", aliases: ["e cab 1000", "ecab 1000", "e cab 1000 4 wheel", "ecab 1000 4 wheel"] },
-                { model: "ECONO 800 MP", price: 60000, category: "4-Wheel", aliases: ["econo 800 mp"] }
+                { model: "E-CARGO 800J", price: 65000, category: "3-Wheel", aliases: ["e cargo 800j", "ecargo 800j", "e-cargo 800j"] },
+                { model: "TRAVELER 1500 (3-Wheel)", price: 130000, category: "3-Wheel", aliases: ["traveler 1500", "traveller 1500", "traveler 1500 3 wheel", "traveller 1500 3 wheel"] },
+                { model: "E-CAB 1000 (3-Wheel)", price: 75000, category: "3-Wheel", aliases: ["e cab 1000", "ecab 1000", "e cab 1000 3 wheel", "ecab 1000 3 wheel"] },
+                { model: "ECONO 800 MP", price: 60000, category: "3-Wheel", aliases: ["econo 800 mp"] }
             ];
             let chatMessages = [];
 

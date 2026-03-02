@@ -424,29 +424,16 @@ document.addEventListener("DOMContentLoaded", function () {
             installment && (installment.planSrp || installment.srp || installment.srpValue)
         ) || srpFallback;
 
-        const paidCountRaw = Number(
-            installment && (
-                installment.paidInstallments
-                || installment.paidCount
-                || installment.monthsPaid
-                || installment.installmentsPaid
-            )
-        );
-        let paidCount = Number.isFinite(paidCountRaw) && paidCountRaw > 0
-            ? Math.floor(paidCountRaw)
-            : 0;
-
         const paymentHistory = Array.isArray(installment && installment.paymentHistory)
             ? installment.paymentHistory
             : [];
-        if (paymentHistory.length > 0) {
-            const historyPaidCount = paymentHistory.filter(function (item) {
-                return String(item && item.status || "").toLowerCase().includes("paid");
-            }).length;
-            if (historyPaidCount > paidCount) {
-                paidCount = historyPaidCount;
-            }
-        }
+        const paidHistoryEntries = paymentHistory.filter(function (item) {
+            const monthRaw = Number(item && (item.month || item.installmentMonth) || 0);
+            const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+            const status = String(item && item.status || "").toLowerCase();
+            return month > 0 && status.includes("paid");
+        });
+        let paidCount = paidHistoryEntries.length;
 
         if (monthsToPay > 0 && paidCount > monthsToPay) {
             paidCount = monthsToPay;
@@ -458,11 +445,9 @@ document.addEventListener("DOMContentLoaded", function () {
             : 0;
         const monthlyAmount = monthlyRaw > 0 ? monthlyRaw : fallbackMonthly;
 
-        let paidAmount = toCurrencyNumber(
-            installment && (installment.totalPaid || installment.paidAmount || installment.totalPaidAmount)
-        );
-        if (paidAmount <= 0 && paymentHistory.length > 0) {
-            paidAmount = toCurrencyNumber(paymentHistory.reduce(function (sum, item) {
+        let paidAmount = 0;
+        if (paidHistoryEntries.length > 0) {
+            paidAmount = toCurrencyNumber(paidHistoryEntries.reduce(function (sum, item) {
                 return sum + toCurrencyNumber(item && (item.amount || item.value || item.monthlyAmount));
             }, 0));
         }
@@ -480,11 +465,8 @@ document.addEventListener("DOMContentLoaded", function () {
         );
 
         const hasBreakdownData = Boolean(installment && monthsToPay > 0 && monthlyAmount > 0);
-        const initialDueAmount = toCurrencyNumber(
-            (minDp > 0 ? minDp : 0)
-            + (monthlyAmount > 0 ? monthlyAmount : 0)
-        );
-        const fallbackInitialDue = toCurrencyNumber(totalRaw || srp || 0);
+        const initialDueAmount = toCurrencyNumber(minDp > 0 ? minDp : 0);
+        const fallbackInitialDue = toCurrencyNumber((minDp > 0 ? minDp : (totalRaw || srp || 0)));
 
         return {
             installment: installment,
@@ -824,7 +806,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function formatReceiptAmountText(amount) {
         const value = Number(amount || 0);
-        return "PHP " + value.toLocaleString("en-PH", {
+        return "\u20B1" + value.toLocaleString("en-PH", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
@@ -857,12 +839,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const service = escapeHtml(String((booking && booking.service) || "-"));
         const payment = escapeHtml(String((booking && booking.payment) || "-"));
         const schedule = escapeHtml(formatScheduleFromRecord(booking));
-        const status = escapeHtml(String((booking && booking.status) || "-"));
         const fulfillment = escapeHtml(String((booking && booking.fulfillmentStatus) || "-"));
         const trackingEta = escapeHtml(String((booking && booking.trackingEta) || "Not set"));
         const trackingLocation = escapeHtml(String((booking && booking.trackingLocation) || "Not set"));
         const shippingAddress = escapeHtml(String((booking && booking.shippingAddress) || "-"));
         const installmentSummary = getInstallmentReceiptSummary(booking);
+        const statusLabel = installmentSummary
+            ? (String((booking && booking.status) || "-") + " (Hulog: " + installmentSummary.progressLabel + ")")
+            : String((booking && booking.status) || "-");
         const totalAmount = installmentSummary
             ? installmentSummary.totalPayableForReceipt
             : toCurrencyNumber((booking && booking.total) || 0);
@@ -921,7 +905,7 @@ document.addEventListener("DOMContentLoaded", function () {
             + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Color</span><span class=\"value\">" + bikeColor + "</span></div>"
             + serviceLine
-            + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + status + "</span></div>"
+            + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
@@ -1015,6 +999,9 @@ document.addEventListener("DOMContentLoaded", function () {
         );
         const generatedAt = formatReceiptIssuedDate(new Date().toISOString());
         const installmentSummary = getInstallmentReceiptSummary(booking);
+        const statusLabel = installmentSummary
+            ? (String((booking && booking.status) || "-") + " (Hulog: " + installmentSummary.progressLabel + ")")
+            : String((booking && booking.status) || "-");
         const amountLabel = formatReceiptAmountText(
             installmentSummary
                 ? installmentSummary.totalPayableForReceipt
@@ -1070,7 +1057,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (deliveryAddress) {
             writeLine("Address: " + deliveryAddress);
         }
-        writeLine("Status: " + String((booking && booking.status) || "-"));
+        writeLine("Status: " + statusLabel);
         writeLine("Progress: " + String((booking && booking.fulfillmentStatus) || "-"));
         writeLine("ETA: " + String((booking && booking.trackingEta) || "Not set"));
         writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));

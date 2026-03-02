@@ -55,11 +55,16 @@ try {
     mysql = null;
 }
 
-const PORT = process.env.KYC_PORT ? Number(process.env.KYC_PORT) : 5050;
+const REQUESTED_PORT = parsePositiveInt(process.env.KYC_PORT, 5050);
+const PORT = REQUESTED_PORT === 5500 ? 5050 : REQUESTED_PORT;
+const USED_PORT_REMAP = REQUESTED_PORT === 5500;
 const PUBLIC_API_BASE = String(process.env.PUBLIC_API_BASE || "").trim().replace(/\/+$/, "");
 
 const NODE_ENV = String(process.env.NODE_ENV || "development").trim().toLowerCase();
 const IS_PRODUCTION = NODE_ENV === "production";
+if (USED_PORT_REMAP) {
+    console.warn("[config] KYC_PORT=5500 detected; remapped to 5050 to avoid frontend conflict.");
+}
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
 const otpSessions = new Map();
@@ -112,6 +117,32 @@ const SEMAPHORE_API_BASE = String(process.env.SEMAPHORE_API_BASE || "https://api
     .replace(/\/+$/, "");
 const SEMAPHORE_REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.SEMAPHORE_REQUEST_TIMEOUT_MS, 15000);
 let smtpTransport = null;
+const INSTALLMENT_REMINDER_ENABLED = String(
+    process.env.INSTALLMENT_REMINDER_ENABLED === undefined
+        ? "true"
+        : process.env.INSTALLMENT_REMINDER_ENABLED
+).trim().toLowerCase() !== "false";
+const INSTALLMENT_REMINDER_LOOKAHEAD_DAYS_RAW = Number(
+    process.env.INSTALLMENT_REMINDER_LOOKAHEAD_DAYS === undefined
+        ? "3"
+        : process.env.INSTALLMENT_REMINDER_LOOKAHEAD_DAYS
+);
+const INSTALLMENT_REMINDER_LOOKAHEAD_DAYS = (
+    Number.isFinite(INSTALLMENT_REMINDER_LOOKAHEAD_DAYS_RAW)
+    && INSTALLMENT_REMINDER_LOOKAHEAD_DAYS_RAW >= 0
+)
+    ? Math.floor(INSTALLMENT_REMINDER_LOOKAHEAD_DAYS_RAW)
+    : 3;
+const INSTALLMENT_REMINDER_SCAN_INTERVAL_MS = parsePositiveInt(
+    process.env.INSTALLMENT_REMINDER_SCAN_INTERVAL_MS,
+    60 * 60 * 1000
+);
+const INSTALLMENT_REMINDER_BATCH_LIMIT = parsePositiveInt(
+    process.env.INSTALLMENT_REMINDER_BATCH_LIMIT,
+    300
+);
+let installmentReminderTimer = null;
+let installmentReminderInFlight = false;
 
 const DEFAULT_PRODUCT_CATALOG = [
     { model: "BLITZ 2000", price: 68000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 1.png", detailUrl: "/Userhomefolder/Ebikes/ebike1.0.html" },
@@ -119,17 +150,17 @@ const DEFAULT_PRODUCT_CATALOG = [
     { model: "FUN 1500 FI", price: 24000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 3.png", detailUrl: "/Userhomefolder/Ebikes/ebike3.0.html" },
     { model: "CANDY 800", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 4.png", detailUrl: "/Userhomefolder/Ebikes/ebike4.0.html" },
     { model: "BLITZ 200R", price: 40000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 5.png", detailUrl: "/Userhomefolder/Ebikes/ebike5.0.html" },
-    { model: "TRAVELLER 1500", price: 78000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html" },
-    { model: "ECONO 500 MP", price: 51000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html" },
-    { model: "ECONO 350 MINI-II", price: 39000, category: "2-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html" },
+    { model: "TRAVELLER 1500", price: 78000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 6.png", detailUrl: "/Userhomefolder/Ebikes/ebike6.0.html" },
+    { model: "ECONO 500 MP", price: 51000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 7.png", detailUrl: "/Userhomefolder/Ebikes/ebike7.0.html" },
+    { model: "ECONO 350 MINI-II", price: 39000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 8.png", detailUrl: "/Userhomefolder/Ebikes/ebike8.0.html" },
     { model: "ECARGO 100", price: 72500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 9.png", detailUrl: "/Userhomefolder/Ebikes/ebike9.0.html" },
     { model: "ECONO 650 MP", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 10.png", detailUrl: "/Userhomefolder/Ebikes/ebike10.0.html" },
     { model: "ECAB 100V V2", price: 51500, category: "3-Wheel", imageUrl: "/Userhomefolder/image 11.png", detailUrl: "/Userhomefolder/Ebikes/ebike11.0.html" },
     { model: "ECONO 800 MP II", price: 67000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 12.png", detailUrl: "/Userhomefolder/Ebikes/ebike12.0.html" },
-    { model: "E-CARGO 800", price: 65000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html" },
-    { model: "E-CAB MAX 1500", price: 130000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html" },
-    { model: "E-CAB 1000", price: 75000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html" },
-    { model: "ECONO 800 MP", price: 60000, category: "4-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html" }
+    { model: "E-CARGO 800", price: 65000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 13.png", detailUrl: "/Userhomefolder/Ebikes/ebike13.0.html" },
+    { model: "E-CAB MAX 1500", price: 130000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 14.png", detailUrl: "/Userhomefolder/Ebikes/ebike14.0.html" },
+    { model: "E-CAB 1000", price: 75000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html" },
+    { model: "ECONO 800 MP", price: 60000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html" }
 ];
 const MAX_PRODUCT_IMAGE_DATA_URL_LENGTH = 3 * 1024 * 1024;
 const MAX_BOOKINGS_PER_DAY = 5;
@@ -206,8 +237,6 @@ function buildAllowedCorsOrigins(rawInput) {
 
     addOrigin("http://127.0.0.1:5500");
     addOrigin("http://localhost:5500");
-    addOrigin("http://127.0.0.1:5050");
-    addOrigin("http://localhost:5050");
     addOrigin(PUBLIC_API_BASE);
 
     return origins;
@@ -1374,6 +1403,603 @@ async function sendBookingRejectedEmail(record, options) {
     }
 }
 
+function formatPaymentStatusForEmail(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized) {
+        return "Not specified";
+    }
+    const labels = {
+        awaiting_payment_confirmation: "Awaiting payment confirmation",
+        pending_cod: "Pending Cash on Delivery",
+        installment_review: "Installment review",
+        paid: "Paid",
+        failed: "Failed",
+        refunded: "Refunded",
+        not_applicable: "Not applicable"
+    };
+    return labels[normalized] || normalizeText(value) || "Not specified";
+}
+
+function formatAmountForEmail(value) {
+    const amount = parseAmount(value);
+    return `PHP ${amount.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function buildChangeLineForEmail(label, beforeValue, afterValue) {
+    const beforeText = normalizeText(beforeValue) || "Not set";
+    const afterText = normalizeText(afterValue) || "Not set";
+    return `${label}: ${beforeText} -> ${afterText}`;
+}
+
+async function sendBookingGeneralUpdateEmail(record, options) {
+    const booking = record && typeof record === "object" ? record : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const recipientEmail = normalizeEmail(booking.email || booking.userEmail);
+    if (!isValidEmail(recipientEmail)) {
+        return { sent: false, reason: "Booking has no valid email recipient." };
+    }
+
+    const transport = getSmtpTransport();
+    if (!transport) {
+        return { sent: false, reason: "SMTP is not configured." };
+    }
+
+    const fullName = normalizeText(booking.fullName || booking.name || "") || "Customer";
+    const orderId = String(booking.orderId || booking.order_id || "").trim() || "N/A";
+    const model = normalizeText(booking.model || booking.productName || booking.itemName || "") || "Ecodrive E-Bike";
+    const service = normalizeText(booking.service || booking.service_type || "") || "Delivery";
+    const scheduleLabel = buildBookingScheduleLabelForEmail(booking);
+    const subjectBase = normalizeText(opts.subject || "Ecodrive booking update") || "Ecodrive booking update";
+    const subject = `${subjectBase} (${orderId})`;
+    const intro = normalizeText(opts.intro || "Your booking has a new update.") || "Your booking has a new update.";
+    const outro = normalizeText(opts.outro || "Please check your booking page for full details.")
+        || "Please check your booking page for full details.";
+    const updateLines = Array.isArray(opts.updateLines)
+        ? opts.updateLines
+            .map((line) => String(line || "").trim())
+            .filter(Boolean)
+        : [];
+
+    const textLines = [
+        `Hi ${fullName},`,
+        "",
+        intro,
+        `Order ID: ${orderId}`,
+        `Model: ${model}`,
+        `Service: ${service}`,
+        `Schedule: ${scheduleLabel}`
+    ];
+    if (updateLines.length > 0) {
+        textLines.push("", "Updates:");
+        updateLines.forEach((line) => {
+            textLines.push(`- ${line}`);
+        });
+    }
+    textLines.push("", outro, "", "Ecodrive Team");
+
+    const updatesHtml = updateLines.length > 0
+        ? [
+            "<p><strong>Updates:</strong></p>",
+            "<ul>",
+            updateLines.map((line) => `<li>${htmlEscape(line)}</li>`).join(""),
+            "</ul>"
+        ].join("")
+        : "";
+
+    try {
+        await transport.sendMail({
+            from: SMTP_FROM,
+            to: recipientEmail,
+            subject: subject,
+            text: textLines.join("\n"),
+            html: [
+                `<p>Hi ${htmlEscape(fullName)},</p>`,
+                `<p>${htmlEscape(intro)}</p>`,
+                "<ul>",
+                `<li><strong>Order ID:</strong> ${htmlEscape(orderId)}</li>`,
+                `<li><strong>Model:</strong> ${htmlEscape(model)}</li>`,
+                `<li><strong>Service:</strong> ${htmlEscape(service)}</li>`,
+                `<li><strong>Schedule:</strong> ${htmlEscape(scheduleLabel)}</li>`,
+                "</ul>",
+                updatesHtml,
+                `<p>${htmlEscape(outro)}</p>`,
+                "<p>Ecodrive Team</p>"
+            ].join("")
+        });
+        return { sent: true, provider: "smtp" };
+    } catch (error) {
+        return { sent: false, reason: error.message || "SMTP send failed." };
+    }
+}
+
+async function sendBookingApprovedEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    const updates = [
+        `Booking status: ${normalizeText(booking.status) || "Approved"}`,
+        `Fulfillment status: ${normalizeText(booking.fulfillmentStatus) || "Preparing"}`
+    ];
+    if (booking.paymentStatus) {
+        updates.push(`Payment status: ${formatPaymentStatusForEmail(booking.paymentStatus)}`);
+    }
+    if (booking.receiptNumber) {
+        updates.push(`Receipt number: ${booking.receiptNumber}`);
+    }
+    return sendBookingGeneralUpdateEmail(booking, {
+        subject: "Ecodrive booking approved",
+        intro: "Your booking request has been approved by Ecodrive admin.",
+        updateLines: updates,
+        outro: "We will continue to update you as your booking progresses."
+    });
+}
+
+async function sendBookingPaymentStatusUpdatedEmail(record, beforeStatus) {
+    const booking = record && typeof record === "object" ? record : {};
+    const updates = [
+        buildChangeLineForEmail(
+            "Payment status",
+            formatPaymentStatusForEmail(beforeStatus),
+            formatPaymentStatusForEmail(booking.paymentStatus)
+        )
+    ];
+    if (booking.receiptNumber) {
+        updates.push(`Receipt number: ${booking.receiptNumber}`);
+    }
+    return sendBookingGeneralUpdateEmail(booking, {
+        subject: "Ecodrive payment update",
+        intro: "Your booking payment status was updated by Ecodrive admin.",
+        updateLines: updates,
+        outro: "Please check your booking page for the latest payment details."
+    });
+}
+
+async function sendBookingFulfillmentStatusUpdatedEmail(record, updatesInput) {
+    const booking = record && typeof record === "object" ? record : {};
+    const updates = Array.isArray(updatesInput) ? updatesInput.filter(Boolean) : [];
+    if (updates.length < 1) {
+        return { sent: false, reason: "No fulfillment updates to send." };
+    }
+    return sendBookingGeneralUpdateEmail(booking, {
+        subject: "Ecodrive fulfillment update",
+        intro: "Your booking fulfillment progress was updated by Ecodrive admin.",
+        updateLines: updates,
+        outro: "You can monitor this progress from your booking page anytime."
+    });
+}
+
+async function sendInstallmentPaymentRecordedEmail(record, options) {
+    const booking = record && typeof record === "object" ? record : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const paidMonthRaw = Number(opts.paidMonth || opts.month || 0);
+    const monthsToPayRaw = Number(opts.monthsToPay || 0);
+    const paidInstallmentsRaw = Number(opts.paidInstallments || 0);
+    const paidMonth = Number.isFinite(paidMonthRaw) && paidMonthRaw > 0 ? Math.floor(paidMonthRaw) : 0;
+    const monthsToPay = Number.isFinite(monthsToPayRaw) && monthsToPayRaw > 0 ? Math.floor(monthsToPayRaw) : 0;
+    const paidInstallments = Number.isFinite(paidInstallmentsRaw) && paidInstallmentsRaw > 0
+        ? Math.floor(paidInstallmentsRaw)
+        : 0;
+    const nextDueMonthRaw = Number(opts.nextDueMonth || 0);
+    const nextDueMonth = Number.isFinite(nextDueMonthRaw) && nextDueMonthRaw > 0
+        ? Math.floor(nextDueMonthRaw)
+        : 0;
+    const nextDueDate = normalizeDateOnlyValue(opts.nextDueDate);
+    const monthlyAmount = parseAmount(opts.monthlyAmount || 0);
+
+    const updates = [];
+    if (paidMonth > 0) {
+        updates.push(`Paid installment month: ${paidMonth}${monthsToPay > 0 ? ` of ${monthsToPay}` : ""}`);
+    }
+    if (paidInstallments > 0 && monthsToPay > 0) {
+        updates.push(`Paid installments total: ${paidInstallments} of ${monthsToPay}`);
+    }
+    if (monthlyAmount > 0) {
+        updates.push(`Monthly amount: ${formatAmountForEmail(monthlyAmount)}`);
+    }
+    if (nextDueMonth > 0 && nextDueDate) {
+        updates.push(`Next due month: ${nextDueMonth}${monthsToPay > 0 ? ` of ${monthsToPay}` : ""}`);
+        updates.push(`Next due date: ${formatDateOnlyForEmail(nextDueDate)}`);
+    } else {
+        updates.push("Installment account status: Completed");
+    }
+
+    const completionMessage = normalizeText(opts.completionMessage || "");
+    return sendBookingGeneralUpdateEmail(booking, {
+        subject: "Ecodrive installment update",
+        intro: completionMessage || "A payment was recorded on your installment booking.",
+        updateLines: updates,
+        outro: "Thank you. Please continue your payments on schedule."
+    });
+}
+
+async function sendInstallmentDueSoonEmail(record, reminderInput) {
+    const booking = record && typeof record === "object" ? record : {};
+    const reminder = reminderInput && typeof reminderInput === "object"
+        ? reminderInput
+        : {};
+    const recipientEmail = normalizeEmail(booking.email || booking.userEmail);
+    if (!isValidEmail(recipientEmail)) {
+        return { sent: false, reason: "Booking has no valid email recipient." };
+    }
+
+    const transport = getSmtpTransport();
+    if (!transport) {
+        return { sent: false, reason: "SMTP is not configured." };
+    }
+
+    const fullName = normalizeText(booking.fullName || booking.name || "") || "Customer";
+    const orderId = String(booking.orderId || booking.order_id || "").trim() || "N/A";
+    const model = normalizeText(booking.model || booking.productName || booking.itemName || "") || "Ecodrive E-Bike";
+    const nextDueMonthRaw = Number(reminder.nextDueMonth || reminder.month || 0);
+    const nextDueMonth = Number.isFinite(nextDueMonthRaw) && nextDueMonthRaw > 0
+        ? Math.floor(nextDueMonthRaw)
+        : 0;
+    const monthsToPayRaw = Number(reminder.monthsToPay || reminder.totalMonths || 0);
+    const monthsToPay = Number.isFinite(monthsToPayRaw) && monthsToPayRaw > 0
+        ? Math.floor(monthsToPayRaw)
+        : 0;
+    const monthlyAmount = parseAmount(reminder.monthlyAmount || 0);
+    const dueDate = normalizeDateOnlyValue(reminder.dueDate);
+    const dueDateLabel = formatDateOnlyForEmail(dueDate);
+    const daysUntilDueRaw = Number(reminder.daysUntilDue);
+    const daysUntilDue = Number.isFinite(daysUntilDueRaw) ? Math.floor(daysUntilDueRaw) : null;
+    const timelineText = daysUntilDue === null
+        ? ""
+        : (daysUntilDue <= 0
+            ? "Due today."
+            : `Due in ${daysUntilDue} day(s).`);
+    const monthlyAmountLabel = monthlyAmount > 0
+        ? `PHP ${monthlyAmount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "To be confirmed";
+
+    const subject = `Ecodrive installment payment reminder (${orderId})`;
+    const textLines = [
+        `Hi ${fullName},`,
+        "",
+        "This is a reminder that your next installment payment is approaching.",
+        `Order ID: ${orderId}`,
+        `Model: ${model}`,
+        nextDueMonth > 0
+            ? `Installment month: ${nextDueMonth}${monthsToPay > 0 ? ` of ${monthsToPay}` : ""}`
+            : "Installment month: Upcoming payment",
+        `Due date: ${dueDateLabel}`,
+        `Amount due: ${monthlyAmountLabel}`
+    ];
+    if (timelineText) {
+        textLines.push(timelineText);
+    }
+    textLines.push(
+        "",
+        "Please settle your payment on or before the due date to keep your installment account in good standing.",
+        "",
+        "Ecodrive Team"
+    );
+
+    const monthHtml = nextDueMonth > 0
+        ? `${nextDueMonth}${monthsToPay > 0 ? ` of ${monthsToPay}` : ""}`
+        : "Upcoming payment";
+    const timelineHtml = timelineText
+        ? `<p><strong>${htmlEscape(timelineText)}</strong></p>`
+        : "";
+
+    try {
+        await transport.sendMail({
+            from: SMTP_FROM,
+            to: recipientEmail,
+            subject: subject,
+            text: textLines.join("\n"),
+            html: [
+                `<p>Hi ${htmlEscape(fullName)},</p>`,
+                "<p>This is a reminder that your next installment payment is approaching.</p>",
+                "<ul>",
+                `<li><strong>Order ID:</strong> ${htmlEscape(orderId)}</li>`,
+                `<li><strong>Model:</strong> ${htmlEscape(model)}</li>`,
+                `<li><strong>Installment month:</strong> ${htmlEscape(monthHtml)}</li>`,
+                `<li><strong>Due date:</strong> ${htmlEscape(dueDateLabel)}</li>`,
+                `<li><strong>Amount due:</strong> ${htmlEscape(monthlyAmountLabel)}</li>`,
+                "</ul>",
+                timelineHtml,
+                "<p>Please settle your payment on or before the due date to keep your installment account in good standing.</p>",
+                "<p>Ecodrive Team</p>"
+            ].join("")
+        });
+        return { sent: true, provider: "smtp" };
+    } catch (error) {
+        return { sent: false, reason: error.message || "SMTP send failed." };
+    }
+}
+
+function normalizeDateOnlyValue(value) {
+    const direct = normalizeScheduleDate(value);
+    if (direct) {
+        return direct;
+    }
+    const formatted = formatBookingDateValue(value);
+    return normalizeScheduleDate(formatted) || "";
+}
+
+function parseDateOnlyValue(value) {
+    const normalized = normalizeDateOnlyValue(value);
+    if (!normalized) {
+        return null;
+    }
+    const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+        return null;
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const parsed = new Date(year, month, day, 0, 0, 0, 0);
+    if (
+        Number.isNaN(parsed.getTime())
+        || parsed.getFullYear() !== year
+        || parsed.getMonth() !== month
+        || parsed.getDate() !== day
+    ) {
+        return null;
+    }
+    return parsed;
+}
+
+function formatDateOnlyValue(value) {
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+        return "";
+    }
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function addMonthsToDateOnlyValue(value, monthsOffset) {
+    const baseDate = parseDateOnlyValue(value);
+    if (!baseDate) {
+        return "";
+    }
+    const offsetRaw = Number(monthsOffset);
+    const offset = Number.isFinite(offsetRaw) ? Math.trunc(offsetRaw) : 0;
+    if (!offset) {
+        return formatDateOnlyValue(baseDate);
+    }
+
+    const baseYear = baseDate.getFullYear();
+    const baseMonth = baseDate.getMonth();
+    const baseDay = baseDate.getDate();
+    const targetMonthIndex = baseMonth + offset;
+    const daysInTargetMonth = new Date(baseYear, targetMonthIndex + 1, 0).getDate();
+    const clampedDay = Math.min(baseDay, daysInTargetMonth);
+    const targetDate = new Date(baseYear, targetMonthIndex, clampedDay, 0, 0, 0, 0);
+    return formatDateOnlyValue(targetDate);
+}
+
+function diffDateOnlyValuesInDays(startValue, endValue) {
+    const startDate = parseDateOnlyValue(startValue);
+    const endDate = parseDateOnlyValue(endValue);
+    if (!startDate || !endDate) {
+        return null;
+    }
+    const diffMs = endDate.getTime() - startDate.getTime();
+    return Math.round(diffMs / (24 * 60 * 60 * 1000));
+}
+
+function getTodayDateOnlyValue() {
+    return formatDateOnlyValue(new Date());
+}
+
+function formatDateOnlyForEmail(value) {
+    const parsed = parseDateOnlyValue(value);
+    if (!parsed) {
+        return "Not specified";
+    }
+    return parsed.toLocaleDateString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric"
+    });
+}
+
+function resolveInstallmentMonthlyAmount(installmentInput, bookingRowInput, monthsOverride) {
+    const installment = installmentInput && typeof installmentInput === "object"
+        ? installmentInput
+        : {};
+    const bookingRow = bookingRowInput && typeof bookingRowInput === "object"
+        ? bookingRowInput
+        : {};
+    const monthsOverrideRaw = Number(monthsOverride || 0);
+    const monthsToPay = Number.isFinite(monthsOverrideRaw) && monthsOverrideRaw > 0
+        ? Math.floor(monthsOverrideRaw)
+        : 0;
+    const minDp = parseAmount(
+        installment.planMinDp
+        || installment.minDp
+        || installment.downPayment
+        || installment.dp
+    );
+    const bookingTotal = parseAmount(bookingRow.total || 0);
+    const fallbackMonthly = monthsToPay > 0
+        ? parseAmount(Math.max((bookingTotal - minDp) / monthsToPay, 0))
+        : 0;
+    const monthlyAmount = parseAmount(
+        installment.monthlyAmortization
+        || installment.monthlyAmount
+        || installment.monthlyPayment
+        || installment.monthly
+        || fallbackMonthly
+    );
+    return monthlyAmount > 0 ? monthlyAmount : 0;
+}
+
+function resolveInstallmentDueState(installmentInput, bookingRowInput) {
+    const installment = installmentInput && typeof installmentInput === "object"
+        ? installmentInput
+        : {};
+    const bookingRow = bookingRowInput && typeof bookingRowInput === "object"
+        ? bookingRowInput
+        : {};
+    const monthsRaw = Number(
+        installment.monthsToPay || installment.months || installment.installmentMonths || 0
+    );
+    const monthsToPay = Number.isFinite(monthsRaw) && monthsRaw > 0
+        ? Math.floor(monthsRaw)
+        : 0;
+
+    const sourceHistory = Array.isArray(installment.paymentHistory)
+        ? installment.paymentHistory
+        : [];
+    const paidMonths = new Set();
+    sourceHistory.forEach((entry) => {
+        if (!entry || typeof entry !== "object") {
+            return;
+        }
+        const monthRaw = Number(entry.month || entry.installmentMonth || 0);
+        const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+        if (month < 1 || (monthsToPay > 0 && month > monthsToPay)) {
+            return;
+        }
+        const status = String(entry.status || "").toLowerCase();
+        if (status.includes("paid")) {
+            paidMonths.add(month);
+        }
+    });
+
+    const paidInstallments = monthsToPay > 0
+        ? Math.min(monthsToPay, paidMonths.size)
+        : paidMonths.size;
+    let nextDueMonth = 0;
+    if (monthsToPay > 0) {
+        for (let monthIndex = 1; monthIndex <= monthsToPay; monthIndex += 1) {
+            if (!paidMonths.has(monthIndex)) {
+                nextDueMonth = monthIndex;
+                break;
+            }
+        }
+    }
+
+    let firstDueDate = normalizeDateOnlyValue(
+        installment.firstDueDate
+        || installment.first_due_date
+        || installment.firstInstallmentDueDate
+        || installment.first_installment_due_date
+    );
+
+    if (!firstDueDate) {
+        firstDueDate = normalizeDateOnlyValue(installment.firstInstallmentPaidAt);
+    }
+
+    const storedNextDueDate = normalizeDateOnlyValue(
+        installment.nextDueDate
+        || installment.next_due_date
+        || installment.nextPaymentDueDate
+        || installment.next_payment_due_date
+    );
+    const storedNextDueMonthRaw = Number(
+        installment.nextDueMonth
+        || installment.next_due_month
+        || installment.nextPaymentMonth
+        || installment.next_payment_month
+        || 0
+    );
+    const storedNextDueMonth = Number.isFinite(storedNextDueMonthRaw) && storedNextDueMonthRaw > 0
+        ? Math.floor(storedNextDueMonthRaw)
+        : 0;
+
+    if (!firstDueDate && storedNextDueDate && storedNextDueMonth > 0) {
+        firstDueDate = addMonthsToDateOnlyValue(storedNextDueDate, -(storedNextDueMonth - 1));
+    }
+
+    if (!firstDueDate) {
+        const anchorDate = [
+            installment.installmentStartDate,
+            installment.installment_start_date,
+            installment.startDate,
+            installment.start_date,
+            installment.submittedAt,
+            installment.createdAt,
+            bookingRow.reviewed_at,
+            bookingRow.created_at,
+            bookingRow.schedule_date
+        ]
+            .map((candidate) => normalizeDateOnlyValue(candidate))
+            .find(Boolean);
+        if (anchorDate) {
+            firstDueDate = addMonthsToDateOnlyValue(anchorDate, 1) || anchorDate;
+        }
+    }
+
+    let nextDueDate = "";
+    if (nextDueMonth > 0) {
+        if (firstDueDate) {
+            nextDueDate = addMonthsToDateOnlyValue(firstDueDate, nextDueMonth - 1);
+        }
+        if (!nextDueDate && storedNextDueDate && (!storedNextDueMonth || storedNextDueMonth === nextDueMonth)) {
+            nextDueDate = storedNextDueDate;
+        }
+    }
+
+    return {
+        monthsToPay: monthsToPay,
+        paidInstallments: paidInstallments,
+        nextDueMonth: nextDueMonth,
+        nextDueDate: nextDueDate,
+        firstDueDate: firstDueDate
+    };
+}
+
+function syncInstallmentDueMetadata(targetInstallment, bookingRowInput) {
+    const installment = targetInstallment && typeof targetInstallment === "object"
+        ? targetInstallment
+        : null;
+    if (!installment) {
+        return {
+            changed: false,
+            dueState: {
+                monthsToPay: 0,
+                paidInstallments: 0,
+                nextDueMonth: 0,
+                nextDueDate: "",
+                firstDueDate: ""
+            }
+        };
+    }
+
+    const dueState = resolveInstallmentDueState(installment, bookingRowInput);
+    let changed = false;
+    const assignValue = (fieldName, fieldValue) => {
+        if (installment[fieldName] !== fieldValue) {
+            installment[fieldName] = fieldValue;
+            changed = true;
+        }
+    };
+
+    if (dueState.firstDueDate) {
+        assignValue("firstDueDate", dueState.firstDueDate);
+        assignValue("first_due_date", dueState.firstDueDate);
+        assignValue("firstInstallmentDueDate", dueState.firstDueDate);
+    }
+
+    if (dueState.nextDueMonth > 0 && dueState.nextDueDate) {
+        assignValue("nextDueMonth", dueState.nextDueMonth);
+        assignValue("next_due_month", dueState.nextDueMonth);
+        assignValue("nextPaymentMonth", dueState.nextDueMonth);
+        assignValue("nextDueDate", dueState.nextDueDate);
+        assignValue("next_due_date", dueState.nextDueDate);
+        assignValue("nextPaymentDueDate", dueState.nextDueDate);
+        assignValue("next_payment_due_date", dueState.nextDueDate);
+    } else {
+        assignValue("nextDueMonth", 0);
+        assignValue("next_due_month", 0);
+        assignValue("nextPaymentMonth", 0);
+        assignValue("nextDueDate", "");
+        assignValue("next_due_date", "");
+        assignValue("nextPaymentDueDate", "");
+        assignValue("next_payment_due_date", "");
+    }
+
+    return { changed: changed, dueState: dueState };
+}
+
 function buildLocalDateTimeFromParts(dateValue, timeValue) {
     const dateText = String(dateValue || "").trim();
     const dateMatch = dateText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1858,9 +2484,6 @@ function inferCategoryFromDetailUrl(detailUrl) {
     if (bikeId === 6) {
         return "4-Wheel";
     }
-    if (bikeId === 8) {
-        return "2-Wheel";
-    }
     if (bikeId >= 7 && bikeId <= 16) {
         return "3-Wheel";
     }
@@ -2189,18 +2812,6 @@ function mapBookingRow(row) {
     const installmentMonths = Number.isFinite(installmentMonthsRaw) && installmentMonthsRaw > 0
         ? Math.floor(installmentMonthsRaw)
         : 0;
-    const installmentPaidRaw = Number(
-        installment && (
-            installment.paidInstallments
-            || installment.paidCount
-            || installment.monthsPaid
-            || installment.installmentsPaid
-            || 0
-        )
-    );
-    const installmentPaidCountFromFields = Number.isFinite(installmentPaidRaw) && installmentPaidRaw > 0
-        ? Math.floor(installmentPaidRaw)
-        : 0;
     const installmentPaidCountFromHistory = Array.isArray(installment && installment.paymentHistory)
         ? installment.paymentHistory.filter((entry) => {
             const monthRaw = Number(entry && (entry.month || entry.installmentMonth) || 0);
@@ -2209,10 +2820,9 @@ function mapBookingRow(row) {
             return month > 0 && status.includes("paid");
         }).length
         : 0;
-    const installmentPaidCount = Math.max(
-        installmentPaidCountFromFields,
-        installmentPaidCountFromHistory
-    );
+    const installmentPaidCount = installmentMonths > 0
+        ? Math.min(installmentMonths, installmentPaidCountFromHistory)
+        : installmentPaidCountFromHistory;
     let derivedInstallmentAccountStatus = "";
     if (installment && installmentMonths > 0) {
         if (installmentPaidCount >= installmentMonths) {
@@ -2223,7 +2833,7 @@ function mapBookingRow(row) {
             derivedInstallmentAccountStatus = "Awaiting First Installment";
         }
     }
-    const installmentAccountStatus = explicitInstallmentAccountStatus || derivedInstallmentAccountStatus;
+    const installmentAccountStatus = derivedInstallmentAccountStatus || explicitInstallmentAccountStatus;
 
     return {
         id: Number(row.id || 0),
@@ -2577,12 +3187,13 @@ async function handleSignupSendCode(req, res) {
         clearExpiredSignupOtpSessions();
         const body = await readBody(req);
 
-        const method = String(body.method || "").trim().toLowerCase();
+        const requestedMethod = String(body.method || "").trim().toLowerCase();
+        const method = "email";
         const email = normalizeEmail(body.email);
         const phone = normalizeMobile(body.phone);
 
-        if (method !== "email" && method !== "mobile") {
-            sendJson(res, 400, { success: false, message: "Method must be email or mobile." });
+        if (requestedMethod && requestedMethod !== "email") {
+            sendJson(res, 400, { success: false, message: "Signup verification is email-only." });
             return;
         }
         if (!isValidEmail(email)) {
@@ -2593,7 +3204,7 @@ async function handleSignupSendCode(req, res) {
             sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
             return;
         }
-        const signupContact = method === "mobile" ? phone : email;
+        const signupContact = email;
         if (!enforceRateLimit(
             req,
             res,
@@ -2624,16 +3235,12 @@ async function handleSignupSendCode(req, res) {
 
         const pool = await getDbPool();
         const conflict = await findSignupContactConflict(pool, email, phone);
-        if (conflict === "phone") {
-            sendJson(res, 409, { success: false, message: "This mobile number is already in use." });
-            return;
-        }
         if (conflict === "email") {
             sendJson(res, 409, { success: false, message: "An account with this email already exists." });
             return;
         }
 
-        const contact = method === "mobile" ? phone : email;
+        const contact = email;
         const requestId = createVerificationToken("signupotp");
         const code = generateOtpCode();
         signupOtpSessions.set(requestId, {
@@ -2702,11 +3309,20 @@ async function handleSignupVerifyCode(req, res) {
         const email = normalizeEmail(body.email);
         const phone = normalizeMobile(body.phone);
 
+        if (method && method !== "email") {
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "Signup verification is email-only."
+            });
+            return;
+        }
+
         if (!enforceRateLimit(
             req,
             res,
             "signup-verify-otp",
-            requestId || email || phone,
+            requestId || email,
             OTP_VERIFY_RATE_LIMIT_MAX,
             RATE_LIMIT_WINDOW_MS
         )) {
@@ -2725,6 +3341,16 @@ async function handleSignupVerifyCode(req, res) {
         const session = signupOtpSessions.get(requestId);
         if (!session) {
             sendJson(res, 200, { success: true, verified: false, message: "Code expired or not found." });
+            return;
+        }
+
+        if (session.method !== "email") {
+            signupOtpSessions.delete(requestId);
+            sendJson(res, 400, {
+                success: false,
+                verified: false,
+                message: "This code is no longer valid. Request a new email code."
+            });
             return;
         }
 
@@ -2806,8 +3432,6 @@ async function handleSignup(req, res) {
         const password = String(body.password || "");
         const verificationRequestId = String(body.verificationRequestId || "").trim();
         const verificationMethod = String(body.verificationMethod || "").trim().toLowerCase();
-        const emailVerificationRequestId = String(body.emailVerificationRequestId || "").trim();
-        const phoneVerificationRequestId = String(body.phoneVerificationRequestId || "").trim();
 
         if (firstName.length < 2) {
             sendJson(res, 400, { success: false, message: "First name is required." });
@@ -2846,56 +3470,32 @@ async function handleSignup(req, res) {
             return;
         }
 
-        let verifiedSession = null;
-        const consumedRequestIds = [];
-
-        if (verificationRequestId) {
-            const expectedMethod = (
-                verificationMethod === "email" ||
-                verificationMethod === "mobile"
-            )
-                ? verificationMethod
-                : "";
-            verifiedSession = getVerifiedSignupOtpSession(verificationRequestId, expectedMethod);
-            if (!verifiedSession) {
-                sendJson(res, 400, {
-                    success: false,
-                    message: "Email or mobile verification is required before signup."
-                });
-                return;
-            }
-            consumedRequestIds.push(verificationRequestId);
-        } else {
-            const emailSession = emailVerificationRequestId
-                ? getVerifiedSignupOtpSession(emailVerificationRequestId, "email")
-                : null;
-            const phoneSession = phoneVerificationRequestId
-                ? getVerifiedSignupOtpSession(phoneVerificationRequestId, "mobile")
-                : null;
-
-            verifiedSession = phoneSession || emailSession;
-            if (!verifiedSession) {
-                sendJson(res, 400, {
-                    success: false,
-                    message: "Email or mobile verification is required before signup."
-                });
-                return;
-            }
-            if (emailSession && emailVerificationRequestId) {
-                consumedRequestIds.push(emailVerificationRequestId);
-            }
-            if (phoneSession && phoneVerificationRequestId) {
-                consumedRequestIds.push(phoneVerificationRequestId);
-            }
-        }
-
-        if (!verifiedSession) {
+        if (verificationMethod && verificationMethod !== "email") {
             sendJson(res, 400, {
                 success: false,
-                message: "Email or mobile verification is required before signup."
+                message: "Signup verification is email-only."
             });
             return;
         }
+
+        if (!verificationRequestId) {
+            sendJson(res, 400, {
+                success: false,
+                message: "Email verification is required before signup."
+            });
+            return;
+        }
+
+        const verifiedSession = getVerifiedSignupOtpSession(verificationRequestId, "email");
+        if (!verifiedSession) {
+            sendJson(res, 400, {
+                success: false,
+                message: "Email verification is required before signup."
+            });
+            return;
+        }
+
+        const consumedRequestIds = [verificationRequestId];
 
         if (
             verifiedSession.email !== email ||
@@ -2903,18 +3503,15 @@ async function handleSignup(req, res) {
         ) {
             sendJson(res, 400, {
                 success: false,
-                message: "Verified contact does not match your signup details."
+                message: "Verified signup details do not match your form."
             });
             return;
         }
 
-        if (
-            (verifiedSession.method === "email" && verifiedSession.contact !== email) ||
-            (verifiedSession.method === "mobile" && verifiedSession.contact !== phone)
-        ) {
+        if (verifiedSession.contact !== email) {
             sendJson(res, 400, {
                 success: false,
-                message: "Verified contact does not match your signup details."
+                message: "Verified email does not match your signup details."
             });
             return;
         }
@@ -4275,7 +4872,49 @@ async function prepareBookingForInsert(bodyInput, options) {
     const total = parseAmount(body.total || (subtotal + shippingFee));
     let installmentPayload = null;
     if (body.installment && typeof body.installment === "object") {
-        installmentPayload = JSON.stringify(body.installment);
+        const nextInstallment = Object.assign({}, body.installment);
+        if (serviceType === "Installment") {
+            const nowIso = new Date().toISOString();
+            nextInstallment.paymentHistory = [];
+            nextInstallment.paidInstallments = 0;
+            nextInstallment.paidCount = 0;
+            nextInstallment.monthsPaid = 0;
+            nextInstallment.installmentsPaid = 0;
+            nextInstallment.totalPaid = 0;
+            nextInstallment.paidAmount = 0;
+            nextInstallment.totalPaidAmount = 0;
+            nextInstallment.accountStatus = "Awaiting First Installment";
+            nextInstallment.account_status = "Awaiting First Installment";
+            nextInstallment.lastPaymentMonth = 0;
+            nextInstallment.lastPaymentAt = "";
+            nextInstallment.firstInstallmentPaidAt = "";
+            nextInstallment.submittedAt = nextInstallment.submittedAt || nowIso;
+            const installmentStartDate = normalizeDateOnlyValue(
+                nextInstallment.installmentStartDate
+                || nextInstallment.installment_start_date
+                || nextInstallment.startDate
+                || nextInstallment.start_date
+                || nextInstallment.submittedAt
+                || scheduleDate
+                || nowIso
+            ) || getTodayDateOnlyValue();
+            nextInstallment.installmentStartDate = installmentStartDate;
+            nextInstallment.installment_start_date = installmentStartDate;
+            nextInstallment.startDate = installmentStartDate;
+            nextInstallment.start_date = installmentStartDate;
+            nextInstallment.lastReminderSentForMonth = 0;
+            nextInstallment.last_reminder_sent_for_month = 0;
+            nextInstallment.lastReminderDueDate = "";
+            nextInstallment.last_reminder_due_date = "";
+            nextInstallment.lastReminderSentAt = "";
+            nextInstallment.last_reminder_sent_at = "";
+            syncInstallmentDueMetadata(nextInstallment, {
+                created_at: nowIso,
+                reviewed_at: null,
+                schedule_date: scheduleDate || null
+            });
+        }
+        installmentPayload = JSON.stringify(nextInstallment);
     }
 
     const forceCustomerDefaults = opts.forceCustomerDefaults !== false
@@ -4732,6 +5371,12 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
         const wasAlreadyRejected = String(beforeRow.review_decision || "").toLowerCase() === "rejected"
             || beforeMergedStatus.includes("reject")
             || beforeMergedStatus.includes("cancel");
+        const wasAlreadyApproved = String(beforeRow.review_decision || "").toLowerCase() === "approved"
+            || beforeMergedStatus.includes("approve")
+            || beforeMergedStatus.includes("deliver")
+            || beforeMergedStatus.includes("complete")
+            || beforeMergedStatus.includes("picked up")
+            || beforeMergedStatus.includes("released");
         const existingReceiptNumber = normalizeText(beforeRow.receipt_number).slice(0, 40);
         const ensuredReceiptNumber = existingReceiptNumber || buildReceiptNumber(normalizedOrderId, new Date());
 
@@ -4790,6 +5435,17 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
         }
 
         const booking = mapBookingRow(rows[0]);
+        if (normalizedAction === "approve" && !wasAlreadyApproved) {
+            const notifyResult = await sendBookingApprovedEmail(booking);
+            if (!notifyResult.sent) {
+                console.warn(
+                    "[booking-approve-email] Unable to notify customer:",
+                    notifyResult.reason || "Unknown reason",
+                    "| orderId:",
+                    normalizedOrderId
+                );
+            }
+        }
         if (normalizedAction === "reject" && !wasAlreadyRejected) {
             const notifyResult = await sendBookingRejectedEmail(booking);
             if (!notifyResult.sent) {
@@ -4832,6 +5488,22 @@ async function handleAdminBookingPaymentStatus(_req, res, orderId) {
         }
 
         const pool = await getDbPool();
+        const [beforeRows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+        const beforeRow = beforeRows[0];
+        const beforePaymentStatus = normalizePaymentStatus(
+            beforeRow.payment_status,
+            getDefaultPaymentStatus(beforeRow.payment_method, beforeRow.service_type)
+        );
         const [updateResult] = await pool.execute(
             `UPDATE bookings
              SET payment_status = ?,
@@ -4856,7 +5528,20 @@ async function handleAdminBookingPaymentStatus(_req, res, orderId) {
             return;
         }
 
-        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+        const booking = mapBookingRow(rows[0]);
+        if (beforePaymentStatus !== booking.paymentStatus) {
+            const notifyResult = await sendBookingPaymentStatusUpdatedEmail(booking, beforePaymentStatus);
+            if (!notifyResult.sent) {
+                console.warn(
+                    "[booking-payment-email] Unable to notify customer:",
+                    notifyResult.reason || "Unknown reason",
+                    "| orderId:",
+                    normalizedOrderId
+                );
+            }
+        }
+
+        sendJson(res, 200, { success: true, booking: booking });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to update payment status." });
     }
@@ -4976,7 +5661,42 @@ async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
             return;
         }
 
-        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+        const booking = mapBookingRow(rows[0]);
+        const updateLines = [];
+        const beforeStatus = normalizeText(beforeRow.status);
+        const afterStatus = normalizeText(booking.status);
+        if (beforeStatus !== afterStatus) {
+            updateLines.push(buildChangeLineForEmail("Booking status", beforeStatus, afterStatus));
+        }
+        const beforeFulfillmentStatus = normalizeText(beforeRow.fulfillment_status);
+        const afterFulfillmentStatus = normalizeText(booking.fulfillmentStatus);
+        if (beforeFulfillmentStatus !== afterFulfillmentStatus) {
+            updateLines.push(buildChangeLineForEmail("Fulfillment status", beforeFulfillmentStatus, afterFulfillmentStatus));
+        }
+        const beforeTrackingEta = normalizeText(beforeRow.tracking_eta);
+        const afterTrackingEta = normalizeText(booking.trackingEta);
+        if (beforeTrackingEta !== afterTrackingEta) {
+            updateLines.push(buildChangeLineForEmail("Tracking ETA", beforeTrackingEta, afterTrackingEta));
+        }
+        const beforeTrackingLocation = normalizeText(beforeRow.tracking_location);
+        const afterTrackingLocation = normalizeText(booking.trackingLocation);
+        if (beforeTrackingLocation !== afterTrackingLocation) {
+            updateLines.push(buildChangeLineForEmail("Tracking location", beforeTrackingLocation, afterTrackingLocation));
+        }
+
+        if (updateLines.length > 0) {
+            const notifyResult = await sendBookingFulfillmentStatusUpdatedEmail(booking, updateLines);
+            if (!notifyResult.sent) {
+                console.warn(
+                    "[booking-fulfillment-email] Unable to notify customer:",
+                    notifyResult.reason || "Unknown reason",
+                    "| orderId:",
+                    normalizedOrderId
+                );
+            }
+        }
+
+        sendJson(res, 200, { success: true, booking: booking });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to update fulfillment status." });
     }
@@ -5115,20 +5835,6 @@ async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
             }
         });
 
-        const legacyPaidCountRaw = Number(
-            installment.paidInstallments
-            || installment.paidCount
-            || installment.monthsPaid
-            || installment.installmentsPaid
-            || 0
-        );
-        const legacyPaidCount = Number.isFinite(legacyPaidCountRaw) && legacyPaidCountRaw > 0
-            ? Math.min(monthsToPay, Math.floor(legacyPaidCountRaw))
-            : 0;
-        for (let monthIndex = 1; monthIndex <= legacyPaidCount; monthIndex += 1) {
-            paidMonths.add(monthIndex);
-        }
-
         if (requestedMonth < 1 || requestedMonth > monthsToPay) {
             requestedMonth = 0;
             for (let monthIndex = 1; monthIndex <= monthsToPay; monthIndex += 1) {
@@ -5223,6 +5929,27 @@ async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
                 || (requestedMonth === 1 ? nowIso : "")
             )
         });
+        const installmentStartDate = normalizeDateOnlyValue(
+            nextInstallment.installmentStartDate
+            || nextInstallment.installment_start_date
+            || nextInstallment.startDate
+            || nextInstallment.start_date
+            || nextInstallment.submittedAt
+            || beforeRow.schedule_date
+            || beforeRow.created_at
+            || nowIso
+        ) || getTodayDateOnlyValue();
+        nextInstallment.installmentStartDate = installmentStartDate;
+        nextInstallment.installment_start_date = installmentStartDate;
+        nextInstallment.startDate = installmentStartDate;
+        nextInstallment.start_date = installmentStartDate;
+        syncInstallmentDueMetadata(nextInstallment, beforeRow);
+        nextInstallment.lastReminderSentForMonth = 0;
+        nextInstallment.last_reminder_sent_for_month = 0;
+        nextInstallment.lastReminderDueDate = "";
+        nextInstallment.last_reminder_due_date = "";
+        nextInstallment.lastReminderSentAt = "";
+        nextInstallment.last_reminder_sent_at = "";
 
         const nextPaymentStatus = paidInstallments >= monthsToPay
             ? "paid"
@@ -5262,15 +5989,266 @@ async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
             : (requestedMonth === 1
                 ? "First installment marked as paid. Account status updated to Installment Active."
                 : `Installment month ${requestedMonth} marked as paid.`);
+        const booking = mapBookingRow(rows[0]);
+        const notifyResult = await sendInstallmentPaymentRecordedEmail(booking, {
+            completionMessage: completionMessage,
+            paidMonth: requestedMonth,
+            monthsToPay: monthsToPay,
+            paidInstallments: paidInstallments,
+            monthlyAmount: monthlyAmount,
+            nextDueMonth: Number(nextInstallment.nextDueMonth || nextInstallment.next_due_month || 0),
+            nextDueDate: nextInstallment.nextDueDate || nextInstallment.next_due_date || ""
+        });
+        if (!notifyResult.sent) {
+            console.warn(
+                "[installment-payment-email] Unable to notify customer:",
+                notifyResult.reason || "Unknown reason",
+                "| orderId:",
+                normalizedOrderId
+            );
+        }
 
         sendJson(res, 200, {
             success: true,
             message: completionMessage,
-            booking: mapBookingRow(rows[0])
+            booking: booking
         });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to update installment payment." });
     }
+}
+
+function isInstallmentReminderEligibleBooking(rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    const reviewDecision = String(row.review_decision || "").trim().toLowerCase();
+    const mergedStatus = `${String(row.status || "")} ${String(row.fulfillment_status || "")}`.toLowerCase();
+    const serviceText = String(row.service_type || "").toLowerCase();
+    const paymentText = String(row.payment_method || "").toLowerCase();
+    const isInstallment = serviceText.includes("installment") || paymentText.includes("installment");
+    if (!isInstallment) {
+        return false;
+    }
+    if (mergedStatus.includes("reject") || mergedStatus.includes("cancel")) {
+        return false;
+    }
+    return reviewDecision === "approved";
+}
+
+function parseInstallmentPayloadFromBookingRow(rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    if (!row.installment_payload) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(row.installment_payload);
+        if (parsed && typeof parsed === "object") {
+            return parsed;
+        }
+    } catch (_error) {
+        return null;
+    }
+    return null;
+}
+
+async function updateInstallmentPayloadForBooking(pool, bookingId, installmentPayload) {
+    const normalizedBookingId = Number(bookingId || 0);
+    if (!normalizedBookingId || !installmentPayload || typeof installmentPayload !== "object") {
+        return false;
+    }
+    const [updateResult] = await pool.execute(
+        `UPDATE bookings
+         SET installment_payload = ?,
+             updated_at = NOW()
+         WHERE id = ?
+         LIMIT 1`,
+        [
+            JSON.stringify(installmentPayload),
+            normalizedBookingId
+        ]
+    );
+    return Boolean(updateResult && Number(updateResult.affectedRows || 0) > 0);
+}
+
+async function runInstallmentReminderSweep(triggerLabel) {
+    if (!INSTALLMENT_REMINDER_ENABLED || installmentReminderInFlight) {
+        return;
+    }
+    installmentReminderInFlight = true;
+
+    try {
+        if (!isSmtpConfigured()) {
+            if (String(triggerLabel || "") === "startup") {
+                console.warn("[installment-reminder] SMTP is not configured. Reminder emails are disabled.");
+            }
+            return;
+        }
+
+        const pool = await getDbPool();
+        const batchLimit = Math.max(1, Number(INSTALLMENT_REMINDER_BATCH_LIMIT) || 1);
+        const [rows] = await pool.execute(
+            `SELECT id,
+                    order_id,
+                    full_name,
+                    email,
+                    user_email,
+                    model,
+                    total,
+                    payment_method,
+                    service_type,
+                    status,
+                    fulfillment_status,
+                    review_decision,
+                    schedule_date,
+                    reviewed_at,
+                    created_at,
+                    installment_payload
+             FROM bookings
+             WHERE installment_payload IS NOT NULL
+               AND installment_payload <> ''
+             ORDER BY updated_at DESC
+             LIMIT ${batchLimit}`
+        );
+
+        if (!Array.isArray(rows) || rows.length < 1) {
+            return;
+        }
+
+        const todayDate = getTodayDateOnlyValue();
+        let scanned = 0;
+        let remindersSent = 0;
+        let payloadUpdates = 0;
+
+        for (const row of rows) {
+            if (!isInstallmentReminderEligibleBooking(row)) {
+                continue;
+            }
+
+            const installment = parseInstallmentPayloadFromBookingRow(row);
+            if (!installment) {
+                continue;
+            }
+            scanned += 1;
+
+            const dueSync = syncInstallmentDueMetadata(installment, row);
+            const dueState = dueSync.dueState;
+            let payloadChanged = dueSync.changed;
+
+            if (dueState.monthsToPay < 1 || dueState.nextDueMonth < 1 || !dueState.nextDueDate) {
+                if (payloadChanged) {
+                    const updated = await updateInstallmentPayloadForBooking(pool, row.id, installment);
+                    if (updated) {
+                        payloadUpdates += 1;
+                    }
+                }
+                continue;
+            }
+
+            const daysUntilDue = diffDateOnlyValuesInDays(todayDate, dueState.nextDueDate);
+            if (daysUntilDue === null) {
+                if (payloadChanged) {
+                    const updated = await updateInstallmentPayloadForBooking(pool, row.id, installment);
+                    if (updated) {
+                        payloadUpdates += 1;
+                    }
+                }
+                continue;
+            }
+
+            const lastReminderMonthRaw = Number(
+                installment.lastReminderSentForMonth
+                || installment.last_reminder_sent_for_month
+                || 0
+            );
+            const lastReminderMonth = Number.isFinite(lastReminderMonthRaw) && lastReminderMonthRaw > 0
+                ? Math.floor(lastReminderMonthRaw)
+                : 0;
+            const lastReminderDueDate = normalizeDateOnlyValue(
+                installment.lastReminderDueDate
+                || installment.last_reminder_due_date
+            );
+            const alreadySentForCurrentDue = (
+                lastReminderMonth === dueState.nextDueMonth
+                && lastReminderDueDate
+                && lastReminderDueDate === dueState.nextDueDate
+            );
+
+            const dueSoon = daysUntilDue >= 0 && daysUntilDue <= INSTALLMENT_REMINDER_LOOKAHEAD_DAYS;
+            if (dueSoon && !alreadySentForCurrentDue) {
+                const monthlyAmount = resolveInstallmentMonthlyAmount(installment, row, dueState.monthsToPay);
+                const notifyResult = await sendInstallmentDueSoonEmail(
+                    {
+                        fullName: row.full_name,
+                        email: row.email,
+                        userEmail: row.user_email,
+                        orderId: row.order_id,
+                        model: row.model
+                    },
+                    {
+                        nextDueMonth: dueState.nextDueMonth,
+                        monthsToPay: dueState.monthsToPay,
+                        dueDate: dueState.nextDueDate,
+                        monthlyAmount: monthlyAmount,
+                        daysUntilDue: daysUntilDue
+                    }
+                );
+                if (notifyResult.sent) {
+                    const nowIso = new Date().toISOString();
+                    installment.lastReminderSentForMonth = dueState.nextDueMonth;
+                    installment.last_reminder_sent_for_month = dueState.nextDueMonth;
+                    installment.lastReminderDueDate = dueState.nextDueDate;
+                    installment.last_reminder_due_date = dueState.nextDueDate;
+                    installment.lastReminderSentAt = nowIso;
+                    installment.last_reminder_sent_at = nowIso;
+                    payloadChanged = true;
+                    remindersSent += 1;
+                } else {
+                    console.warn(
+                        "[installment-reminder] Unable to send reminder:",
+                        notifyResult.reason || "Unknown reason",
+                        "| orderId:",
+                        row.order_id
+                    );
+                }
+            }
+
+            if (payloadChanged) {
+                const updated = await updateInstallmentPayloadForBooking(pool, row.id, installment);
+                if (updated) {
+                    payloadUpdates += 1;
+                }
+            }
+        }
+
+        if (scanned > 0 || remindersSent > 0 || payloadUpdates > 0) {
+            console.info(
+                `[installment-reminder] Sweep done (${triggerLabel || "manual"}): scanned=${scanned}, sent=${remindersSent}, payload_updates=${payloadUpdates}`
+            );
+        }
+    } catch (error) {
+        console.warn("[installment-reminder] Sweep failed:", error.message || error);
+    } finally {
+        installmentReminderInFlight = false;
+    }
+}
+
+function startInstallmentReminderScheduler() {
+    if (!INSTALLMENT_REMINDER_ENABLED) {
+        console.info("[installment-reminder] Scheduler disabled.");
+        return;
+    }
+    if (installmentReminderTimer) {
+        return;
+    }
+    installmentReminderTimer = setInterval(() => {
+        void runInstallmentReminderSweep("interval");
+    }, INSTALLMENT_REMINDER_SCAN_INTERVAL_MS);
+    if (installmentReminderTimer && typeof installmentReminderTimer.unref === "function") {
+        installmentReminderTimer.unref();
+    }
+    console.info(
+        `[installment-reminder] Scheduler enabled (lookahead_days=${INSTALLMENT_REMINDER_LOOKAHEAD_DAYS}, interval_ms=${INSTALLMENT_REMINDER_SCAN_INTERVAL_MS}, batch_limit=${INSTALLMENT_REMINDER_BATCH_LIMIT}).`
+    );
+    void runInstallmentReminderSweep("startup");
 }
 
 function getProductCategoryFilter(parsedUrl) {
@@ -5540,26 +6518,24 @@ async function handleForgotSendCode(req, res) {
         clearExpiredOtpSessions();
         const body = await readBody(req);
 
-        const method = String(body.method || "").trim().toLowerCase();
+        const requestedMethod = String(body.method || "").trim().toLowerCase();
+        const method = "email";
         const contact = String(body.contact || "").trim();
+        const normalizedEmail = normalizeEmail(contact);
 
-        if (method !== "email" && method !== "mobile") {
-            sendJson(res, 400, { success: false, message: "Method must be email or mobile." });
+        if (requestedMethod && requestedMethod !== "email") {
+            sendJson(res, 400, { success: false, message: "Password reset OTP is email-only." });
             return;
         }
-        if (method === "email" && !isValidEmail(contact)) {
+        if (!isValidEmail(normalizedEmail)) {
             sendJson(res, 400, { success: false, message: "Invalid email address." });
-            return;
-        }
-        if (method === "mobile" && !isValidMobile(contact)) {
-            sendJson(res, 400, { success: false, message: "Invalid mobile number." });
             return;
         }
         if (!enforceRateLimit(
             req,
             res,
             "forgot-send-otp",
-            `${method}:${contact}`,
+            `${method}:${normalizedEmail}`,
             OTP_SEND_RATE_LIMIT_MAX,
             RATE_LIMIT_WINDOW_MS
         )) {
@@ -5577,30 +6553,17 @@ async function handleForgotSendCode(req, res) {
         const pool = await getDbPool();
         let account = null;
 
-        if (method === "email") {
-            const normalizedEmail = normalizeEmail(contact);
-            const [rows] = await pool.execute(
-                `SELECT id, email, phone, is_blocked
-                 FROM users
-                 WHERE email = ?
-                 LIMIT 1`,
-                [normalizedEmail]
-            );
-            account = Array.isArray(rows) && rows.length ? rows[0] : null;
-        } else {
-            const normalizedPhone = normalizeMobile(contact);
-            const [rows] = await pool.execute(
-                `SELECT id, email, phone, is_blocked
-                 FROM users
-                 WHERE phone = ?
-                 LIMIT 1`,
-                [normalizedPhone]
-            );
-            account = Array.isArray(rows) && rows.length ? rows[0] : null;
-        }
+        const [rows] = await pool.execute(
+            `SELECT id, email, phone, is_blocked
+             FROM users
+             WHERE email = ?
+             LIMIT 1`,
+            [normalizedEmail]
+        );
+        account = Array.isArray(rows) && rows.length ? rows[0] : null;
 
         if (!account) {
-            sendJson(res, 404, { success: false, message: "No account found for this contact." });
+            sendJson(res, 404, { success: false, message: "No account found for this email." });
             return;
         }
 
@@ -5613,7 +6576,7 @@ async function handleForgotSendCode(req, res) {
 
         const requestId = createVerificationToken("otp");
         const code = generateOtpCode();
-        const normalizedContact = normalizeContact(method, contact);
+        const normalizedContact = accountEmail;
 
         otpSessions.set(requestId, {
             code: code,
@@ -5627,7 +6590,7 @@ async function handleForgotSendCode(req, res) {
 
         const delivery = await deliverOtp(
             method,
-            contact,
+            normalizedContact,
             code,
             { subject: "Ecodrive password reset code" }
         );
@@ -6140,6 +7103,9 @@ server.listen(PORT, () => {
     void ensureDbSchema();
     const dbStatus = isDbConfigured() ? "configured" : "missing-config";
     const smtpStatus = isSmtpConfigured() ? "enabled" : "demo-fallback";
+    const installmentReminderStatus = INSTALLMENT_REMINDER_ENABLED
+        ? (isSmtpConfigured() ? "enabled" : "smtp-missing")
+        : "disabled";
     const smsStatus = isSemaphoreConfigured()
         ? "semaphore-direct"
         : (isSmsWebhookConfigured() ? "webhook-relay" : "demo-fallback");
@@ -6155,7 +7121,8 @@ server.listen(PORT, () => {
         console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
     }
     console.log(
-        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
+        `API server running at ${apiUrl} (DB: ${dbStatus}, SMTP: ${smtpStatus}, InstallmentReminder: ${installmentReminderStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
     );
+    startInstallmentReminderScheduler();
 });
 

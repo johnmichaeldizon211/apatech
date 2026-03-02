@@ -556,11 +556,15 @@
       card.className = "order-item";
       const statusClass = getStatusClassName(order.status, order.fulfillmentStatus);
       const trackingLabel = buildTrackingLabel(order);
+      const installmentMetrics = parseInstallmentReceiptMetrics(order);
       const canPrintReceipt = isReceiptEligibleStatus(order.status, order.fulfillmentStatus);
       const receiptNumber = getReceiptNumberForOrder(order);
       const receiptIssuedLabel = formatReceiptIssuedDate(order.receiptIssuedAt || order.createdAt);
       const receiptLine = canPrintReceipt
         ? `<p class="order-line order-receipt-line">Receipt No: ${escapeHtml(receiptNumber)} (${escapeHtml(receiptIssuedLabel)})</p>`
+        : "";
+      const installmentStatusLine = installmentMetrics
+        ? `<p class="order-line order-installment-line">Order Status: ${escapeHtml(String(order.status || "-"))} (Hulog: ${escapeHtml(installmentMetrics.progressLabel)})</p>`
         : "";
       const trackingEtaLine = order.trackingEta
         ? `<p class="order-line order-tracking-meta">ETA: ${escapeHtml(order.trackingEta)}</p>`
@@ -582,6 +586,7 @@
         <p class="order-line">Schedule: <span class="order-schedule">${escapeHtml(order.schedule)}</span></p>
         <p class="order-line">Total: ${escapeHtml(formatPeso(order.total))}</p>
         ${receiptLine}
+        ${installmentStatusLine}
         <p class="order-line order-tracking-line">Tracking: ${escapeHtml(trackingLabel)}</p>
         ${trackingEtaLine}
         ${trackingLocationLine}
@@ -1314,6 +1319,9 @@
           payment: String(item.payment || item.paymentMethod || "Unspecified"),
           total: Number(item.total || item.subtotal || 0),
           createdAt: item.createdAt || item.updatedAt || "",
+          installment: item.installment && typeof item.installment === "object"
+            ? item.installment
+            : null,
           shippingAddress: String(item.shippingAddress || ""),
           receiptNumber: String(item.receiptNumber || item.receipt_number || ""),
           receiptIssuedAt: item.receiptIssuedAt || item.receipt_issued_at || "",
@@ -1435,10 +1443,131 @@
 
   function formatPesoText(value) {
     const amount = Number(value || 0);
-    return `PHP ${amount.toLocaleString("en-PH", {
+    return `\u20B1${amount.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })}`;
+  }
+
+  function toCurrencyNumber(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) {
+      return 0;
+    }
+    return Number(amount.toFixed(2));
+  }
+
+  function getInstallmentPayload(order) {
+    if (!order || typeof order !== "object") {
+      return null;
+    }
+    return order.installment && typeof order.installment === "object"
+      ? order.installment
+      : null;
+  }
+
+  function isInstallmentOrder(order) {
+    const payment = String(order && order.payment || "").toLowerCase();
+    const service = String(order && order.service || "").toLowerCase();
+    return payment.includes("installment")
+      || service.includes("installment")
+      || Boolean(getInstallmentPayload(order));
+  }
+
+  function parseInstallmentReceiptMetrics(order) {
+    if (!isInstallmentOrder(order)) {
+      return null;
+    }
+
+    const installment = getInstallmentPayload(order);
+    if (!installment) {
+      return null;
+    }
+
+    const monthsRaw = Number(
+      installment.monthsToPay
+      || installment.months
+      || installment.installmentMonths
+      || 0
+    );
+    const monthsToPay = Number.isFinite(monthsRaw) && monthsRaw > 0
+      ? Math.floor(monthsRaw)
+      : 0;
+
+    const monthlyRaw = toCurrencyNumber(
+      installment.monthlyAmortization
+      || installment.monthlyAmount
+      || installment.monthlyPayment
+      || installment.monthly
+    );
+    const minDp = toCurrencyNumber(
+      installment.planMinDp
+      || installment.minDp
+      || installment.downPayment
+      || installment.dp
+    );
+    const totalRaw = toCurrencyNumber(order && order.total);
+    const fallbackMonthly = (monthsToPay > 0 && totalRaw > 0)
+      ? toCurrencyNumber(Math.max((totalRaw - minDp) / monthsToPay, 0))
+      : 0;
+    const monthlyPayment = monthlyRaw > 0 ? monthlyRaw : fallbackMonthly;
+
+    const paymentHistory = Array.isArray(installment.paymentHistory)
+      ? installment.paymentHistory
+      : [];
+    const paidHistoryEntries = paymentHistory.filter((entry) => {
+      const monthRaw = Number(entry && (entry.month || entry.installmentMonth) || 0);
+      const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+      const status = String(entry && entry.status || "").toLowerCase();
+      return month > 0 && status.includes("paid");
+    });
+    let paidCount = paidHistoryEntries.length;
+    if (monthsToPay > 0 && paidCount > monthsToPay) {
+      paidCount = monthsToPay;
+    }
+
+    let paidAmount = 0;
+    if (paidHistoryEntries.length > 0) {
+      paidAmount = toCurrencyNumber(
+        paidHistoryEntries.reduce((sum, entry) => {
+          return sum + toCurrencyNumber(
+            entry && (entry.amount || entry.value || entry.monthlyAmount)
+          );
+        }, 0)
+      );
+    }
+    if (!(paidAmount > 0) && monthlyPayment > 0 && paidCount > 0) {
+      paidAmount = toCurrencyNumber(monthlyPayment * paidCount);
+    }
+
+    let totalInstallmentPayable = (monthsToPay > 0 && monthlyPayment > 0)
+      ? toCurrencyNumber(monthlyPayment * monthsToPay)
+      : toCurrencyNumber(Math.max(totalRaw - minDp, 0));
+    if (!(totalInstallmentPayable > 0)) {
+      totalInstallmentPayable = totalRaw;
+    }
+
+    const outstandingBalance = Math.max(
+      toCurrencyNumber(totalInstallmentPayable - paidAmount),
+      0
+    );
+    const totalPayableForReceipt = toCurrencyNumber(
+      totalInstallmentPayable + (minDp > 0 ? minDp : 0)
+    ) || totalInstallmentPayable;
+
+    return {
+      monthlyPayment,
+      paidCount,
+      monthsToPay,
+      paidAmount,
+      downPayment: minDp,
+      totalInstallmentPayable,
+      outstandingBalance,
+      totalPayableForReceipt,
+      progressLabel: monthsToPay > 0
+        ? `${paidCount}/${monthsToPay}`
+        : `${paidCount}/-`
+    };
   }
 
   function isDeliveryService(serviceValue) {
@@ -1561,18 +1690,47 @@
     const service = escapeHtml(String(order.service || "-"));
     const payment = escapeHtml(String(order.payment || "-"));
     const schedule = escapeHtml(String(order.schedule || "-"));
-    const status = escapeHtml(String(order.status || "-"));
+    const installmentMetrics = parseInstallmentReceiptMetrics(order);
+    const statusLabel = installmentMetrics
+      ? `${String(order.status || "-")} (Hulog: ${installmentMetrics.progressLabel})`
+      : String(order.status || "-");
     const fulfillment = escapeHtml(String(order.fulfillmentStatus || "-"));
     const trackingEta = escapeHtml(String(order.trackingEta || "Not set"));
     const trackingLocation = escapeHtml(String(order.trackingLocation || "Not set"));
     const shippingAddress = escapeHtml(String(order.shippingAddress || "-"));
-    const total = escapeHtml(formatPeso(order.total || 0));
+    const totalAmount = installmentMetrics
+      ? installmentMetrics.totalPayableForReceipt
+      : (order.total || 0);
+    const total = escapeHtml(formatPeso(totalAmount));
     const trackingLabel = escapeHtml(buildTrackingLabel(order));
     const encodedOrderId = encodeToken(order.orderId || "");
     const encodedCreatedAt = encodeToken(order.createdAt || "");
     const serviceLine = isDeliveryService(order.service)
       ? `<div class="row"><span class="label">Address</span><span class="value">${shippingAddress}</span></div>`
       : "";
+    const installmentInfoRows = installmentMetrics
+      ? (
+        `<div class="row"><span class="label">Monthly Payment</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.monthlyPayment))}</span></div>`
+        + `<div class="row"><span class="label">Paid Installment</span><span class="value">${escapeHtml(installmentMetrics.progressLabel)}</span></div>`
+        + `<div class="row"><span class="label">Total Paid</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.paidAmount))} / ${escapeHtml(formatPeso(installmentMetrics.totalInstallmentPayable))}</span></div>`
+      )
+      : "";
+    const installmentTotalsRows = installmentMetrics
+      ? (
+        `<div class="row"><span class="label">Installment Total</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.totalInstallmentPayable))}</span></div>`
+        + (
+          installmentMetrics.downPayment > 0
+            ? `<div class="row"><span class="label">Downpayment</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.downPayment))}</span></div>`
+            : ""
+        )
+        + `<div class="row"><span class="label">Outstanding</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.outstandingBalance))}</span></div>`
+        + `<div class="row strong"><span class="label">TOTAL PAYABLE</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.totalPayableForReceipt))}</span></div>`
+      )
+      : (
+        `<div class="row"><span class="label">Subtotal</span><span class="value">${total}</span></div>`
+        + `<div class="row"><span class="label">Discount</span><span class="value">${escapeHtml(formatPeso(0))}</span></div>`
+        + `<div class="row strong"><span class="label">TOTAL</span><span class="value">${total}</span></div>`
+      );
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1624,22 +1782,19 @@
     <div class="row"><span class="label">Payment</span><span class="value">${payment}</span></div>
     <div class="row"><span class="label">Schedule</span><span class="value">${schedule}</span></div>
     ${serviceLine}
-    <div class="row"><span class="label">Status</span><span class="value">${status}</span></div>
+    <div class="row"><span class="label">Status</span><span class="value">${escapeHtml(statusLabel)}</span></div>
     <div class="row"><span class="label">Tracking</span><span class="value">${trackingLabel}</span></div>
     <div class="row"><span class="label">ETA</span><span class="value">${trackingEta}</span></div>
     <div class="row"><span class="label">Location</span><span class="value">${trackingLocation}</span></div>
     <div class="row"><span class="label">Progress</span><span class="value">${fulfillment}</span></div>
+    ${installmentInfoRows}
 
     <div class="hr"></div>
     <div class="items-head strong"><span class="item-name">Item</span><span class="item-qty">Qty</span><span class="item-amount">Amount</span></div>
     <div class="item"><span class="item-name">${model}</span><span class="item-qty">1</span><span class="item-amount">${total}</span></div>
 
     <div class="hr"></div>
-    <div class="totals">
-      <div class="row"><span class="label">Subtotal</span><span class="value">${total}</span></div>
-      <div class="row"><span class="label">Discount</span><span class="value">${escapeHtml(formatPeso(0))}</span></div>
-      <div class="row strong"><span class="label">TOTAL</span><span class="value">${total}</span></div>
-    </div>
+    <div class="totals">${installmentTotalsRows}</div>
 
     <div class="hr"></div>
     <div class="foot">
@@ -1726,7 +1881,15 @@
     const receiptNumber = getReceiptNumberForOrder(order);
     const issuedAt = formatReceiptIssuedDate(order.receiptIssuedAt || order.createdAt);
     const generatedAt = formatReceiptIssuedDate(new Date().toISOString());
-    const amountLabel = formatPesoText(order.total || 0);
+    const installmentMetrics = parseInstallmentReceiptMetrics(order);
+    const statusLabel = installmentMetrics
+      ? `${String(order.status || "-")} (Hulog: ${installmentMetrics.progressLabel})`
+      : String(order.status || "-");
+    const amountLabel = formatPesoText(
+      installmentMetrics
+        ? installmentMetrics.totalPayableForReceipt
+        : (order.total || 0)
+    );
     const trackingLabel = buildTrackingLabel(order);
     const deliveryAddress = isDeliveryService(order.service) ? String(order.shippingAddress || "-") : "";
 
@@ -1775,18 +1938,34 @@
     if (deliveryAddress) {
       writeLine(`Address: ${deliveryAddress}`);
     }
-    writeLine(`Status: ${String(order.status || "-")}`);
+    writeLine(`Status: ${statusLabel}`);
     writeLine(`Tracking: ${trackingLabel}`);
     writeLine(`ETA: ${String(order.trackingEta || "Not set")}`);
     writeLine(`Location: ${String(order.trackingLocation || "Not set")}`);
     writeLine(`Progress: ${String(order.fulfillmentStatus || "-")}`);
+    if (installmentMetrics) {
+      writeLine(`Monthly Payment: ${formatPesoText(installmentMetrics.monthlyPayment)}`);
+      writeLine(`Paid Installment: ${installmentMetrics.progressLabel}`);
+      writeLine(
+        `Total Paid: ${formatPesoText(installmentMetrics.paidAmount)} / ${formatPesoText(installmentMetrics.totalInstallmentPayable)}`
+      );
+    }
     writeRule();
     writeLine(`1 x ${String(order.model || "Ecodrive E-Bike")}`);
     writeLine(`Amount: ${amountLabel}`);
     writeRule();
-    writeLine(`Subtotal: ${amountLabel}`, "bold");
-    writeLine(`Discount: ${formatPesoText(0)}`);
-    writeLine(`TOTAL: ${amountLabel}`, "bold");
+    if (installmentMetrics) {
+      writeLine(`Installment Total: ${formatPesoText(installmentMetrics.totalInstallmentPayable)}`);
+      if (installmentMetrics.downPayment > 0) {
+        writeLine(`Downpayment: ${formatPesoText(installmentMetrics.downPayment)}`);
+      }
+      writeLine(`Outstanding: ${formatPesoText(installmentMetrics.outstandingBalance)}`);
+      writeLine(`TOTAL PAYABLE: ${formatPesoText(installmentMetrics.totalPayableForReceipt)}`, "bold");
+    } else {
+      writeLine(`Subtotal: ${amountLabel}`, "bold");
+      writeLine(`Discount: ${formatPesoText(0)}`);
+      writeLine(`TOTAL: ${amountLabel}`, "bold");
+    }
     writeRule();
     writeCenter(`Generated: ${generatedAt}`, 8, "normal");
     writeCenter("Generated by User Portal", 8, "normal");
