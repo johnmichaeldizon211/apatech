@@ -29,6 +29,9 @@ Set these in Project Settings -> Environment Variables:
 - `DB_USER`
 - `DB_PASSWORD`
 - `DB_NAME`
+- `DB_URL` (optional alternative to DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME)
+- `DB_SSL` (optional, set `true` if provider requires TLS)
+- `DB_SSL_REJECT_UNAUTHORIZED` (optional; common managed DB setup is `false`)
 - `ADMIN_LOGIN_ID`
 - `ADMIN_PASSWORD`
 
@@ -64,4 +67,3 @@ Expected:
 
 - Auth/OTP state in this API is currently memory-based. In serverless platforms, memory can reset across invocations.
 - For strict production reliability under higher traffic, move auth/OTP/rate-limit state to a shared store (MySQL/Redis).
-

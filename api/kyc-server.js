@@ -93,11 +93,17 @@ const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
 const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
 
-const DB_HOST = String(process.env.DB_HOST || "127.0.0.1").trim();
-const DB_PORT = Number(process.env.DB_PORT || "3306");
-const DB_USER = String(process.env.DB_USER || "root").trim();
-const DB_PASSWORD = String(process.env.DB_PASSWORD || "").trim();
-const DB_NAME = String(process.env.DB_NAME || "ecodrive_db").trim();
+const DB_CONNECTION_URL = String(
+    process.env.DB_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_URL || ""
+).trim();
+const DB_URL_CONFIG = parseMySqlConnectionUrl(DB_CONNECTION_URL);
+const DB_HOST = String(process.env.DB_HOST || DB_URL_CONFIG.host || "127.0.0.1").trim();
+const DB_PORT = Number(process.env.DB_PORT || DB_URL_CONFIG.port || "3306");
+const DB_USER = String(process.env.DB_USER || DB_URL_CONFIG.user || "root").trim();
+const DB_PASSWORD = String(process.env.DB_PASSWORD || DB_URL_CONFIG.password || "").trim();
+const DB_NAME = String(process.env.DB_NAME || DB_URL_CONFIG.database || "ecodrive_db").trim();
+const DB_SSL = parseBooleanEnv(process.env.DB_SSL, Boolean(DB_URL_CONFIG.sslRequired));
+const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 let dbPool = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
@@ -211,6 +217,65 @@ function parsePositiveInt(rawValue, fallbackValue) {
         return fallbackValue;
     }
     return Math.floor(parsed);
+}
+
+function parseBooleanEnv(rawValue, fallbackValue) {
+    const raw = String(rawValue === undefined || rawValue === null ? "" : rawValue).trim().toLowerCase();
+    if (!raw) {
+        return Boolean(fallbackValue);
+    }
+    if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") {
+        return true;
+    }
+    if (raw === "0" || raw === "false" || raw === "no" || raw === "off") {
+        return false;
+    }
+    return Boolean(fallbackValue);
+}
+
+function parseMySqlConnectionUrl(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) {
+        return {
+            host: "",
+            port: "",
+            user: "",
+            password: "",
+            database: "",
+            sslRequired: false
+        };
+    }
+
+    try {
+        const parsed = new URL(raw);
+        const sslMode = String(parsed.searchParams.get("sslmode") || "").trim().toLowerCase();
+        const sslQuery = String(parsed.searchParams.get("ssl") || "").trim().toLowerCase();
+        const sslRequired = (
+            sslMode === "require"
+            || sslMode === "verify-ca"
+            || sslMode === "verify-full"
+            || sslQuery === "true"
+            || sslQuery === "1"
+        );
+
+        return {
+            host: String(parsed.hostname || "").trim(),
+            port: String(parsed.port || "").trim(),
+            user: parsed.username ? decodeURIComponent(parsed.username) : "",
+            password: parsed.password ? decodeURIComponent(parsed.password) : "",
+            database: String(parsed.pathname || "").replace(/^\/+/, "").trim(),
+            sslRequired: sslRequired
+        };
+    } catch (_error) {
+        return {
+            host: "",
+            port: "",
+            user: "",
+            password: "",
+            database: "",
+            sslRequired: false
+        };
+    }
 }
 
 function extractOrigin(value) {
@@ -963,7 +1028,7 @@ async function getDbPool() {
         return dbPool;
     }
 
-    dbPool = mysql.createPool({
+    const poolConfig = {
         host: DB_HOST,
         port: DB_PORT,
         user: DB_USER,
@@ -972,7 +1037,14 @@ async function getDbPool() {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0
-    });
+    };
+    if (DB_SSL) {
+        poolConfig.ssl = {
+            rejectUnauthorized: DB_SSL_REJECT_UNAUTHORIZED
+        };
+    }
+
+    dbPool = mysql.createPool(poolConfig);
     return dbPool;
 }
 
