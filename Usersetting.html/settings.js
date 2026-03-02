@@ -648,6 +648,20 @@
         throw new Error("Profile API returned unsuccessful response.");
       }
 
+      if (
+        data.token
+        && data.user
+        && window.EcodriveSession
+        && typeof window.EcodriveSession.setSession === "function"
+      ) {
+        window.EcodriveSession.setSession({
+          token: data.token,
+          user: data.user,
+          expiresAt: data.expiresAt,
+          expiresInMs: Number(data.expiresInMs || 0)
+        }, true);
+      }
+
       const profile = data.profile || payload;
       persistLocal({
         fullName: profile.fullName || payload.fullName,

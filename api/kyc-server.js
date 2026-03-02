@@ -78,7 +78,7 @@ const SESSION_TTL_MS = (
 )
     ? RAW_SESSION_TTL_MS
     : 24 * 60 * 60 * 1000;
-const authSessions = new Map();
+const AUTH_SESSION_SECRET = resolveAuthSessionSecret();
 const ALLOW_DEMO_OTP = String(process.env.ALLOW_DEMO_OTP || "").trim().toLowerCase() === "true";
 const DEMO_OTP_ENABLED = ALLOW_DEMO_OTP && !IS_PRODUCTION;
 const CORS_ALLOWED_ORIGINS = buildAllowedCorsOrigins(String(process.env.CORS_ALLOWED_ORIGINS || ""));
@@ -277,6 +277,121 @@ function parseMySqlConnectionUrl(rawValue) {
             sslRequired: false
         };
     }
+}
+
+function resolveAuthSessionSecret() {
+    const configured = String(process.env.AUTH_SESSION_SECRET || "").trim();
+    if (configured.length >= 16) {
+        return configured;
+    }
+
+    const fallbackParts = [
+        String(process.env.ADMIN_PASSWORD || "").trim(),
+        String(process.env.DB_PASSWORD || "").trim(),
+        String(process.env.SMTP_PASS || "").trim(),
+        String(process.env.SEMAPHORE_API_KEY || "").trim()
+    ].filter(Boolean);
+    if (fallbackParts.length > 0) {
+        return fallbackParts.join("|");
+    }
+
+    return "ecodrive-dev-auth-session-secret-change-me";
+}
+
+function encodeBase64Url(valueInput) {
+    const valueBuffer = Buffer.isBuffer(valueInput)
+        ? valueInput
+        : Buffer.from(String(valueInput || ""), "utf8");
+    return valueBuffer
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+}
+
+function decodeBase64UrlToBuffer(encodedInput) {
+    const encoded = String(encodedInput || "").trim();
+    if (!encoded) {
+        return Buffer.alloc(0);
+    }
+    const normalized = encoded
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+    return Buffer.from(normalized, "base64");
+}
+
+function decodeBase64UrlToText(encodedInput) {
+    return decodeBase64UrlToBuffer(encodedInput).toString("utf8");
+}
+
+function buildSignedAuthToken(payloadInput) {
+    const payloadJson = JSON.stringify(payloadInput || {});
+    const payloadEncoded = encodeBase64Url(payloadJson);
+    const signatureBuffer = crypto
+        .createHmac("sha256", AUTH_SESSION_SECRET)
+        .update(payloadEncoded)
+        .digest();
+    const signatureEncoded = encodeBase64Url(signatureBuffer);
+    return `${payloadEncoded}.${signatureEncoded}`;
+}
+
+function verifySignedAuthToken(tokenInput) {
+    const token = String(tokenInput || "").trim();
+    if (!token) {
+        return null;
+    }
+
+    const segments = token.split(".");
+    if (segments.length !== 2) {
+        return null;
+    }
+    const payloadEncoded = String(segments[0] || "");
+    const signatureEncoded = String(segments[1] || "");
+    if (!payloadEncoded || !signatureEncoded) {
+        return null;
+    }
+
+    const expectedSignatureBuffer = crypto
+        .createHmac("sha256", AUTH_SESSION_SECRET)
+        .update(payloadEncoded)
+        .digest();
+    const receivedSignatureBuffer = decodeBase64UrlToBuffer(signatureEncoded);
+    if (
+        receivedSignatureBuffer.length !== expectedSignatureBuffer.length
+        || !crypto.timingSafeEqual(receivedSignatureBuffer, expectedSignatureBuffer)
+    ) {
+        return null;
+    }
+
+    let payload = null;
+    try {
+        payload = JSON.parse(decodeBase64UrlToText(payloadEncoded));
+    } catch (_error) {
+        return null;
+    }
+    if (!payload || typeof payload !== "object") {
+        return null;
+    }
+
+    const createdAt = Number(payload.iat || 0);
+    const expiresAt = Number(payload.exp || 0);
+    if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt)) {
+        return null;
+    }
+    if (expiresAt <= Date.now()) {
+        return null;
+    }
+
+    return {
+        token: token,
+        userId: Number(payload.uid || 0),
+        role: normalizeUserRole(payload.role || payload.rl),
+        email: normalizeEmail(payload.email || payload.em),
+        name: String(payload.name || payload.nm || "").trim(),
+        createdAt: createdAt,
+        expiresAt: expiresAt
+    };
 }
 
 function extractOrigin(value) {
@@ -901,12 +1016,7 @@ function getVerifiedSignupOtpSession(requestId, expectedMethod) {
 }
 
 function clearExpiredAuthSessions() {
-    const now = Date.now();
-    for (const [token, session] of authSessions.entries()) {
-        if (!session || session.expiresAt <= now) {
-            authSessions.delete(token);
-        }
-    }
+    // Stateless signed tokens do not require in-memory cleanup.
 }
 
 function normalizeUserRole(value) {
@@ -916,20 +1026,29 @@ function normalizeUserRole(value) {
 function createAuthSession(userInput) {
     const user = userInput && typeof userInput === "object" ? userInput : {};
     const now = Date.now();
-    const token = crypto.randomBytes(32).toString("hex");
-
-    const session = {
-        token: token,
-        userId: Number(user.id || 0),
+    const expiresAt = now + SESSION_TTL_MS;
+    const payload = {
+        v: 1,
+        uid: Number(user.id || 0),
         role: normalizeUserRole(user.role),
         email: normalizeEmail(user.email),
         name: String(user.name || "").trim(),
+        iat: now,
+        exp: expiresAt,
+        nonce: crypto.randomBytes(12).toString("hex")
+    };
+    const token = buildSignedAuthToken(payload);
+
+    const session = {
+        token: token,
+        userId: Number(payload.uid || 0),
+        role: normalizeUserRole(payload.role),
+        email: normalizeEmail(payload.email),
+        name: String(payload.name || "").trim(),
         createdAt: now,
-        expiresAt: now + SESSION_TTL_MS
+        expiresAt: expiresAt
     };
 
-    authSessions.set(token, session);
-    clearExpiredAuthSessions();
     return session;
 }
 
@@ -946,22 +1065,11 @@ function getAuthTokenFromRequest(req) {
 }
 
 function getAuthSessionFromRequest(req) {
-    clearExpiredAuthSessions();
     const token = getAuthTokenFromRequest(req);
     if (!token) {
         return null;
     }
-    const session = authSessions.get(token);
-    if (!session) {
-        return null;
-    }
-    if (session.expiresAt <= Date.now()) {
-        authSessions.delete(token);
-        return null;
-    }
-    session.expiresAt = Date.now() + SESSION_TTL_MS;
-    authSessions.set(token, session);
-    return session;
+    return verifySignedAuthToken(token);
 }
 
 function requireAuthSession(req, res, options) {
@@ -3823,10 +3931,7 @@ async function handleAuthMe(req, res) {
 }
 
 async function handleLogout(req, res) {
-    const token = getAuthTokenFromRequest(req);
-    if (token) {
-        authSessions.delete(token);
-    }
+    void req;
     sendJson(res, 200, { success: true, message: "Logged out." });
 }
 
@@ -4631,8 +4736,12 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
         }
 
         const updatedCredentials = saveAdminCredentials({ loginId: nextLoginId });
-        authSession.email = updatedCredentials.loginId;
-        authSessions.set(authSession.token, authSession);
+        const refreshedAuthSession = createAuthSession({
+            id: authSession.userId,
+            role: authSession.role,
+            email: updatedCredentials.loginId,
+            name: authSession.name || "Admin"
+        });
 
         const isChanged = updatedCredentials.loginId !== adminCredentials.loginId;
         sendJson(res, 200, {
@@ -4641,7 +4750,15 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
             settings: {
                 loginId: updatedCredentials.loginId,
                 updatedAt: updatedCredentials.updatedAt
-            }
+            },
+            user: {
+                id: Number(authSession.userId || 0),
+                name: String(authSession.name || "Admin"),
+                email: updatedCredentials.loginId,
+                role: normalizeUserRole(authSession.role),
+                status: "active"
+            },
+            ...getAuthResponse(refreshedAuthSession)
         });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to update admin login." });
@@ -4818,9 +4935,14 @@ async function handleProfileSettingsSave(req, res) {
         );
         const profile = Array.isArray(rows) && rows.length ? rows[0] : null;
 
+        let refreshedAuthSession = null;
         if (authSession.role !== "admin") {
-            authSession.email = email;
-            authSessions.set(authSession.token, authSession);
+            refreshedAuthSession = createAuthSession({
+                id: authSession.userId,
+                role: authSession.role,
+                email: email,
+                name: fullName
+            });
         }
 
         sendJson(res, 200, {
@@ -4831,7 +4953,19 @@ async function handleProfileSettingsSave(req, res) {
                 phone: String((profile && profile.phone) || phone),
                 address: String((profile && profile.address) || address),
                 avatar: String((profile && profile.avatar_data_url) || avatar || "")
-            }
+            },
+            ...(refreshedAuthSession
+                ? {
+                    user: {
+                        id: Number(authSession.userId || 0),
+                        name: String((profile && profile.full_name) || fullName),
+                        email: String((profile && profile.email) || email),
+                        role: normalizeUserRole(authSession.role),
+                        status: "active"
+                    },
+                    ...getAuthResponse(refreshedAuthSession)
+                }
+                : {})
         });
     } catch (error) {
         if (error && error.code === "ER_DUP_ENTRY") {

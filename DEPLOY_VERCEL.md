@@ -34,6 +34,7 @@ Set these in Project Settings -> Environment Variables:
 - `DB_SSL_REJECT_UNAUTHORIZED` (optional; common managed DB setup is `false`)
 - `ADMIN_LOGIN_ID`
 - `ADMIN_PASSWORD`
+- `AUTH_SESSION_SECRET` (required for stable auth tokens across serverless instances)
 
 Optional but recommended:
 
