@@ -61,19 +61,19 @@
             "body.ecodrive-chat-dragging{user-select:none;cursor:grabbing;}",
             "#chatbot-toggle.ecodrive-chat-draggable{touch-action:none;}",
             "#chatbot-toggle.ecodrive-chat-drag-ready{cursor:grabbing;}",
-            ".ecodrive-chat-generated-toggle{position:fixed;right:18px;bottom:20px;width:46px;height:46px;border:2px solid #2f4ca5;border-radius:50%;background:#fff;color:#2f4ca5;font-size:24px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 15px rgba(29,57,112,.2);cursor:pointer;z-index:2147481000;}",
-            ".ecodrive-chat-generated-panel{position:fixed;right:18px;bottom:74px;width:min(320px,calc(100vw - 16px));background:#fff;border:1.5px solid #2f4ca5;border-radius:12px;box-shadow:0 12px 24px rgba(24,44,95,.24);display:none;overflow:hidden;z-index:2147481001;}",
+            ".ecodrive-chat-generated-toggle{position:fixed;top:84px;right:12px;width:38px;height:38px;border:2px solid #2f4fa7;border-radius:50%;background:#fff;color:#2f4fa7;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(45,74,160,.12);cursor:pointer;z-index:999;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif;}",
+            ".ecodrive-chat-generated-panel{position:fixed;top:134px;right:12px;width:min(310px,calc(100vw - 24px));background:#fff;border:1.5px solid #2f4fa7;border-radius:12px;box-shadow:0 12px 24px rgba(24,44,95,.2);display:none;overflow:hidden;z-index:1000;}",
             ".ecodrive-chat-generated-panel.open{display:block;}",
-            ".ecodrive-chat-generated-panel .chat-header{height:42px;background:#d7e8ef;border-bottom:1px solid #c2d6df;padding:0 10px;display:flex;align-items:center;justify-content:space-between;color:#123f79;font-size:12px;font-weight:700;}",
-            ".ecodrive-chat-generated-panel .chat-header button{width:24px;height:24px;border:none;border-radius:6px;background:#e9f1f4;cursor:pointer;}",
-            ".ecodrive-chat-generated-body{height:230px;background:#f4f6fb;overflow-y:auto;padding:10px;display:grid;align-content:start;gap:8px;}",
+            ".ecodrive-chat-generated-panel .chat-header{height:40px;background:#d7e8ef;border-bottom:1px solid #c2d6df;padding:0 10px;display:flex;align-items:center;justify-content:space-between;color:#123f79;font-size:12px;font-weight:700;}",
+            ".ecodrive-chat-generated-panel .chat-close{width:24px;height:24px;border:none;border-radius:6px;background:#e9f1f4;color:#2f4fa7;cursor:pointer;font-size:14px;line-height:1;}",
+            ".ecodrive-chat-generated-body{height:220px;background:#f4f6fb;overflow-y:auto;padding:10px;display:grid;align-content:start;gap:8px;}",
             ".ecodrive-chat-generated-panel .chat-bubble{max-width:88%;padding:8px 10px;border-radius:10px;font-size:12px;line-height:1.35;word-break:break-word;}",
             ".ecodrive-chat-generated-panel .chat-bubble.bot{background:#e6ecfa;color:#143b80;justify-self:start;}",
             ".ecodrive-chat-generated-panel .chat-bubble.user{background:#2f4ca5;color:#fff;justify-self:end;}",
             ".ecodrive-chat-generated-form{border-top:1px solid #d8e1ec;background:#fff;padding:8px;display:grid;grid-template-columns:1fr auto;gap:7px;}",
-            ".ecodrive-chat-generated-form input{height:34px;border:1px solid #b7c9dd;border-radius:8px;font-size:12px;padding:0 9px;}",
+            ".ecodrive-chat-generated-form input{height:34px;border:2px solid #292929;border-radius:8px;font-size:12px;padding:0 9px;}",
             ".ecodrive-chat-generated-form button{height:34px;min-width:62px;border:none;border-radius:8px;background:#2f4ca5;color:#fff;font-size:12px;cursor:pointer;}",
-            "@media (max-width:760px){.ecodrive-chat-generated-toggle{right:12px;bottom:18px;}.ecodrive-chat-generated-panel{right:10px;bottom:70px;width:calc(100vw - 20px);}}"
+            "@media (max-width:480px){.ecodrive-chat-generated-toggle{top:78px;right:10px;}.ecodrive-chat-generated-panel{top:126px;right:10px;width:calc(100vw - 20px);}}"
         ].join("");
 
         global.document.head.appendChild(style);
@@ -129,7 +129,7 @@
         toggle.id = "chatbot-toggle";
         toggle.className = "chatbot ecodrive-chat-generated-toggle";
         toggle.setAttribute("aria-label", "Open chatbot");
-        toggle.textContent = String.fromCharCode(129302);
+        toggle.textContent = "🤖";
 
         var panel = global.document.createElement("section");
         panel.id = "chat-panel";
@@ -139,7 +139,7 @@
         panel.innerHTML = ""
             + "<header class=\"chat-header\">"
             + "  <strong>Ecodrive Bot</strong>"
-            + "  <button type=\"button\" id=\"chat-close\" aria-label=\"Close chat\">x</button>"
+            + "  <button type=\"button\" id=\"chat-close\" class=\"chat-close\" aria-label=\"Close chat\">x</button>"
             + "</header>"
             + "<div class=\"chat-body ecodrive-chat-generated-body\" id=\"chat-body\" role=\"log\" aria-live=\"polite\"></div>"
             + "<form class=\"chat-form ecodrive-chat-generated-form\" id=\"chat-form\" action=\"#\">"

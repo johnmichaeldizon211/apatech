@@ -11,7 +11,10 @@
     var DEFAULT_RENDER_API_BASE = "https://apatech.onrender.com";
     var DEFAULT_REMOTE_API_BASE = DEFAULT_RENDER_API_BASE;
     var DEFAULT_API_BASE = detectDefaultApiBase();
-    var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304a";
+    var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304b";
+    var PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
+    var LEGACY_PROFILE_STORAGE_KEY = "ecodrive_profile_settings";
+    var USERS_STORAGE_KEY = "users";
     var originalFetch = typeof global.fetch === "function" ? global.fetch.bind(global) : null;
 
     function trimSlashes(value) {
@@ -187,6 +190,57 @@
         }
     }
 
+    function safeParseObject(raw) {
+        if (!raw) {
+            return null;
+        }
+        try {
+            var parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" ? parsed : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function normalizeAvatarValue(value) {
+        return String(value || "").trim();
+    }
+
+    function readProfileByEmail(emailInput) {
+        var email = String(emailInput || "").trim().toLowerCase();
+        if (email) {
+            var scoped = safeParseObject(localStorage.getItem(PROFILE_STORAGE_PREFIX + email));
+            if (scoped) {
+                return scoped;
+            }
+        }
+        return safeParseObject(localStorage.getItem(LEGACY_PROFILE_STORAGE_KEY));
+    }
+
+    function readUsersList() {
+        var parsed = safeParseObject(localStorage.getItem(USERS_STORAGE_KEY));
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function getAvatarFromUsers(emailInput) {
+        var email = String(emailInput || "").trim().toLowerCase();
+        if (!email) {
+            return "";
+        }
+        var users = readUsersList();
+        for (var i = 0; i < users.length; i += 1) {
+            var user = users[i];
+            if (!user || typeof user !== "object") {
+                continue;
+            }
+            var candidateEmail = String(user.email || "").trim().toLowerCase();
+            if (candidateEmail === email) {
+                return normalizeAvatarValue(user.avatar);
+            }
+        }
+        return "";
+    }
+
     function isExpired() {
         var raw = getStorageValue(EXPIRES_AT_KEY);
         if (!raw) {
@@ -229,6 +283,55 @@
         }
         var legacy = getStorageValue(CURRENT_USER_KEY);
         return String(legacy || "").trim().toLowerCase();
+    }
+
+    function getStoredAvatarUrl() {
+        var email = getCurrentEmail();
+        var profile = readProfileByEmail(email);
+        var avatar = normalizeAvatarValue(profile && profile.avatar);
+        if (avatar) {
+            return avatar;
+        }
+
+        var user = getCurrentUser();
+        avatar = normalizeAvatarValue(user && user.avatar);
+        if (avatar) {
+            return avatar;
+        }
+
+        return getAvatarFromUsers(email);
+    }
+
+    function applyUserAvatarToPage(avatarInput) {
+        if (!global.document || !global.location) {
+            return;
+        }
+        var path = String(global.location.pathname || "").toLowerCase();
+        if (!isUserAppPage(path) || path.indexOf("/admin/") !== -1) {
+            return;
+        }
+
+        var avatar = normalizeAvatarValue(avatarInput);
+        var nodes = global.document.querySelectorAll(".profile-menu .profile-btn img");
+        if (!nodes || !nodes.length) {
+            return;
+        }
+
+        for (var i = 0; i < nodes.length; i += 1) {
+            var image = nodes[i];
+            if (!image.dataset.ecodriveDefaultSrc) {
+                image.dataset.ecodriveDefaultSrc = image.getAttribute("src") || "";
+            }
+            if (avatar) {
+                image.src = avatar;
+            } else if (image.dataset.ecodriveDefaultSrc) {
+                image.src = image.dataset.ecodriveDefaultSrc;
+            }
+        }
+    }
+
+    function syncUserAvatarFromStorage() {
+        applyUserAvatarToPage(getStoredAvatarUrl());
     }
 
     function getApiBase() {
@@ -309,6 +412,7 @@
         setStorageValue(USER_KEY, JSON.stringify(user), Boolean(remember));
         setStorageValue(EXPIRES_AT_KEY, String(expiresAt), Boolean(remember));
         setStorageValue(CURRENT_USER_KEY, userEmail, Boolean(remember));
+        syncUserAvatarFromStorage();
         return true;
     }
 
@@ -554,6 +658,36 @@
         }
         clearSession();
     });
+
+    global.addEventListener("storage", function (event) {
+        var key = event && typeof event.key === "string" ? event.key : "";
+        if (
+            key === CURRENT_USER_KEY
+            || key === USER_KEY
+            || key === USERS_STORAGE_KEY
+            || key === LEGACY_PROFILE_STORAGE_KEY
+            || key.indexOf(PROFILE_STORAGE_PREFIX) === 0
+        ) {
+            syncUserAvatarFromStorage();
+        }
+    });
+
+    global.addEventListener("ecodrive:profile-updated", function (event) {
+        var detail = event && event.detail && typeof event.detail === "object"
+            ? event.detail
+            : {};
+        if (Object.prototype.hasOwnProperty.call(detail, "avatar")) {
+            applyUserAvatarToPage(detail.avatar);
+            return;
+        }
+        syncUserAvatarFromStorage();
+    });
+
+    if (global.document.readyState === "loading") {
+        global.document.addEventListener("DOMContentLoaded", syncUserAvatarFromStorage);
+    } else {
+        syncUserAvatarFromStorage();
+    }
 
     ensureApiBaseConfig();
     ensurePageAccess();

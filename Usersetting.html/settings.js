@@ -14,6 +14,7 @@
   const orderList = document.getElementById("orderList");
   const orderStatusMsg = document.getElementById("orderStatusMsg");
   const topProfileBtn = document.querySelector(".top-nav .profile-menu .profile-btn");
+  const topProfileImage = topProfileBtn ? topProfileBtn.querySelector("img") : null;
   const topDropdown = document.querySelector(".top-nav .profile-menu .dropdown");
   const topLogoutLink = document.getElementById("topLogoutLink");
   const chatToggle = document.getElementById("chatbot-toggle");
@@ -71,6 +72,7 @@
     .trim()
     .replace(/\/+$/, "");
   const defaultAvatarSrc = avatarImage.getAttribute("src");
+  const defaultTopProfileSrc = topProfileImage ? topProfileImage.getAttribute("src") : "";
   let activeProfileKey = getProfileStorageKey(getCurrentUserEmail());
   let activateSectionById = null;
   let orderRefreshTimerId = null;
@@ -674,6 +676,8 @@
       if (typeof profile.avatar === "string" && profile.avatar) {
         avatarImage.src = profile.avatar;
       }
+      syncTopProfileAvatar(avatarImage.src);
+      notifyProfileUpdated(avatarImage.src);
       setStatus("Profile settings saved.", false);
     } catch (error) {
       console.warn("Profile save API unavailable. Falling back to local storage.", error);
@@ -858,6 +862,8 @@
         avatarImage.src = currentUser.avatar;
       }
     }
+
+    syncTopProfileAvatar(avatarImage.src);
   }
 
   async function hydrateProfileFromApi() {
@@ -898,6 +904,8 @@
       if (merged.avatar) {
         avatarImage.src = merged.avatar;
       }
+      syncTopProfileAvatar(avatarImage.src);
+      notifyProfileUpdated(avatarImage.src);
 
       persistLocal(merged);
     } catch (_error) {
@@ -1010,6 +1018,8 @@
     };
     localStorage.setItem(activeProfileKey, JSON.stringify(nextData));
     syncCurrentUserProfile({ avatar: dataUrl, email: nextData.email });
+    syncTopProfileAvatar(dataUrl);
+    notifyProfileUpdated(dataUrl);
     localStorage.removeItem(legacyStorageKey);
     void syncAvatarToApi(dataUrl);
   }
@@ -1024,6 +1034,8 @@
     };
     localStorage.setItem(activeProfileKey, JSON.stringify(nextData));
     syncCurrentUserProfile({ avatar: "", email: nextData.email });
+    syncTopProfileAvatar("");
+    notifyProfileUpdated("");
     localStorage.removeItem(legacyStorageKey);
     void syncAvatarToApi("");
   }
@@ -1031,6 +1043,25 @@
   function setAvatarMsg(message, isError) {
     avatarMsg.textContent = message;
     avatarMsg.classList.toggle("error", isError);
+  }
+
+  function syncTopProfileAvatar(avatarValue) {
+    if (!topProfileImage) {
+      return;
+    }
+    const avatar = String(avatarValue || "").trim();
+    topProfileImage.src = avatar || defaultTopProfileSrc || defaultAvatarSrc;
+  }
+
+  function notifyProfileUpdated(avatarValue) {
+    if (typeof window.CustomEvent !== "function") {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("ecodrive:profile-updated", {
+      detail: {
+        avatar: String(avatarValue || "").trim()
+      }
+    }));
   }
 
   function safeParse(value) {

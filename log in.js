@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", function () {
         var remember = rememberInput ? Boolean(rememberInput.checked) : false;
 
         if (!loginIdValue || !passwordValue) {
-            setError("Please enter both email/username and password.");
+            setError("Please enter both email and password.");
             return;
         }
 
@@ -79,10 +79,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 },
                 body: JSON.stringify({
                     email: loginIdValue,
-                    username: loginIdValue,
-                    password: passwordValue
-                })
-            });
+                        password: passwordValue
+                    })
+                });
         } catch (_error) {
             setError("API is unavailable. Please check your API service connection.");
             return;
@@ -111,7 +110,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 );
                 return;
             }
-            setError(backendMessage || "Invalid email/username or password.");
+            setError(backendMessage || "Invalid email or password.");
             return;
         }
 
