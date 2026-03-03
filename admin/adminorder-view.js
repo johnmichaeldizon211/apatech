@@ -23,6 +23,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const instDeliveryMethod = document.getElementById("instDeliveryMethod");
     const instDeliveryStatus = document.getElementById("instDeliveryStatus");
     const instEstimatedDelivery = document.getElementById("instEstimatedDelivery");
+    const instRepairDescriptionRow = document.getElementById("instRepairDescriptionRow");
+    const instRepairDescription = document.getElementById("instRepairDescription");
     const instModelName = document.getElementById("instModelName");
     const instModelImage = document.getElementById("instModelImage");
     const instTotalPrice = document.getElementById("instTotalPrice");
@@ -44,6 +46,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const cashDeliveryMethod = document.getElementById("cashDeliveryMethod");
     const cashDeliveryStatus = document.getElementById("cashDeliveryStatus");
     const cashEstimatedDelivery = document.getElementById("cashEstimatedDelivery");
+    const cashRepairDescriptionRow = document.getElementById("cashRepairDescriptionRow");
+    const cashRepairDescription = document.getElementById("cashRepairDescription");
     const cashModelName = document.getElementById("cashModelName");
     const cashModelImage = document.getElementById("cashModelImage");
     const cashTotalPrice = document.getElementById("cashTotalPrice");
@@ -654,6 +658,7 @@ document.addEventListener("DOMContentLoaded", function () {
         setTextContent(instDeliveryMethod, String(record && record.service || "-"), "-");
         setTextContent(instDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
         setTextContent(instEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
+        renderRepairDescription(instRepairDescriptionRow, instRepairDescription, record);
 
         setTextContent(instModelName, getModelLabelFromRecord(record), "-");
         setBikeImage(instModelImage, record);
@@ -695,6 +700,7 @@ document.addEventListener("DOMContentLoaded", function () {
         setTextContent(cashDeliveryMethod, String(record && record.service || "-"), "-");
         setTextContent(cashDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
         setTextContent(cashEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
+        renderRepairDescription(cashRepairDescriptionRow, cashRepairDescription, record);
 
         setTextContent(cashModelName, getModelLabelFromRecord(record), "-");
         setBikeImage(cashModelImage, record);
@@ -712,8 +718,13 @@ document.addEventListener("DOMContentLoaded", function () {
         setTextContent(cashPaymentGrandTotal, formatPeso(cashBreakdown.grandTotal), "-");
     }
 
-    function updatePrimaryActionLabels(mode) {
+    function updatePrimaryActionLabels(mode, booking) {
         if (!approveBtn || !rejectBtn) {
+            return;
+        }
+        if (isPickupService(booking)) {
+            approveBtn.textContent = "Picked Up Success";
+            rejectBtn.textContent = "Reject Booking";
             return;
         }
         if (mode === "installment") {
@@ -744,6 +755,30 @@ document.addEventListener("DOMContentLoaded", function () {
             return text;
         }
         return String(fallback || "-");
+    }
+
+    function isPickupService(record) {
+        return String(record && record.service || "").toLowerCase().includes("pick");
+    }
+
+    function getRepairDescription(record) {
+        return String(
+            (record && (record.repairDetails || record.details || record.repair_details)) || ""
+        ).trim();
+    }
+
+    function renderRepairDescription(rowEl, valueEl, record) {
+        if (!rowEl || !valueEl) {
+            return;
+        }
+        const details = getRepairDescription(record);
+        if (!details) {
+            rowEl.hidden = true;
+            valueEl.textContent = "-";
+            return;
+        }
+        rowEl.hidden = false;
+        valueEl.textContent = details;
     }
 
 
@@ -1319,9 +1354,14 @@ document.addEventListener("DOMContentLoaded", function () {
     function applyDecisionToRecord(record, action) {
         const next = Object.assign({}, record);
         if (action === "approve") {
-            next.status = "Approved";
-            if (!String(next.fulfillmentStatus || "").trim()) {
-                next.fulfillmentStatus = "In Process";
+            if (isPickupService(record)) {
+                next.status = "Completed";
+                next.fulfillmentStatus = "Picked up successfully";
+            } else {
+                next.status = "Approved";
+                if (!String(next.fulfillmentStatus || "").trim()) {
+                    next.fulfillmentStatus = "In Process";
+                }
             }
             next.reviewDecision = "approved";
         } else {
@@ -1500,7 +1540,7 @@ document.addEventListener("DOMContentLoaded", function () {
             renderCashMode(booking);
         }
 
-        updatePrimaryActionLabels(bookingMode);
+        updatePrimaryActionLabels(bookingMode, booking);
         updateReceiptActionButtons(booking);
     }
 
@@ -1537,7 +1577,12 @@ document.addEventListener("DOMContentLoaded", function () {
         renderBookingDetails(currentBooking);
 
         approveBtn.addEventListener("click", async function () {
-            if (!window.confirm("Approve this booking request?")) {
+            const approveConfirmMessage = isPickupService(currentBooking)
+                ? "Mark as picked up successfully?"
+                : (getBookingMode(currentBooking) === "installment"
+                    ? "Approve this installment application?"
+                    : "Approve this booking request?");
+            if (!window.confirm(approveConfirmMessage)) {
                 return;
             }
 
@@ -1549,7 +1594,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
                     localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
                     renderBookingDetails(currentBooking);
-                    alert("Booking approved.");
+                    alert(
+                        isPickupService(currentBooking)
+                            ? "Booking marked as picked up successfully."
+                            : "Booking approved."
+                    );
                 } else {
                     window.location.href = "adminorder.html";
                 }

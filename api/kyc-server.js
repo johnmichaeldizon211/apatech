@@ -1227,6 +1227,7 @@ async function ensureDbSchema() {
                 shipping_lng DECIMAL(10,6) NULL,
                 shipping_map_embed_url TEXT NULL,
                 user_email VARCHAR(190) NULL,
+                repair_details TEXT NULL,
                 installment_payload LONGTEXT NULL,
                 review_decision ENUM('approved', 'rejected', 'none') NOT NULL DEFAULT 'none',
                 reviewed_at TIMESTAMP NULL DEFAULT NULL,
@@ -1305,6 +1306,14 @@ async function ensureDbSchema() {
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add bookings.receipt_issued_at automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN repair_details TEXT NULL AFTER user_email"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.repair_details automatically:", alterError.message || alterError);
         }
 
         await pool.execute(
@@ -3095,6 +3104,8 @@ function mapBookingRow(row) {
             : null,
         shippingMapEmbedUrl: String(row.shipping_map_embed_url || ""),
         userEmail: String(row.user_email || ""),
+        repairDetails: String(row.repair_details || ""),
+        details: String(row.repair_details || ""),
         accountStatus: installmentAccountStatus || "Active",
         customerAccountStatus: installmentAccountStatus || "Active",
         reviewedAt: row.reviewed_at || null,
@@ -5104,6 +5115,7 @@ async function prepareBookingForInsert(bodyInput, options) {
     );
     const shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
     const shippingMapEmbedUrl = String(body.shippingMapEmbedUrl || "").trim().slice(0, 3000);
+    const repairDetails = normalizeText(body.repairDetails || body.details).slice(0, 4000);
     const shippingCoordinates = body.shippingCoordinates && typeof body.shippingCoordinates === "object"
         ? body.shippingCoordinates
         : null;
@@ -5261,6 +5273,7 @@ async function prepareBookingForInsert(bodyInput, options) {
         shippingLng: shippingLng,
         shippingMapEmbedUrl: shippingMapEmbedUrl || null,
         userEmail: userEmail || null,
+        repairDetails: repairDetails || null,
         installmentPayload: installmentPayload,
         reviewDecision: reviewDecision,
         reviewedAt: reviewedAt
@@ -5303,11 +5316,12 @@ async function insertPreparedBooking(db, preparedInput) {
             shipping_lng,
             shipping_map_embed_url,
             user_email,
+            repair_details,
             installment_payload,
             review_decision,
             reviewed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             orderId,
             prepared.userId || null,
@@ -5336,6 +5350,7 @@ async function insertPreparedBooking(db, preparedInput) {
             prepared.shippingLng,
             prepared.shippingMapEmbedUrl || null,
             prepared.userEmail || null,
+            prepared.repairDetails || null,
             prepared.installmentPayload || null,
             prepared.reviewDecision || "none",
             prepared.reviewedAt || null
@@ -5625,8 +5640,14 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
         if (normalizedAction === "approve") {
             await pool.execute(
                 `UPDATE bookings
-                 SET status = 'Approved',
+                 SET status = CASE
+                        WHEN LOWER(service_type) LIKE '%pick%'
+                            THEN 'Completed'
+                        ELSE 'Approved'
+                     END,
                      fulfillment_status = CASE
+                        WHEN LOWER(service_type) LIKE '%pick%'
+                            THEN 'Picked up successfully'
                         WHEN fulfillment_status IS NULL
                             OR fulfillment_status = ''
                             OR LOWER(fulfillment_status) IN ('pending review', 'under review', 'in process')

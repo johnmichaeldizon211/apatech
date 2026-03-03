@@ -399,6 +399,10 @@ document.addEventListener("DOMContentLoaded", function () {
         return "Full Payment";
     }
 
+    function isPickupServiceValue(serviceValue) {
+        return String(serviceValue || "").toLowerCase().includes("pick");
+    }
+
     function getStatusLabel(record) {
         const status = String(record && record.status || "").trim();
         const fulfillment = String(record && record.fulfillmentStatus || "").trim();
@@ -1011,6 +1015,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const modelDisplay = item.bikeColor
                 ? (String(item.model || "") + " (" + String(item.bikeColor || "") + ")")
                 : String(item.model || "");
+            const isPickup = isPickupServiceValue(item.service);
+            const approveLabel = isPickup ? "Picked Up Success" : "Approve";
             row.innerHTML = ""
                 + "<span>" + escapeHtml(item.name) + "</span>"
                 + "<span>" + escapeHtml(modelDisplay) + "</span>"
@@ -1018,7 +1024,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 + "<span>" + escapeHtml(item.plan) + "</span>"
                 + "<span class=\"status\">" + escapeHtml(item.status) + "</span>"
                 + "<span class=\"action-group\">"
-                + "<button type=\"button\" class=\"action-btn approve\" data-action=\"approve\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Approve</button>"
+                + "<button type=\"button\" class=\"action-btn approve\" data-action=\"approve\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-is-pickup=\"" + (isPickup ? "1" : "0") + "\">" + approveLabel + "</button>"
                 + "<button type=\"button\" class=\"action-btn reject\" data-action=\"reject\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Reject</button>"
                 + "<button type=\"button\" class=\"action-btn view\" data-action=\"view\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">View</button>"
                 + "</span>";
@@ -1061,9 +1067,14 @@ document.addEventListener("DOMContentLoaded", function () {
     function applyDecisionToRecord(record, action) {
         const next = Object.assign({}, record);
         if (action === "approve") {
-            next.status = "Approved";
-            if (!String(next.fulfillmentStatus || "").trim()) {
-                next.fulfillmentStatus = "In Process";
+            if (isPickupServiceValue(record && record.service)) {
+                next.status = "Completed";
+                next.fulfillmentStatus = "Picked up successfully";
+            } else {
+                next.status = "Approved";
+                if (!String(next.fulfillmentStatus || "").trim()) {
+                    next.fulfillmentStatus = "In Process";
+                }
             }
             next.reviewDecision = "approved";
         } else {
@@ -1371,7 +1382,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const confirmMessage = action === "approve"
-            ? "Approve this booking request?"
+            ? (
+                String(actionButton.getAttribute("data-is-pickup") || "") === "1"
+                    ? "Mark this booking as picked up successfully?"
+                    : "Approve this booking request?"
+            )
             : "Reject this booking request?";
         if (!window.confirm(confirmMessage)) {
             return;

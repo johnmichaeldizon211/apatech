@@ -741,6 +741,24 @@ body {
     min-height: auto;
   }
 
+  .order-list {
+    max-height: none;
+    padding-right: 0;
+  }
+
+  .order-item {
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .order-item-head {
+    align-items: flex-start;
+  }
+
+  .order-date {
+    text-align: right;
+  }
+
   .vertical-brand {
     writing-mode: horizontal-tb;
     text-orientation: initial;
@@ -760,6 +778,60 @@ body {
     width: auto;
     height: 58vh;
     bottom: 78px;
+  }
+}
+
+@media (max-width: 620px) {
+  .order-item-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .order-date {
+    text-align: left;
+  }
+
+  .order-line {
+    font-size: 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .order-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .order-actions {
+    width: 100%;
+  }
+
+  .order-action-btn {
+    width: 100%;
+    min-height: 30px;
+    padding: 6px 10px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .settings-card {
+    padding: 12px;
+  }
+
+  .order-item h3 {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  .status-chip {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+
+  .fulfillment-text {
+    font-size: 9px;
+    overflow-wrap: anywhere;
   }
 }
 
