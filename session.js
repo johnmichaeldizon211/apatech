@@ -11,6 +11,7 @@
     var DEFAULT_RENDER_API_BASE = "https://apatech.onrender.com";
     var DEFAULT_REMOTE_API_BASE = DEFAULT_RENDER_API_BASE;
     var DEFAULT_API_BASE = detectDefaultApiBase();
+    var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304a";
     var originalFetch = typeof global.fetch === "function" ? global.fetch.bind(global) : null;
 
     function trimSlashes(value) {
@@ -423,6 +424,32 @@
         );
     }
 
+    function isUserAppPage(pathname) {
+        var path = String(pathname || "").toLowerCase();
+        return path.indexOf("/userhomefolder/") !== -1 || path.indexOf("/usersetting.html/") !== -1;
+    }
+
+    function ensureUserChatWidget() {
+        if (!global.document || !global.location) {
+            return;
+        }
+
+        var path = String(global.location.pathname || "").toLowerCase();
+        if (!isUserAppPage(path) || path.indexOf("/admin/") !== -1) {
+            return;
+        }
+
+        if (global.document.querySelector("script[data-ecodrive-user-chat-widget='1']")) {
+            return;
+        }
+
+        var script = global.document.createElement("script");
+        script.src = USER_CHAT_WIDGET_SRC;
+        script.async = true;
+        script.setAttribute("data-ecodrive-user-chat-widget", "1");
+        global.document.head.appendChild(script);
+    }
+
     function redirectToLogin() {
         if (!global.location) {
             return;
@@ -530,6 +557,7 @@
 
     ensureApiBaseConfig();
     ensurePageAccess();
+    ensureUserChatWidget();
 
     global.EcodriveSession = {
         setSession: setSession,
