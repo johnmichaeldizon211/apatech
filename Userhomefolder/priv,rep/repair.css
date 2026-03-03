@@ -221,6 +221,133 @@ textarea {
     padding-top: 30px;
 }
 
+.home-service-panel {
+    border: 1.5px solid #9db2cf;
+    border-radius: 10px;
+    background: #f3f6fa;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.ship-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a3b75;
+}
+
+.ship-title {
+    margin-bottom: 6px;
+}
+
+.ship-address-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.ship-address-field {
+    display: grid;
+    gap: 4px;
+}
+
+.ship-address-field-street {
+    grid-column: 1 / -1;
+}
+
+.ship-address-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #214579;
+    padding-left: 2px;
+}
+
+.ship-input {
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+    border: 1.7px solid var(--blue);
+    background: #f7f8fb;
+    padding: 0 10px;
+    font-size: 11px;
+    color: #214579;
+}
+
+.ship-input-readonly {
+    background: #eef2f8;
+    color: #203e70;
+    font-weight: 500;
+}
+
+.ship-preview-label {
+    margin: 1px 0 4px;
+}
+
+.ship-map-panel {
+    border: 1.5px solid #9db2cf;
+    border-radius: 10px;
+    background: #f3f6fa;
+    padding: 8px;
+    margin-top: 8px;
+}
+
+.ship-map-panel.disabled {
+    opacity: 0.75;
+}
+
+.ship-map-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.ship-map-btn {
+    border: none;
+    border-radius: 999px;
+    height: 26px;
+    padding: 0 12px;
+    background: #2d4ea8;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ship-map-btn.secondary {
+    background: #3f608e;
+}
+
+.ship-map-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.ship-map-frame {
+    width: 100%;
+    height: 170px;
+    border: 1.5px solid #a6b9d3;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.ship-map-status {
+    margin-top: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #254a84;
+    min-height: 14px;
+}
+
+.ship-map-status.error {
+    color: #b32727;
+}
+
+.is-hidden {
+    display: none !important;
+}
+
 .service-options {
     display: grid;
     gap: 8px;
@@ -482,6 +609,18 @@ textarea {
 
     .right-col {
         padding-top: 0;
+    }
+
+    .ship-address-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ship-address-field-street {
+        grid-column: auto;
+    }
+
+    .ship-map-frame {
+        height: 150px;
     }
 
     .chatbot {
