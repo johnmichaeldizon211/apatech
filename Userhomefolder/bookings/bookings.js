@@ -891,7 +891,6 @@
                 const payment = escapeHtml(String(item.payment || "-"));
                 const schedule = escapeHtml(String(item.schedule || "-"));
                 const fulfillment = escapeHtml(String(item.fulfillmentStatus || "-"));
-                const trackingEta = escapeHtml(String(item.trackingEta || "Not set"));
                 const trackingLocation = escapeHtml(String(item.trackingLocation || "Not set"));
                 const shippingAddress = escapeHtml(String(item.shippingAddress || "-"));
                 const installmentMetrics = parseInstallmentReceiptMetrics(item);
@@ -967,7 +966,6 @@
                     + serviceLine
                     + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
-                    + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
                     + installmentInfoRows
                     + "<div class=\"hr\"></div>"
@@ -1129,7 +1127,6 @@
                 }
                 writeLine("Status: " + statusLabel);
                 writeLine("Progress: " + String(item.fulfillmentStatus || "-"));
-                writeLine("ETA: " + String(item.trackingEta || "Not set"));
                 writeLine("Location: " + String(item.trackingLocation || "Not set"));
                 if (installmentMetrics) {
                     writeLine("Monthly Payment: " + formatReceiptAmountText(installmentMetrics.monthlyPayment));

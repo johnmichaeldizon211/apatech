@@ -1709,7 +1709,6 @@
       ? `${String(order.status || "-")} (Hulog: ${installmentMetrics.progressLabel})`
       : String(order.status || "-");
     const fulfillment = escapeHtml(String(order.fulfillmentStatus || "-"));
-    const trackingEta = escapeHtml(String(order.trackingEta || "Not set"));
     const trackingLocation = escapeHtml(String(order.trackingLocation || "Not set"));
     const shippingAddress = escapeHtml(String(order.shippingAddress || "-"));
     const totalAmount = installmentMetrics
@@ -1798,7 +1797,6 @@
     ${serviceLine}
     <div class="row"><span class="label">Status</span><span class="value">${escapeHtml(statusLabel)}</span></div>
     <div class="row"><span class="label">Tracking</span><span class="value">${trackingLabel}</span></div>
-    <div class="row"><span class="label">ETA</span><span class="value">${trackingEta}</span></div>
     <div class="row"><span class="label">Location</span><span class="value">${trackingLocation}</span></div>
     <div class="row"><span class="label">Progress</span><span class="value">${fulfillment}</span></div>
     ${installmentInfoRows}
@@ -1954,7 +1952,6 @@
     }
     writeLine(`Status: ${statusLabel}`);
     writeLine(`Tracking: ${trackingLabel}`);
-    writeLine(`ETA: ${String(order.trackingEta || "Not set")}`);
     writeLine(`Location: ${String(order.trackingLocation || "Not set")}`);
     writeLine(`Progress: ${String(order.fulfillmentStatus || "-")}`);
     if (installmentMetrics) {

@@ -2016,6 +2016,17 @@ function getTodayDateOnlyValue() {
     return formatDateOnlyValue(new Date());
 }
 
+function isDateOnlyTomorrowOrLater(value) {
+    const parsed = parseDateOnlyValue(value);
+    if (!parsed) {
+        return false;
+    }
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return parsed.getTime() >= tomorrow.getTime();
+}
+
 function formatDateOnlyForEmail(value) {
     const parsed = parseDateOnlyValue(value);
     if (!parsed) {
@@ -5219,6 +5230,9 @@ async function prepareBookingForInsert(bodyInput, options) {
     if ((scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
         throw createHttpError(400, "Provide a valid schedule date and time.");
     }
+    if (scheduleDate && !isDateOnlyTomorrowOrLater(scheduleDate)) {
+        throw createHttpError(400, "Booking date must be tomorrow or later.");
+    }
 
     if (!opts.skipScheduleCapacity && scheduleDate) {
         const activeBookingsForDate = await countActiveBookingsByScheduleDate(db, scheduleDate, orderId);
@@ -5421,6 +5435,17 @@ async function handleBookingDateAvailability(req, res, parsedUrl) {
         const scheduleDate = normalizeScheduleDate(dateInput);
         if (!scheduleDate) {
             sendJson(res, 400, { success: false, message: "A valid date query parameter is required." });
+            return;
+        }
+        if (!isDateOnlyTomorrowOrLater(scheduleDate)) {
+            sendJson(res, 200, {
+                success: true,
+                date: scheduleDate,
+                maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
+                currentBookings: 0,
+                available: false,
+                message: "Booking date must be tomorrow or later."
+            });
             return;
         }
 

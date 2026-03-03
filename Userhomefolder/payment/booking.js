@@ -17,8 +17,13 @@
     const phoneInput = document.getElementById("phone");
     const scheduleDateInput = document.getElementById("schedule-date");
     const scheduleTimeInput = document.getElementById("schedule-time");
-    const shipAddressInput = document.getElementById("ship-address");
-    const shipLabel = document.querySelector("label[for='ship-address']");
+    const shipAddressTitle = document.getElementById("ship-address-title");
+    const shipAddressGrid = document.getElementById("ship-address-grid");
+    const shipStreetInput = document.getElementById("ship-street");
+    const shipBarangayInput = document.getElementById("ship-barangay");
+    const shipCityInput = document.getElementById("ship-city");
+    const shipProvinceInput = document.getElementById("ship-province");
+    const shipAddressDisplayInput = document.getElementById("ship-address-display");
     const shipMapPanel = document.getElementById("ship-map-panel");
     const shipMapFrame = document.getElementById("ship-map-frame");
     const shipMapStatus = document.getElementById("ship-map-status");
@@ -58,7 +63,13 @@
         !phoneInput ||
         !scheduleDateInput ||
         !scheduleTimeInput ||
-        !shipAddressInput ||
+        !shipAddressTitle ||
+        !shipAddressGrid ||
+        !shipStreetInput ||
+        !shipBarangayInput ||
+        !shipCityInput ||
+        !shipProvinceInput ||
+        !shipAddressDisplayInput ||
         !summaryModel ||
         !summarySubtitle ||
         !summaryImage ||
@@ -100,6 +111,7 @@
     let selectedPayment = "CASH ON DELIVERY";
     let shippingCoords = null;
     let rememberedDeliveryAddress = "";
+    let rememberedDeliveryAddressParts = null;
     let rememberedDeliveryCoords = null;
     let lastMappedAddressToken = "";
     let addressDebounceTimer = null;
@@ -112,6 +124,12 @@
     let scheduleDateAvailabilityRequestId = 0;
     let bookingSubmitInFlight = false;
     const confirmBtnDefaultLabel = confirmBtn.textContent;
+    const deliveryAddressInputs = [
+        shipStreetInput,
+        shipBarangayInput,
+        shipCityInput,
+        shipProvinceInput
+    ];
 
     if (profileBtn && dropdown) {
         profileBtn.addEventListener("click", function (event) {
@@ -199,6 +217,43 @@
         return `${year}-${month}-${day}`;
     }
 
+    function parseLocalDateOnlyInput(value) {
+        const cleaned = String(value || "").trim();
+        const match = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) {
+            return null;
+        }
+
+        const year = Number(match[1]);
+        const month = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        const parsed = new Date(year, month, day, 0, 0, 0, 0);
+        if (
+            Number.isNaN(parsed.getTime())
+            || parsed.getFullYear() !== year
+            || parsed.getMonth() !== month
+            || parsed.getDate() !== day
+        ) {
+            return null;
+        }
+        return parsed;
+    }
+
+    function getTomorrowDateStart() {
+        const tomorrow = new Date();
+        tomorrow.setHours(0, 0, 0, 0);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return tomorrow;
+    }
+
+    function isScheduleDateTomorrowOrLater(dateValue) {
+        const selectedDate = parseLocalDateOnlyInput(dateValue);
+        if (!selectedDate) {
+            return false;
+        }
+        return selectedDate.getTime() >= getTomorrowDateStart().getTime();
+    }
+
     function parseScheduleDateTime(dateValue, timeValue) {
         const dateText = String(dateValue || "").trim();
         const timeText = String(timeValue || "").trim();
@@ -230,14 +285,12 @@
     }
 
     function initializeScheduleInputs() {
-        const now = new Date();
-        const minimumDateValue = formatLocalDateInputValue(now);
+        const minimumDate = getTomorrowDateStart();
+        const minimumDateValue = formatLocalDateInputValue(minimumDate);
         scheduleDateInput.min = minimumDateValue;
 
-        if (!scheduleDateInput.value) {
-            const defaultDate = new Date(now);
-            defaultDate.setDate(defaultDate.getDate() + 1);
-            scheduleDateInput.value = formatLocalDateInputValue(defaultDate);
+        if (!scheduleDateInput.value || !isScheduleDateTomorrowOrLater(scheduleDateInput.value)) {
+            scheduleDateInput.value = minimumDateValue;
         }
 
         if (!scheduleTimeInput.value) {
@@ -341,6 +394,18 @@
         const dateValue = String((settings.dateValue !== undefined ? settings.dateValue : scheduleDateInput.value) || "").trim();
         if (!dateValue) {
             return true;
+        }
+        if (!isScheduleDateTomorrowOrLater(dateValue)) {
+            if (settings.resetDateOnLimit) {
+                scheduleDateInput.value = "";
+            }
+            if (settings.showErrors) {
+                showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+            }
+            if (settings.focusInput) {
+                scheduleDateInput.focus();
+            }
+            return false;
         }
 
         const requestId = ++scheduleDateAvailabilityRequestId;
@@ -460,9 +525,16 @@
         }
         if (profile.address) {
             rememberedDeliveryAddress = profile.address;
-            if (!shipAddressInput.value) {
-                shipAddressInput.value = profile.address;
+            rememberedDeliveryAddressParts = {
+                street: profile.address,
+                barangay: "",
+                city: "",
+                province: ""
+            };
+            if (!shipStreetInput.value) {
+                shipStreetInput.value = profile.address;
             }
+            updateDeliveryAddressPreview();
         }
     }
 
@@ -580,10 +652,125 @@
             + encodeURIComponent(markerLng);
     }
 
-    function setAddressLabel(text) {
-        if (shipLabel) {
-            shipLabel.textContent = String(text || "");
+    function normalizeAddressPart(value) {
+        return String(value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function parseAddressIntoParts(address) {
+        const normalizedAddress = normalizeAddressPart(address);
+        if (!normalizedAddress) {
+            return {
+                street: "",
+                barangay: "",
+                city: "",
+                province: ""
+            };
         }
+
+        const segments = normalizedAddress
+            .split(",")
+            .map(function (part) {
+                return normalizeAddressPart(part);
+            })
+            .filter(Boolean);
+
+        if (segments.length >= 4) {
+            return {
+                street: segments.slice(0, segments.length - 3).join(", "),
+                barangay: segments[segments.length - 3],
+                city: segments[segments.length - 2],
+                province: segments[segments.length - 1]
+            };
+        }
+
+        if (segments.length === 3) {
+            return {
+                street: segments[0],
+                barangay: segments[1],
+                city: segments[2],
+                province: ""
+            };
+        }
+
+        if (segments.length === 2) {
+            return {
+                street: segments[0],
+                barangay: segments[1],
+                city: "",
+                province: ""
+            };
+        }
+
+        return {
+            street: normalizedAddress,
+            barangay: "",
+            city: "",
+            province: ""
+        };
+    }
+
+    function getDeliveryAddressParts() {
+        return {
+            street: normalizeAddressPart(shipStreetInput.value),
+            barangay: normalizeAddressPart(shipBarangayInput.value),
+            city: normalizeAddressPart(shipCityInput.value),
+            province: normalizeAddressPart(shipProvinceInput.value)
+        };
+    }
+
+    function composeDeliveryAddress(partsInput) {
+        const parts = partsInput && typeof partsInput === "object"
+            ? partsInput
+            : getDeliveryAddressParts();
+        return [
+            normalizeAddressPart(parts.street),
+            normalizeAddressPart(parts.barangay),
+            normalizeAddressPart(parts.city),
+            normalizeAddressPart(parts.province)
+        ].filter(Boolean).join(", ");
+    }
+
+    function hasCompleteDeliveryAddressParts(partsInput) {
+        const parts = partsInput && typeof partsInput === "object"
+            ? partsInput
+            : getDeliveryAddressParts();
+        return Boolean(
+            normalizeAddressPart(parts.street)
+            && normalizeAddressPart(parts.barangay)
+            && normalizeAddressPart(parts.city)
+            && normalizeAddressPart(parts.province)
+        );
+    }
+
+    function setDeliveryAddressParts(partsInput) {
+        const parts = partsInput && typeof partsInput === "object" ? partsInput : {};
+        shipStreetInput.value = normalizeAddressPart(parts.street);
+        shipBarangayInput.value = normalizeAddressPart(parts.barangay);
+        shipCityInput.value = normalizeAddressPart(parts.city);
+        shipProvinceInput.value = normalizeAddressPart(parts.province);
+    }
+
+    function updateDeliveryAddressPreview() {
+        const composedAddress = composeDeliveryAddress();
+        shipAddressDisplayInput.value = composedAddress;
+        return composedAddress;
+    }
+
+    function setAddressSectionLabel(text) {
+        if (shipAddressTitle) {
+            shipAddressTitle.textContent = String(text || "");
+        }
+    }
+
+    function setDeliveryAddressFieldsVisible(visible) {
+        shipAddressGrid.classList.toggle("is-hidden", !visible);
+    }
+
+    function setDeliveryAddressFieldsEnabled(enabled) {
+        deliveryAddressInputs.forEach(function (input) {
+            input.disabled = !enabled;
+            input.readOnly = !enabled;
+        });
     }
 
     function setShippingCoords(lat, lng) {
@@ -600,10 +787,16 @@
     }
 
     function applyPickupLocationState(statusMessage) {
-        shipAddressInput.disabled = false;
-        shipAddressInput.readOnly = true;
-        shipAddressInput.value = PICKUP_SHOP_ADDRESS;
-        shipAddressInput.placeholder = PICKUP_SHOP_ADDRESS;
+        setDeliveryAddressFieldsVisible(false);
+        setDeliveryAddressFieldsEnabled(false);
+        setDeliveryAddressParts({
+            street: PICKUP_SHOP_ADDRESS,
+            barangay: "",
+            city: "",
+            province: ""
+        });
+        shipAddressDisplayInput.value = PICKUP_SHOP_ADDRESS;
+        shipAddressDisplayInput.placeholder = PICKUP_SHOP_ADDRESS;
         setMapEnabled(true);
         findAddressBtn.textContent = "Open Shop Map";
         useLocationBtn.disabled = true;
@@ -695,7 +888,9 @@
     }
 
     function rememberCurrentDeliveryState() {
-        const address = (shipAddressInput.value || "").trim();
+        const parts = getDeliveryAddressParts();
+        const address = composeDeliveryAddress(parts);
+        rememberedDeliveryAddressParts = parts;
         if (address) {
             rememberedDeliveryAddress = address;
         }
@@ -730,12 +925,17 @@
     }
 
     function markAddressAsChanged() {
-        const currentToken = (shipAddressInput.value || "").trim().toLowerCase();
-        if (!currentToken || currentToken === lastMappedAddressToken) {
+        const currentToken = composeDeliveryAddress().toLowerCase();
+        if (currentToken === lastMappedAddressToken) {
             return;
         }
         shippingCoords = null;
         rememberedDeliveryCoords = null;
+        if (!currentToken) {
+            lastMappedAddressToken = "";
+            setMapStatus("Complete the delivery address fields first.", false);
+            return;
+        }
         setMapStatus("Address changed. Click Find on Map to refresh location.", false);
     }
 
@@ -756,6 +956,7 @@
             const lng = Number(coords.lng);
 
             updateMapFrame(lat, lng, "Location found on map.");
+            rememberedDeliveryAddressParts = getDeliveryAddressParts();
             rememberedDeliveryAddress = trimmed;
             lastMappedAddressToken = trimmed.toLowerCase();
             return {
@@ -781,10 +982,49 @@
             headers: { "Accept": "application/json" }
         });
         if (!response.ok) {
-            return "";
+            return null;
         }
         const payload = await response.json();
-        return String((payload && payload.display_name) || "").trim();
+        const address = payload && payload.address && typeof payload.address === "object"
+            ? payload.address
+            : {};
+        const displayName = normalizeAddressPart((payload && payload.display_name) || "");
+
+        const streetToken = normalizeAddressPart(
+            [address.house_number, address.road].filter(Boolean).join(" ")
+            || address.pedestrian
+            || address.neighbourhood
+            || ""
+        );
+        const barangayToken = normalizeAddressPart(
+            address.suburb
+            || address.village
+            || address.quarter
+            || address.city_district
+            || address.neighbourhood
+            || ""
+        );
+        const cityToken = normalizeAddressPart(
+            address.city
+            || address.town
+            || address.municipality
+            || address.county
+            || ""
+        );
+        const provinceToken = normalizeAddressPart(
+            address.state
+            || address.region
+            || ""
+        );
+
+        const fallbackParts = parseAddressIntoParts(displayName);
+        return {
+            displayName: displayName,
+            street: streetToken || fallbackParts.street,
+            barangay: barangayToken || fallbackParts.barangay,
+            city: cityToken || fallbackParts.city,
+            province: provinceToken || fallbackParts.province
+        };
     }
 
     function scheduleAddressMapLookup() {
@@ -795,8 +1035,8 @@
             if (selectedService !== "Delivery") {
                 return;
             }
-            const value = (shipAddressInput.value || "").trim();
-            if (value.length < 8) {
+            const value = composeDeliveryAddress();
+            if (value.length < 8 || !hasCompleteDeliveryAddressParts()) {
                 return;
             }
             geocodeAddress(value, { silent: true });
@@ -819,16 +1059,33 @@
         syncPaymentAvailability();
 
         if (selectedService === "Delivery") {
-            setAddressLabel("Shipping Address");
-            shipAddressInput.disabled = false;
-            shipAddressInput.readOnly = false;
-            shipAddressInput.placeholder = "Enter shipping address";
+            setAddressSectionLabel("Delivery Address");
+            setDeliveryAddressFieldsVisible(true);
+            setDeliveryAddressFieldsEnabled(true);
+            shipAddressDisplayInput.readOnly = true;
+            shipAddressDisplayInput.placeholder = "Complete address will appear here";
             setMapEnabled(true);
             findAddressBtn.textContent = "Find on Map";
             useLocationBtn.disabled = false;
 
-            if ((shipAddressInput.value || "").trim() === PICKUP_SHOP_ADDRESS) {
-                shipAddressInput.value = rememberedDeliveryAddress || "";
+            if (normalizeAddressPart(shipStreetInput.value) === PICKUP_SHOP_ADDRESS) {
+                if (rememberedDeliveryAddressParts && hasCompleteDeliveryAddressParts(rememberedDeliveryAddressParts)) {
+                    setDeliveryAddressParts(rememberedDeliveryAddressParts);
+                } else if (rememberedDeliveryAddress) {
+                    setDeliveryAddressParts({
+                        street: rememberedDeliveryAddress,
+                        barangay: "",
+                        city: "",
+                        province: ""
+                    });
+                } else {
+                    setDeliveryAddressParts({
+                        street: "",
+                        barangay: "",
+                        city: "",
+                        province: ""
+                    });
+                }
                 shippingCoords = rememberedDeliveryCoords
                     ? {
                         lat: rememberedDeliveryCoords.lat,
@@ -837,20 +1094,33 @@
                     : null;
             }
 
-            if (!shipAddressInput.value && rememberedDeliveryAddress) {
-                shipAddressInput.value = rememberedDeliveryAddress;
+            const currentAddressParts = getDeliveryAddressParts();
+            if (
+                !hasCompleteDeliveryAddressParts(currentAddressParts)
+                && rememberedDeliveryAddressParts
+                && hasCompleteDeliveryAddressParts(rememberedDeliveryAddressParts)
+            ) {
+                setDeliveryAddressParts(rememberedDeliveryAddressParts);
+            } else if (!normalizeAddressPart(shipStreetInput.value) && rememberedDeliveryAddress) {
+                shipStreetInput.value = rememberedDeliveryAddress;
             }
+            const composedAddress = updateDeliveryAddressPreview();
 
             if (!shippingCoords && rememberedDeliveryCoords) {
                 updateMapFrame(rememberedDeliveryCoords.lat, rememberedDeliveryCoords.lng, "Delivery location restored.");
             } else if (!shippingCoords) {
-                setMapStatus("Map preview updates when you change the address.", false);
+                setMapStatus(
+                    composedAddress
+                        ? "Map preview updates when you change the address."
+                        : "Complete delivery address fields, then click Find on Map.",
+                    false
+                );
             }
             return;
         }
 
         if (selectedService === "Pick Up") {
-            setAddressLabel("Pick Up Location");
+            setAddressSectionLabel("Pick Up Location");
             applyPickupLocationState("Pick up location pinned to Ecodrive shop.");
             void resolvePickupCoordinates().then(function (coords) {
                 if (coords && selectedService === "Pick Up") {
@@ -860,27 +1130,45 @@
             return;
         }
 
-        setAddressLabel("Shipping Address");
-        shipAddressInput.readOnly = true;
-        shipAddressInput.disabled = true;
-        shipAddressInput.value = "";
+        setAddressSectionLabel("Shipping Address");
+        setDeliveryAddressFieldsVisible(true);
+        setDeliveryAddressFieldsEnabled(false);
+        setDeliveryAddressParts({
+            street: "",
+            barangay: "",
+            city: "",
+            province: ""
+        });
+        shipAddressDisplayInput.value = "";
+        shipAddressDisplayInput.readOnly = true;
         shippingCoords = null;
         lastMappedAddressToken = "";
         setMapEnabled(false);
         findAddressBtn.textContent = "Find on Map";
 
         if (selectedService === "Installment") {
-            shipAddressInput.placeholder = "Installment flow will continue";
+            shipAddressDisplayInput.placeholder = "Installment flow will continue";
             setMapStatus("Shipping map is not required for installment.", false);
         } else {
-            shipAddressInput.placeholder = "Not needed";
+            shipAddressDisplayInput.placeholder = "Not needed";
             setMapStatus("Shipping map is not required.", false);
         }
     }
 
     function clearError() {
         formError.textContent = "";
-        [fullNameInput, emailInput, phoneInput, scheduleDateInput, scheduleTimeInput, shipAddressInput].forEach(function (input) {
+        [
+            fullNameInput,
+            emailInput,
+            phoneInput,
+            scheduleDateInput,
+            scheduleTimeInput,
+            shipStreetInput,
+            shipBarangayInput,
+            shipCityInput,
+            shipProvinceInput,
+            shipAddressDisplayInput
+        ].forEach(function (input) {
             input.classList.remove("invalid");
         });
     }
@@ -1092,7 +1380,7 @@
             && Number.isFinite(shippingCoords.lng);
         const hasShippingCoordinates = hasDeliveryCoordinates || hasPickupCoordinates;
         const shippingAddress = selectedService === "Delivery"
-            ? (shipAddressInput.value || "").trim()
+            ? composeDeliveryAddress()
             : (selectedService === "Pick Up" ? PICKUP_SHOP_ADDRESS : "");
 
         return {
@@ -1158,6 +1446,10 @@
             showError(scheduleDateInput, "Please select your preferred booking date.");
             return false;
         }
+        if (!isScheduleDateTomorrowOrLater(scheduleDate)) {
+            showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+            return false;
+        }
         if (!scheduleTime) {
             showError(scheduleTimeInput, "Please select your preferred booking time.");
             return false;
@@ -1174,11 +1466,24 @@
         }
 
         if (selectedService === "Delivery") {
-            const address = (shipAddressInput.value || "").trim();
-            if (!address) {
-                showError(shipAddressInput, "Shipping address is required for delivery.");
+            const addressParts = getDeliveryAddressParts();
+            if (!normalizeAddressPart(addressParts.street)) {
+                showError(shipStreetInput, "House / Street is required for delivery.");
                 return false;
             }
+            if (!normalizeAddressPart(addressParts.barangay)) {
+                showError(shipBarangayInput, "Barangay is required for delivery.");
+                return false;
+            }
+            if (!normalizeAddressPart(addressParts.city)) {
+                showError(shipCityInput, "City / Municipality is required for delivery.");
+                return false;
+            }
+            if (!normalizeAddressPart(addressParts.province)) {
+                showError(shipProvinceInput, "Province is required for delivery.");
+                return false;
+            }
+            updateDeliveryAddressPreview();
         }
 
         return true;
@@ -1214,6 +1519,11 @@
         if (!selectedDate) {
             return;
         }
+        if (!isScheduleDateTomorrowOrLater(selectedDate)) {
+            scheduleDateInput.value = "";
+            showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+            return;
+        }
         await ensureScheduleDateAvailable({
             dateValue: selectedDate,
             showErrors: true,
@@ -1222,23 +1532,26 @@
         });
     });
 
-    shipAddressInput.addEventListener("input", function () {
-        if (selectedService !== "Delivery") {
-            return;
-        }
-        markAddressAsChanged();
-        scheduleAddressMapLookup();
-    });
+    deliveryAddressInputs.forEach(function (input) {
+        input.addEventListener("input", function () {
+            if (selectedService !== "Delivery") {
+                return;
+            }
+            updateDeliveryAddressPreview();
+            markAddressAsChanged();
+            scheduleAddressMapLookup();
+        });
 
-    shipAddressInput.addEventListener("blur", function () {
-        if (selectedService !== "Delivery") {
-            return;
-        }
-        const address = (shipAddressInput.value || "").trim();
-        if (!address || shippingCoords) {
-            return;
-        }
-        geocodeAddress(address, { silent: true });
+        input.addEventListener("blur", function () {
+            if (selectedService !== "Delivery") {
+                return;
+            }
+            const address = composeDeliveryAddress();
+            if (!address || shippingCoords || !hasCompleteDeliveryAddressParts()) {
+                return;
+            }
+            geocodeAddress(address, { silent: true });
+        });
     });
 
     findAddressBtn.addEventListener("click", async function () {
@@ -1257,13 +1570,30 @@
             return;
         }
 
-        const address = (shipAddressInput.value || "").trim();
-        if (!address) {
-            setMapStatus("Enter a shipping address first.", true);
-            shipAddressInput.focus();
+        const addressParts = getDeliveryAddressParts();
+        if (!normalizeAddressPart(addressParts.street)) {
+            setMapStatus("Enter your House / Street first.", true);
+            shipStreetInput.focus();
+            return;
+        }
+        if (!normalizeAddressPart(addressParts.barangay)) {
+            setMapStatus("Enter your Barangay first.", true);
+            shipBarangayInput.focus();
+            return;
+        }
+        if (!normalizeAddressPart(addressParts.city)) {
+            setMapStatus("Enter your City / Municipality first.", true);
+            shipCityInput.focus();
+            return;
+        }
+        if (!normalizeAddressPart(addressParts.province)) {
+            setMapStatus("Enter your Province first.", true);
+            shipProvinceInput.focus();
             return;
         }
 
+        const address = composeDeliveryAddress(addressParts);
+        updateDeliveryAddressPreview();
         await geocodeAddress(address, { silent: false });
     });
 
@@ -1286,11 +1616,36 @@
 
                 try {
                     const resolvedAddress = await reverseGeocode(lat, lng);
-                    if (resolvedAddress) {
-                        shipAddressInput.value = resolvedAddress;
-                        rememberedDeliveryAddress = resolvedAddress;
-                        lastMappedAddressToken = resolvedAddress.toLowerCase();
-                        setMapStatus("Current location and address loaded.", false);
+                    if (resolvedAddress && typeof resolvedAddress === "object") {
+                        const nextParts = {
+                            street: resolvedAddress.street,
+                            barangay: resolvedAddress.barangay,
+                            city: resolvedAddress.city,
+                            province: resolvedAddress.province
+                        };
+                        const completeFromReverse = hasCompleteDeliveryAddressParts(nextParts);
+                        if (completeFromReverse) {
+                            setDeliveryAddressParts(nextParts);
+                        } else {
+                            const fallbackParts = parseAddressIntoParts(resolvedAddress.displayName || "");
+                            setDeliveryAddressParts({
+                                street: nextParts.street || fallbackParts.street,
+                                barangay: nextParts.barangay || fallbackParts.barangay,
+                                city: nextParts.city || fallbackParts.city,
+                                province: nextParts.province || fallbackParts.province
+                            });
+                        }
+
+                        const composedAddress = updateDeliveryAddressPreview();
+                        rememberedDeliveryAddressParts = getDeliveryAddressParts();
+                        rememberedDeliveryAddress = composedAddress || normalizeAddressPart(resolvedAddress.displayName);
+                        lastMappedAddressToken = (composedAddress || normalizeAddressPart(resolvedAddress.displayName)).toLowerCase();
+                        setMapStatus(
+                            hasCompleteDeliveryAddressParts()
+                                ? "Current location and address loaded."
+                                : "Location pinned. Complete missing address fields if needed.",
+                            false
+                        );
                     }
                 } catch (_error) {
                     setMapStatus("Location pinned, but address lookup is unavailable.", false);
@@ -1331,9 +1686,9 @@
             }
 
             if (selectedService === "Delivery" && !shippingCoords) {
-                const resolved = await geocodeAddress(shipAddressInput.value, { silent: false });
+                const resolved = await geocodeAddress(composeDeliveryAddress(), { silent: false });
                 if (!resolved) {
-                    showError(shipAddressInput, "Please select a valid shipping location from the map.");
+                    showError(shipStreetInput, "Please select a valid shipping location from the map.");
                     return;
                 }
             }
@@ -1366,8 +1721,9 @@
     seedCustomerInfo();
     initializeScheduleInputs();
     renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
-    if (shipAddressInput.value) {
-        geocodeAddress(shipAddressInput.value, { silent: true });
+    updateDeliveryAddressPreview();
+    if (hasCompleteDeliveryAddressParts()) {
+        geocodeAddress(composeDeliveryAddress(), { silent: true });
     }
     updateSummary();
 })();

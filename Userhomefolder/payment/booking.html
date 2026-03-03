@@ -93,8 +93,27 @@
 
             <img id="summary-image" src="../image 1.png" alt="Selected E-Bike">
 
-            <label class="ship-label" for="ship-address">Shipping Address</label>
-            <input class="ship-input" id="ship-address" type="text" placeholder="Enter shipping address">
+            <label class="ship-label ship-title" id="ship-address-title" for="ship-street">Delivery Address</label>
+            <section class="ship-address-grid" id="ship-address-grid" aria-label="Delivery address fields">
+                <div class="ship-address-field ship-address-field-street">
+                    <label for="ship-street">House / Street</label>
+                    <input class="ship-input" id="ship-street" type="text" placeholder="House no., street, subdivision">
+                </div>
+                <div class="ship-address-field">
+                    <label for="ship-barangay">Barangay</label>
+                    <input class="ship-input" id="ship-barangay" type="text" placeholder="Barangay">
+                </div>
+                <div class="ship-address-field">
+                    <label for="ship-city">City / Municipality</label>
+                    <input class="ship-input" id="ship-city" type="text" placeholder="City or municipality">
+                </div>
+                <div class="ship-address-field">
+                    <label for="ship-province">Province</label>
+                    <input class="ship-input" id="ship-province" type="text" placeholder="Province">
+                </div>
+            </section>
+            <label class="ship-label ship-preview-label" for="ship-address-display">Full Address</label>
+            <input class="ship-input ship-input-readonly" id="ship-address-display" type="text" placeholder="Complete address will appear here" readonly>
 
             <section class="ship-map-panel" id="ship-map-panel" aria-label="Shipping address map">
                 <div class="ship-map-actions">
@@ -121,7 +140,7 @@
         </aside>
     </main>
     <script src="../../session.js"></script>
-    <script src="booking.js?v=20260228a"></script>
+    <script src="booking.js?v=20260303a"></script>
 </body>
 </html>
 

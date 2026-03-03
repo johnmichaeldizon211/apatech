@@ -875,7 +875,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const payment = escapeHtml(String((booking && booking.payment) || "-"));
         const schedule = escapeHtml(formatScheduleFromRecord(booking));
         const fulfillment = escapeHtml(String((booking && booking.fulfillmentStatus) || "-"));
-        const trackingEta = escapeHtml(String((booking && booking.trackingEta) || "Not set"));
         const trackingLocation = escapeHtml(String((booking && booking.trackingLocation) || "Not set"));
         const shippingAddress = escapeHtml(String((booking && booking.shippingAddress) || "-"));
         const installmentSummary = getInstallmentReceiptSummary(booking);
@@ -942,7 +941,6 @@ document.addEventListener("DOMContentLoaded", function () {
             + serviceLine
             + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
-            + "<div class=\"row\"><span class=\"label\">ETA</span><span class=\"value\">" + trackingEta + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
             + installmentInfoRows
             + "<div class=\"hr\"></div>"
@@ -1094,7 +1092,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         writeLine("Status: " + statusLabel);
         writeLine("Progress: " + String((booking && booking.fulfillmentStatus) || "-"));
-        writeLine("ETA: " + String((booking && booking.trackingEta) || "Not set"));
         writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));
         if (installmentSummary) {
             writeLine("Monthly Payment: " + formatReceiptAmountText(installmentSummary.monthlyPayment));
