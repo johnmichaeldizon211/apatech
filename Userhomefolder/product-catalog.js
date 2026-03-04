@@ -2,6 +2,11 @@
     "use strict";
 
     const STORAGE_KEY = "ecodrive_product_catalog";
+    const CHECKOUT_SELECTION_KEYS = [
+        "ecodrive_checkout_selection",
+        "ecodrive_selected_bike",
+        "selectedBike"
+    ];
     const ROOT = document.documentElement;
     const CURRENT_FILE = String((window.location.pathname || "").split("/").pop() || "").toLowerCase();
     const IS_USERHOME_CATALOG_PAGE = CURRENT_FILE.startsWith("userhome2");
@@ -121,6 +126,10 @@
             return 0;
         }
         return Number(parsed.toFixed(2));
+    }
+
+    function isInlineDataImage(value) {
+        return /^data:image\//i.test(String(value || "").trim());
     }
 
     function toIsActive(value) {
@@ -333,10 +342,32 @@
         const params = new URLSearchParams();
         params.set("model", product.model || "Ecodrive E-Bike");
         params.set("price", String(Number(product.price || 0)));
-        params.set("image", resolveAssetPath(product.imageUrl || getDefaultImageForModel(product.model)));
+        const imageForQuery = resolveAssetPath(product.imageUrl || getDefaultImageForModel(product.model));
+        if (imageForQuery && !isInlineDataImage(imageForQuery) && imageForQuery.length <= 1000) {
+            params.set("image", imageForQuery);
+        }
         params.set("subtitle", product.category || "E-Bike");
         params.set("info", product.info || "");
         return resolveAssetPath("/Userhomefolder/payment/booking.html") + "?" + params.toString();
+    }
+
+    function buildCheckoutSelection(product) {
+        const image = resolveAssetPath(product.imageUrl || getDefaultImageForModel(product.model));
+        return {
+            model: String(product.model || "Ecodrive E-Bike"),
+            total: Number(product.price || 0),
+            image: image,
+            bikeImage: image,
+            subtitle: String(product.category || "E-Bike"),
+            info: String(product.info || "")
+        };
+    }
+
+    function persistCheckoutSelection(product) {
+        const selection = buildCheckoutSelection(product);
+        CHECKOUT_SELECTION_KEYS.forEach(function (key) {
+            localStorage.setItem(key, JSON.stringify(selection));
+        });
     }
 
     function getProductActionUrl(product) {
@@ -388,6 +419,7 @@
         button.type = "button";
         button.textContent = "Book Now";
         button.addEventListener("click", function () {
+            persistCheckoutSelection(product);
             window.location.href = getProductActionUrl(product);
         });
         body.appendChild(button);

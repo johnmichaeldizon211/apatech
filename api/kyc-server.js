@@ -1211,7 +1211,7 @@ async function ensureDbSchema() {
                 phone VARCHAR(20) NOT NULL,
                 model VARCHAR(180) NOT NULL,
                 bike_color VARCHAR(64) NULL,
-                bike_image VARCHAR(255) NULL,
+                bike_image MEDIUMTEXT NULL,
                 subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -1262,6 +1262,14 @@ async function ensureDbSchema() {
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add bookings.bike_color automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings MODIFY COLUMN bike_image MEDIUMTEXT NULL"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to widen bookings.bike_image automatically:", alterError.message || alterError);
         }
 
         try {
@@ -5714,7 +5722,7 @@ async function prepareBookingForInsert(bodyInput, options) {
     const phone = normalizeMobile(body.phone);
     const model = normalizeText(body.model || body.productName || body.itemName || "Ecodrive E-Bike");
     const bikeColor = normalizeText(body.bikeColor || body.color || body.selectedColor || body.bike_color).slice(0, 64);
-    const bikeImage = normalizeText(body.bikeImage || body.image || body.img);
+    const bikeImage = normalizeProductImage(body.bikeImage || body.image || body.img);
     const serviceType = normalizeServiceType(body.service);
     const forcedPaymentMethod = normalizeWalletPaymentMethod(opts.paymentMethod || "");
     const paymentMethod = (
