@@ -30,8 +30,8 @@
     var CHAT_SYNC_INTERVAL_MS = 3000;
     var CHAT_MAX_LOCAL_MESSAGES = 180;
     var CHAT_MAX_PUSH_BATCH = 60;
-    var CHAT_MAX_MEDIA_BYTES = 4 * 1024 * 1024;
-    var CHAT_MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
+    var CHAT_MAX_MEDIA_BYTES = Number.POSITIVE_INFINITY;
+    var CHAT_MAX_MEDIA_DATA_URL_LENGTH = Number.POSITIVE_INFINITY;
     var CHAT_ALLOWED_MEDIA_TYPES = {
         image: true,
         video: true,
@@ -144,9 +144,10 @@
             ".chat-suggestions.is-hidden{display:none;}",
             ".chat-suggestion-btn{border:1.5px solid #3557a1;background:#f4f7ff;color:#123f79;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;}",
             ".chat-suggestion-btn:hover{background:#e8eeff;}",
-            ".chat-form.ecodrive-chat-media-ready{display:grid;grid-template-columns:auto auto 1fr auto;gap:7px;align-items:center;}",
+            ".chat-form.ecodrive-chat-media-ready{display:grid;grid-template-columns:auto auto auto 1fr auto;gap:7px;align-items:center;}",
             ".chat-form.ecodrive-chat-media-ready input[type='text']{min-width:0;}",
-            ".chat-media-btn,.chat-voice-btn{height:34px;min-width:70px;border:1.5px solid #3353a6;background:#eef3ff;color:#143b80;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;padding:0 10px;}",
+            ".chat-media-btn,.chat-voice-btn{height:34px;width:34px;min-width:34px;border:1.5px solid #3353a6;background:#eef3ff;color:#143b80;border-radius:999px;font-size:16px;font-weight:700;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;}",
+            ".chat-media-btn span,.chat-voice-btn span{pointer-events:none;}",
             ".chat-voice-btn.recording{background:#ffe7e7;border-color:#b42318;color:#8f1d1d;}",
             ".chat-media-status{grid-column:1/-1;font-size:11px;color:#2348c7;line-height:1.35;padding:2px 0 0;word-break:break-word;}",
             ".chat-media-status.error{color:#b42318;}",
@@ -484,17 +485,43 @@
             mediaInput = global.document.createElement("input");
             mediaInput.type = "file";
             mediaInput.className = "chat-media-input";
-            mediaInput.accept = "image/*,video/*,audio/*";
+            mediaInput.accept = "image/*,video/*";
             mediaInput.style.display = "none";
             form.appendChild(mediaInput);
         }
 
-        var mediaBtn = form.querySelector(".chat-media-btn");
+        var cameraInput = form.querySelector(".chat-camera-input");
+        if (!cameraInput) {
+            cameraInput = global.document.createElement("input");
+            cameraInput.type = "file";
+            cameraInput.className = "chat-camera-input";
+            cameraInput.accept = "image/*";
+            cameraInput.setAttribute("capture", "environment");
+            cameraInput.style.display = "none";
+            form.appendChild(cameraInput);
+        }
+
+        var cameraBtn = form.querySelector(".chat-camera-btn");
+        if (!cameraBtn) {
+            cameraBtn = global.document.createElement("button");
+            cameraBtn.type = "button";
+            cameraBtn.className = "chat-media-btn chat-camera-btn";
+            cameraBtn.innerHTML = "<span aria-hidden=\"true\">&#128247;</span>";
+            cameraBtn.setAttribute("aria-label", "Take a photo");
+            if (input.parentNode === form) {
+                form.insertBefore(cameraBtn, input);
+            } else {
+                form.appendChild(cameraBtn);
+            }
+        }
+
+        var mediaBtn = form.querySelector(".chat-gallery-btn");
         if (!mediaBtn) {
             mediaBtn = global.document.createElement("button");
             mediaBtn.type = "button";
-            mediaBtn.className = "chat-media-btn";
-            mediaBtn.textContent = "Media";
+            mediaBtn.className = "chat-media-btn chat-gallery-btn";
+            mediaBtn.innerHTML = "<span aria-hidden=\"true\">&#128443;</span>";
+            mediaBtn.setAttribute("aria-label", "Send image or video");
             if (input.parentNode === form) {
                 form.insertBefore(mediaBtn, input);
             } else {
@@ -507,7 +534,8 @@
             voiceBtn = global.document.createElement("button");
             voiceBtn.type = "button";
             voiceBtn.className = "chat-voice-btn";
-            voiceBtn.textContent = "Voice";
+            voiceBtn.innerHTML = "<span aria-hidden=\"true\">&#127908;</span>";
+            voiceBtn.setAttribute("aria-label", "Record voice message");
             if (input.parentNode === form) {
                 form.insertBefore(voiceBtn, input);
             } else {
@@ -537,10 +565,20 @@
                 chunks: []
             };
 
+            function setVoiceButtonIdleState() {
+                voiceBtn.innerHTML = "<span aria-hidden=\"true\">&#127908;</span>";
+                voiceBtn.setAttribute("aria-label", "Record voice message");
+            }
+
+            function setVoiceButtonRecordingState() {
+                voiceBtn.innerHTML = "<span aria-hidden=\"true\">&#9632;</span>";
+                voiceBtn.setAttribute("aria-label", "Stop voice recording");
+            }
+
             async function sendMediaData(dataUrl, requestedType, mediaNameInput, mediaSizeBytesInput) {
                 var normalized = normalizeChatMediaDataUrl(dataUrl, requestedType);
                 if (!normalized) {
-                    setMediaStatus("Unsupported media file. Use image, video, or audio up to 4MB.", true);
+                    setMediaStatus("Unsupported media file. Use image, video, or audio.", true);
                     return;
                 }
 
@@ -560,25 +598,20 @@
                 }
             }
 
+            cameraBtn.addEventListener("click", function () {
+                setMediaStatus("", false);
+                cameraInput.click();
+            });
+
             mediaBtn.addEventListener("click", function () {
                 setMediaStatus("", false);
                 mediaInput.click();
             });
 
-            mediaInput.addEventListener("change", async function () {
-                var selected = mediaInput.files && mediaInput.files[0] ? mediaInput.files[0] : null;
-                mediaInput.value = "";
-                if (!selected) {
-                    return;
-                }
-
-                var mediaType = resolveMediaTypeFromFile(selected);
+            async function handleSelectedMediaFile(selected, forcedMediaType) {
+                var mediaType = forcedMediaType || resolveMediaTypeFromFile(selected);
                 if (!mediaType) {
                     setMediaStatus("Unsupported file type. Only image, video, and audio are allowed.", true);
-                    return;
-                }
-                if (selected.size > CHAT_MAX_MEDIA_BYTES) {
-                    setMediaStatus("File is too large. Maximum is 4MB.", true);
                     return;
                 }
 
@@ -589,12 +622,30 @@
                 } catch (error) {
                     setMediaStatus(error && error.message ? error.message : "Unable to read file.", true);
                 }
+            }
+
+            mediaInput.addEventListener("change", async function () {
+                var selected = mediaInput.files && mediaInput.files[0] ? mediaInput.files[0] : null;
+                mediaInput.value = "";
+                if (!selected) {
+                    return;
+                }
+                await handleSelectedMediaFile(selected, "");
+            });
+
+            cameraInput.addEventListener("change", async function () {
+                var selected = cameraInput.files && cameraInput.files[0] ? cameraInput.files[0] : null;
+                cameraInput.value = "";
+                if (!selected) {
+                    return;
+                }
+                await handleSelectedMediaFile(selected, "image");
             });
 
             function resetVoiceState() {
                 voiceState.recording = false;
                 voiceBtn.classList.remove("recording");
-                voiceBtn.textContent = "Voice";
+                setVoiceButtonIdleState();
                 if (voiceState.stream && typeof voiceState.stream.getTracks === "function") {
                     voiceState.stream.getTracks().forEach(function (track) {
                         try {
@@ -615,7 +666,8 @@
                 }
                 var recorder = voiceState.mediaRecorder;
                 voiceState.recording = false;
-                voiceBtn.textContent = "Processing...";
+                voiceBtn.innerHTML = "<span aria-hidden=\"true\">&#8987;</span>";
+                voiceBtn.setAttribute("aria-label", "Processing voice message");
                 voiceBtn.classList.remove("recording");
 
                 await new Promise(function (resolve) {
@@ -636,10 +688,6 @@
                     setMediaStatus("Voice recording is empty. Try again.", true);
                     return;
                 }
-                if (blob.size > CHAT_MAX_MEDIA_BYTES) {
-                    setMediaStatus("Voice recording is too large. Maximum is 4MB.", true);
-                    return;
-                }
 
                 setMediaStatus("Uploading voice message...", false);
                 try {
@@ -648,7 +696,7 @@
                 } catch (error) {
                     setMediaStatus(error && error.message ? error.message : "Unable to process voice recording.", true);
                 } finally {
-                    voiceBtn.textContent = "Voice";
+                    setVoiceButtonIdleState();
                 }
             }
 
@@ -692,13 +740,15 @@
                     recorder.start();
 
                     voiceBtn.classList.add("recording");
-                    voiceBtn.textContent = "Stop";
+                    setVoiceButtonRecordingState();
                     setMediaStatus("Recording voice... click Stop when done.", false);
                 } catch (error) {
                     resetVoiceState();
                     setMediaStatus(error && error.message ? error.message : "Unable to access microphone.", true);
                 }
             }
+
+            setVoiceButtonIdleState();
 
             voiceBtn.addEventListener("click", function () {
                 if (voiceState.recording) {

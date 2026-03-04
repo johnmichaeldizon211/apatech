@@ -35,8 +35,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const CHAT_MODE_BOT = "bot";
     const CHAT_MODE_ADMIN = "admin";
     const CHAT_POLL_MS = 2500;
-    const CHAT_MAX_MEDIA_BYTES = 4 * 1024 * 1024;
-    const CHAT_MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
+    const CHAT_MAX_MEDIA_BYTES = Number.POSITIVE_INFINITY;
+    const CHAT_MAX_MEDIA_DATA_URL_LENGTH = Number.POSITIVE_INFINITY;
 
     const chatState = {
         selectedUser: null,
@@ -972,11 +972,6 @@ document.addEventListener("DOMContentLoaded", () => {
             setChatStatus("Unsupported file type. Only image, video, and audio are allowed.", "error");
             return;
         }
-        if (file.size > CHAT_MAX_MEDIA_BYTES) {
-            setChatStatus("Attachment is too large. Maximum is 4MB.", "error");
-            return;
-        }
-
         try {
             setChatStatus("Preparing " + mediaType + " file...", "");
             const dataUrl = await readFileAsDataUrl(file);

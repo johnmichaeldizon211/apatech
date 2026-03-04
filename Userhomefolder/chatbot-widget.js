@@ -5,8 +5,8 @@
     var DRAG_MOVE_TOLERANCE_PX = 5;
     var POSITION_STORAGE_KEY = "ecodrive_chat_widget_position_v1";
     var MESSAGE_STORAGE_KEY = "ecodrive_chat_messages_v1";
-    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260304e";
-    var MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
+    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260304f";
+    var MAX_MEDIA_DATA_URL_LENGTH = Number.POSITIVE_INFINITY;
 
     function safeParse(raw) {
         try {

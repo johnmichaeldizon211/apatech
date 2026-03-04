@@ -191,8 +191,9 @@ const CHAT_THREAD_MODE_ADMIN = "admin";
 const CHAT_ALLOWED_MESSAGE_ROLES = new Set(["user", "bot", "admin", "system"]);
 const CHAT_ALLOWED_MEDIA_TYPES = new Set(["text", "image", "video", "audio"]);
 const MAX_CHAT_MESSAGE_TEXT_LENGTH = 2000;
-const MAX_CHAT_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
-const MAX_CHAT_MEDIA_BYTES = 4 * 1024 * 1024;
+const MAX_CHAT_MEDIA_DATA_URL_LENGTH = Number.POSITIVE_INFINITY;
+const MAX_CHAT_MEDIA_BYTES = Number.POSITIVE_INFINITY;
+const MAX_REQUEST_BODY_BYTES = Number.POSITIVE_INFINITY;
 const DEFAULT_CHAT_MESSAGE_LIMIT = 180;
 const MAX_CHAT_MESSAGE_LIMIT = 300;
 
@@ -551,7 +552,7 @@ function readBody(req) {
         let raw = "";
         req.on("data", (chunk) => {
             raw += chunk;
-            if (raw.length > 8 * 1024 * 1024) {
+            if (Number.isFinite(MAX_REQUEST_BODY_BYTES) && raw.length > MAX_REQUEST_BODY_BYTES) {
                 reject(new Error("Payload too large"));
                 req.destroy();
             }
@@ -2951,7 +2952,7 @@ function parseChatMediaPayload(input) {
             mediaMime: null,
             mediaName: null,
             mediaSizeBytes: null,
-            error: "Attached media is too large. Maximum is 4MB."
+            error: "Attached media is too large."
         };
     }
 
@@ -3032,7 +3033,7 @@ function parseChatMediaPayload(input) {
             mediaMime: null,
             mediaName: null,
             mediaSizeBytes: null,
-            error: "Attached media is too large. Maximum is 4MB."
+            error: "Attached media is too large."
         };
     }
 
