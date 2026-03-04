@@ -375,6 +375,10 @@
         if (detailUrl) {
             return resolveAssetPath(detailUrl);
         }
+        const productId = Number(product && product.id || 0);
+        if (Number.isFinite(productId) && productId > 0) {
+            return resolveAssetPath(`/Userhomefolder/Ebikes/model-detail.html?productId=${productId}`);
+        }
         return buildBookingUrl(product);
     }
 

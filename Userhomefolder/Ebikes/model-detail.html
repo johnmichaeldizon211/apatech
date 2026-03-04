@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecodrive Model</title>
+    <link rel="stylesheet" href="model-detail.css">
+    <link rel="stylesheet" href="../nav-responsive.css?v=20260304a">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">ECODRIVE</div>
+        <div class="nav-right">
+            <ul class="nav-links">
+                <li><a href="../userhome.html">Home</a></li>
+                <li><a href="../bookings/bookings.html">Bookings</a></li>
+                <li><a href="../userhome2.html" class="active">Ebikes Products</a></li>
+                <li><a href="../contact/contact.html">Contact</a></li>
+                <li><a href="../priv,rep/repair.html">Repair Booking</a></li>
+            </ul>
+            <div class="profile-menu">
+                <button class="profile-btn" aria-label="Profile">
+                    <img src="../userhomelogo.jpg" alt="Profile">
+                </button>
+                <div class="dropdown">
+                    <a href="../../Usersetting.html/settings.html">Account</a>
+                    <a href="../../Usersetting.html/settings.html#orderSection">Order Status</a>
+                    <a class="logout-btn" href="../../frontpage.html">Log Out</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="page-shell">
+        <section class="media-panel">
+            <img id="model-image" class="model-image" src="../image 1.png" alt="Ecodrive model image">
+        </section>
+
+        <section class="detail-panel">
+            <p id="model-chip" class="model-chip">E-Bike</p>
+            <h1 id="model-title" class="model-title">Loading model...</h1>
+            <p id="model-price" class="model-price">Price: PHP 0.00</p>
+            <p id="model-info" class="model-info">Please wait while loading model details.</p>
+
+            <ul id="model-specs" class="model-specs"></ul>
+            <p id="model-status" class="model-status" aria-live="polite"></p>
+
+            <div class="actions">
+                <a class="secondary-btn" href="../userhome2.html">Back to Models</a>
+                <button id="book-now-btn" class="primary-btn" type="button">Book Now</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="../../session.js"></script>
+    <script src="model-detail.js?v=20260304a"></script>
+</body>
+</html>

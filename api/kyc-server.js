@@ -3311,6 +3311,14 @@ function normalizeProductUrl(value) {
     return cleaned.slice(0, 255);
 }
 
+function buildAutoProductDetailUrl(productId) {
+    const id = parsePositiveId(productId);
+    if (!id) {
+        return "";
+    }
+    return `/Userhomefolder/Ebikes/model-detail.html?productId=${id}`;
+}
+
 function normalizeProductImage(value) {
     const cleaned = String(value || "").trim();
     if (!cleaned) {
@@ -3508,7 +3516,8 @@ function hasReachedDailyBookingLimit(count) {
 }
 
 function mapProductRow(row) {
-    const detailUrl = normalizeProductUrl(row.detail_url || "");
+    const rawDetailUrl = normalizeProductUrl(row.detail_url || "");
+    const detailUrl = rawDetailUrl || buildAutoProductDetailUrl(row.id);
     return {
         id: Number(row.id || 0),
         model: String(row.model || "Ecodrive E-Bike"),
@@ -7324,6 +7333,34 @@ async function fetchProductById(pool, productId) {
     return mapProductRow(rows[0]);
 }
 
+async function handlePublicProductById(_req, res, productId) {
+    try {
+        const id = parsePositiveId(productId);
+        if (!id) {
+            sendJson(res, 400, { success: false, message: "Invalid product id." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM products
+             WHERE id = ?
+               AND is_active = 1
+             LIMIT 1`,
+            [id]
+        );
+        if (!Array.isArray(rows) || rows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Product not found." });
+            return;
+        }
+
+        sendJson(res, 200, { success: true, product: mapProductRow(rows[0]) });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load product." });
+    }
+}
+
 async function handleListProducts(_req, res, parsedUrl) {
     try {
         const pool = await getDbPool();
@@ -7396,8 +7433,8 @@ async function handleAdminCreateProduct(req, res) {
         const price = normalizeProductPrice(body.price);
         const productInfo = normalizeProductInfo(body.info || body.productInfo || body.description);
         const imageUrl = normalizeProductImage(body.imageUrl || body.image || body.image_url);
-        const detailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
-        const category = normalizeProductCategory(body.category, detailUrl);
+        const requestedDetailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
+        const category = normalizeProductCategory(body.category, requestedDetailUrl);
         const isActive = normalizeOptionalBoolean(body.isActive, true) ? 1 : 0;
 
         if (model.length < 2) {
@@ -7430,12 +7467,27 @@ async function handleAdminCreateProduct(req, res) {
                 category,
                 productInfo || null,
                 imageUrl || null,
-                detailUrl || null,
+                requestedDetailUrl || null,
                 isActive
             ]
         );
 
-        const product = await fetchProductById(pool, Number(result.insertId || 0));
+        const insertedProductId = Number(result.insertId || 0);
+        if (!requestedDetailUrl && insertedProductId > 0) {
+            const autoDetailUrl = buildAutoProductDetailUrl(insertedProductId);
+            if (autoDetailUrl) {
+                await pool.execute(
+                    `UPDATE products
+                     SET detail_url = ?,
+                         updated_at = NOW()
+                     WHERE id = ?
+                     LIMIT 1`,
+                    [autoDetailUrl, insertedProductId]
+                );
+            }
+        }
+
+        const product = await fetchProductById(pool, insertedProductId);
         sendJson(res, 201, { success: true, product: product });
     } catch (error) {
         if (error && error.code === "ER_DUP_ENTRY") {
@@ -7513,6 +7565,9 @@ async function handleAdminUpdateProduct(req, res, productId) {
         let nextDetailUrl = normalizeProductUrl(currentProduct.detailUrl || "");
         if (hasDetailField) {
             nextDetailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
+            if (!nextDetailUrl) {
+                nextDetailUrl = buildAutoProductDetailUrl(id);
+            }
             updates.push("detail_url = ?");
             params.push(nextDetailUrl || null);
         }
@@ -7963,6 +8018,12 @@ async function requestListener(req, res) {
 
     if (req.method === "POST" && pathname === "/api/bookings") {
         await handleCreateBooking(req, res);
+        return;
+    }
+
+    const productDetailMatch = pathname.match(/^\/api\/products\/(\d+)$/);
+    if (req.method === "GET" && productDetailMatch) {
+        await handlePublicProductById(req, res, productDetailMatch[1]);
         return;
     }
 
