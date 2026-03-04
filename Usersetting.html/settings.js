@@ -1731,7 +1731,15 @@
     const customer = escapeHtml(String(order.fullName || "Customer"));
     const email = escapeHtml(String(order.email || "-"));
     const orderId = escapeHtml(String(order.orderId || "-"));
-    const model = escapeHtml(String(order.model || "Ecodrive E-Bike"));
+    const modelLabel = String(order.model || "Ecodrive E-Bike");
+    const bikeColorLabelRaw = String(order.bikeColor || order.color || "").trim();
+    const model = escapeHtml(modelLabel);
+    const bikeColor = escapeHtml(bikeColorLabelRaw || "-");
+    const itemName = escapeHtml(
+      bikeColorLabelRaw
+        ? `${modelLabel} (${bikeColorLabelRaw})`
+        : modelLabel
+    );
     const service = escapeHtml(String(order.service || "-"));
     const payment = escapeHtml(String(order.payment || "-"));
     const schedule = escapeHtml(String(order.schedule || "-"));
@@ -1741,17 +1749,13 @@
       : String(order.status || "-");
     const fulfillment = escapeHtml(String(order.fulfillmentStatus || "-"));
     const trackingLocation = escapeHtml(String(order.trackingLocation || "Not set"));
-    const shippingAddress = escapeHtml(String(order.shippingAddress || "-"));
+    const shippingAddress = escapeHtml(String(order.shippingAddress || order.trackingLocation || "Not set"));
     const totalAmount = installmentMetrics
       ? installmentMetrics.totalPayableForReceipt
       : (order.total || 0);
     const total = escapeHtml(formatPeso(totalAmount));
-    const trackingLabel = escapeHtml(buildTrackingLabel(order));
     const encodedOrderId = encodeToken(order.orderId || "");
     const encodedCreatedAt = encodeToken(order.createdAt || "");
-    const serviceLine = isDeliveryService(order.service)
-      ? `<div class="row"><span class="label">Address</span><span class="value">${shippingAddress}</span></div>`
-      : "";
     const installmentInfoRows = installmentMetrics
       ? (
         `<div class="row"><span class="label">Monthly Payment</span><span class="value">${escapeHtml(formatPeso(installmentMetrics.monthlyPayment))}</span></div>`
@@ -1822,19 +1826,20 @@
     <div class="row"><span class="label">Order ID</span><span class="value">${orderId}</span></div>
     <div class="row"><span class="label">Customer</span><span class="value">${customer}</span></div>
     <div class="row"><span class="label">Email</span><span class="value">${email}</span></div>
+    <div class="row"><span class="label">Model</span><span class="value">${model}</span></div>
+    <div class="row"><span class="label">Color</span><span class="value">${bikeColor}</span></div>
     <div class="row"><span class="label">Service</span><span class="value">${service}</span></div>
     <div class="row"><span class="label">Payment</span><span class="value">${payment}</span></div>
     <div class="row"><span class="label">Schedule</span><span class="value">${schedule}</span></div>
-    ${serviceLine}
+    <div class="row"><span class="label">Address</span><span class="value">${shippingAddress}</span></div>
     <div class="row"><span class="label">Status</span><span class="value">${escapeHtml(statusLabel)}</span></div>
-    <div class="row"><span class="label">Tracking</span><span class="value">${trackingLabel}</span></div>
-    <div class="row"><span class="label">Location</span><span class="value">${trackingLocation}</span></div>
     <div class="row"><span class="label">Progress</span><span class="value">${fulfillment}</span></div>
+    <div class="row"><span class="label">Location</span><span class="value">${trackingLocation}</span></div>
     ${installmentInfoRows}
 
     <div class="hr"></div>
     <div class="items-head strong"><span class="item-name">Item</span><span class="item-qty">Qty</span><span class="item-amount">Amount</span></div>
-    <div class="item"><span class="item-name">${model}</span><span class="item-qty">1</span><span class="item-amount">${total}</span></div>
+    <div class="item"><span class="item-name">${itemName}</span><span class="item-qty">1</span><span class="item-amount">${total}</span></div>
 
     <div class="hr"></div>
     <div class="totals">${installmentTotalsRows}</div>
@@ -1933,8 +1938,12 @@
         ? installmentMetrics.totalPayableForReceipt
         : (order.total || 0)
     );
-    const trackingLabel = buildTrackingLabel(order);
-    const deliveryAddress = isDeliveryService(order.service) ? String(order.shippingAddress || "-") : "";
+    const deliveryAddress = String(order.shippingAddress || order.trackingLocation || "Not set");
+    const modelLabel = String(order.model || "Ecodrive E-Bike");
+    const bikeColorLabel = String(order.bikeColor || order.color || "-");
+    const itemLabel = bikeColorLabel && bikeColorLabel !== "-"
+      ? `${modelLabel} (${bikeColorLabel})`
+      : modelLabel;
 
     let y = 20;
 
@@ -1975,16 +1984,15 @@
     writeLine(`Order ID: ${String(order.orderId || "-")}`);
     writeLine(`Customer: ${String(order.fullName || "Customer")}`);
     writeLine(`Email: ${String(order.email || "-")}`);
+    writeLine(`Model: ${modelLabel}`);
+    writeLine(`Color: ${bikeColorLabel}`);
     writeLine(`Service: ${String(order.service || "-")}`);
     writeLine(`Payment: ${String(order.payment || "-")}`);
     writeLine(`Schedule: ${String(order.schedule || "-")}`);
-    if (deliveryAddress) {
-      writeLine(`Address: ${deliveryAddress}`);
-    }
+    writeLine(`Address: ${deliveryAddress}`);
     writeLine(`Status: ${statusLabel}`);
-    writeLine(`Tracking: ${trackingLabel}`);
-    writeLine(`Location: ${String(order.trackingLocation || "Not set")}`);
     writeLine(`Progress: ${String(order.fulfillmentStatus || "-")}`);
+    writeLine(`Location: ${String(order.trackingLocation || "Not set")}`);
     if (installmentMetrics) {
       writeLine(`Monthly Payment: ${formatPesoText(installmentMetrics.monthlyPayment)}`);
       writeLine(`Paid Installment: ${installmentMetrics.progressLabel}`);
@@ -1993,7 +2001,7 @@
       );
     }
     writeRule();
-    writeLine(`1 x ${String(order.model || "Ecodrive E-Bike")}`);
+    writeLine(`1 x ${itemLabel}`);
     writeLine(`Amount: ${amountLabel}`);
     writeRule();
     if (installmentMetrics) {

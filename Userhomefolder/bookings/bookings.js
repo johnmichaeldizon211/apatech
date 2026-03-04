@@ -846,7 +846,7 @@
                 const schedule = escapeHtml(String(item.schedule || "-"));
                 const fulfillment = escapeHtml(String(item.fulfillmentStatus || "-"));
                 const trackingLocation = escapeHtml(String(item.trackingLocation || "Not set"));
-                const shippingAddress = escapeHtml(String(item.shippingAddress || "-"));
+                const shippingAddress = escapeHtml(String(item.shippingAddress || item.trackingLocation || "Not set"));
                 const installmentMetrics = parseInstallmentReceiptMetrics(item);
                 const statusLabel = installmentMetrics
                     ? (String(item.status || "-") + " (Hulog: " + installmentMetrics.progressLabel + ")")
@@ -857,9 +857,6 @@
                 const total = formatPeso(totalAmount);
                 const encodedOrderId = encodeToken(item.orderId || "");
                 const encodedCreatedAt = encodeToken(item.createdAt || "");
-                const serviceLine = String(item.service || "").toLowerCase().includes("delivery")
-                    ? "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
-                    : "";
                 const installmentInfoRows = installmentMetrics
                     ? (
                         "<div class=\"row\"><span class=\"label\">Monthly Payment</span><span class=\"value\">" + escapeHtml(formatPeso(installmentMetrics.monthlyPayment)) + "</span></div>"
@@ -917,7 +914,7 @@
                     + "<div class=\"row\"><span class=\"label\">Service</span><span class=\"value\">" + service + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Payment</span><span class=\"value\">" + payment + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
-                    + serviceLine
+                    + "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
                     + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
@@ -1028,9 +1025,7 @@
                 const itemLabel = bikeColorLabel
                     ? (modelLabel + " (" + bikeColorLabel + ")")
                     : modelLabel;
-                const deliveryAddress = String(item.service || "").toLowerCase().includes("delivery")
-                    ? String(item.shippingAddress || "-")
-                    : "";
+                const deliveryAddress = String(item.shippingAddress || item.trackingLocation || "Not set");
 
                 let y = 20;
 
@@ -1076,9 +1071,7 @@
                 writeLine("Service: " + String(item.service || "-"));
                 writeLine("Payment: " + String(item.payment || "-"));
                 writeLine("Schedule: " + String(item.schedule || "-"));
-                if (deliveryAddress) {
-                    writeLine("Address: " + deliveryAddress);
-                }
+                writeLine("Address: " + deliveryAddress);
                 writeLine("Status: " + statusLabel);
                 writeLine("Progress: " + String(item.fulfillmentStatus || "-"));
                 writeLine("Location: " + String(item.trackingLocation || "Not set"));

@@ -380,6 +380,56 @@ body {
     font-weight: 700;
 }
 
+.fulfillment-update-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.fulfillment-update-grid label {
+    display: grid;
+    gap: 5px;
+}
+
+.fulfillment-update-grid span {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.fulfillment-update-grid select,
+.fulfillment-update-grid input {
+    width: 100%;
+    min-height: 36px;
+    border: 1px solid #9db0d8;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 12px;
+    padding: 0 10px;
+    outline: none;
+}
+
+.fulfillment-update-grid select:focus,
+.fulfillment-update-grid input:focus {
+    border-color: #35509d;
+    box-shadow: 0 0 0 2px rgba(53, 80, 157, 0.15);
+}
+
+.fulfillment-update-actions {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.fulfillment-update-hint {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+}
+
 .action-row {
     display: flex;
     flex-wrap: wrap;
@@ -418,6 +468,11 @@ body {
 .action-btn.receipt-view {
     border-color: #1f4b93;
     color: #173f7d;
+}
+
+.action-btn.update {
+    border-color: #35509d;
+    color: #1f3f89;
 }
 
 .action-btn:hover {
@@ -496,6 +551,10 @@ body {
     .info-row {
         grid-template-columns: 1fr;
         gap: 4px;
+    }
+
+    .fulfillment-update-grid {
+        grid-template-columns: 1fr;
     }
 
     .product-shell {

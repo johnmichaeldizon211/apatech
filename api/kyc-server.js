@@ -3117,6 +3117,7 @@ function mapBookingRow(row) {
         userEmail: String(row.user_email || ""),
         repairDetails: String(row.repair_details || ""),
         details: String(row.repair_details || ""),
+        reviewDecision: String(row.review_decision || "none"),
         accountStatus: installmentAccountStatus || "Active",
         customerAccountStatus: installmentAccountStatus || "Active",
         reviewedAt: row.reviewed_at || null,

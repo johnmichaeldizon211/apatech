@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const instOrderStatus = document.getElementById("instOrderStatus");
     const instDeliveryMethod = document.getElementById("instDeliveryMethod");
     const instDeliveryStatus = document.getElementById("instDeliveryStatus");
+    const instCurrentLocation = document.getElementById("instCurrentLocation");
     const instEstimatedDelivery = document.getElementById("instEstimatedDelivery");
     const instRepairDescriptionRow = document.getElementById("instRepairDescriptionRow");
     const instRepairDescription = document.getElementById("instRepairDescription");
@@ -45,6 +46,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const cashOrderStatus = document.getElementById("cashOrderStatus");
     const cashDeliveryMethod = document.getElementById("cashDeliveryMethod");
     const cashDeliveryStatus = document.getElementById("cashDeliveryStatus");
+    const cashCurrentLocation = document.getElementById("cashCurrentLocation");
     const cashEstimatedDelivery = document.getElementById("cashEstimatedDelivery");
     const cashRepairDescriptionRow = document.getElementById("cashRepairDescriptionRow");
     const cashRepairDescription = document.getElementById("cashRepairDescription");
@@ -60,6 +62,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const cashPaymentTotalPrice = document.getElementById("cashPaymentTotalPrice");
     const cashPaymentDeliveryFee = document.getElementById("cashPaymentDeliveryFee");
     const cashPaymentGrandTotal = document.getElementById("cashPaymentGrandTotal");
+    const fulfillmentStatusInput = document.getElementById("fulfillmentStatusInput");
+    const fulfillmentLocationInput = document.getElementById("fulfillmentLocationInput");
+    const fulfillmentEtaInput = document.getElementById("fulfillmentEtaInput");
+    const updateFulfillmentBtn = document.getElementById("updateFulfillmentBtn");
+    const fulfillmentUpdateHint = document.getElementById("fulfillmentUpdateHint");
 
     const adminGenerateReceiptBtn = document.getElementById("adminGenerateReceiptBtn");
     let currentBooking = null;
@@ -656,7 +663,8 @@ document.addEventListener("DOMContentLoaded", function () {
         setTextContent(instOrderDate, formatDateTime(getRecordCreatedAt(record)), "N/A");
         applyStatusPill(instOrderStatus, orderStatusText);
         setTextContent(instDeliveryMethod, String(record && record.service || "-"), "-");
-        setTextContent(instDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
+        setTextContent(instDeliveryStatus, formatTrackingField(record && record.fulfillmentStatus, "Not set"), "Not set");
+        setTextContent(instCurrentLocation, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
         setTextContent(instEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
         renderRepairDescription(instRepairDescriptionRow, instRepairDescription, record);
 
@@ -698,7 +706,8 @@ document.addEventListener("DOMContentLoaded", function () {
         setTextContent(cashOrderDate, formatDateTime(getRecordCreatedAt(record)), "N/A");
         applyStatusPill(cashOrderStatus, orderStatusText);
         setTextContent(cashDeliveryMethod, String(record && record.service || "-"), "-");
-        setTextContent(cashDeliveryStatus, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
+        setTextContent(cashDeliveryStatus, formatTrackingField(record && record.fulfillmentStatus, "Not set"), "Not set");
+        setTextContent(cashCurrentLocation, formatTrackingField(record && record.trackingLocation, "Not set"), "Not set");
         setTextContent(cashEstimatedDelivery, getEstimatedDeliveryLabel(record), "-");
         renderRepairDescription(cashRepairDescriptionRow, cashRepairDescription, record);
 
@@ -743,6 +752,18 @@ document.addEventListener("DOMContentLoaded", function () {
             return status + " / " + fulfillment;
         }
         return status || fulfillment || "Pending review";
+    }
+
+    function getReceiptAddress(record) {
+        if (!record || typeof record !== "object") {
+            return "Not set";
+        }
+        const shippingAddress = String(record.shippingAddress || "").trim();
+        if (shippingAddress) {
+            return shippingAddress;
+        }
+        const fallbackLocation = getCustomerLocation(record);
+        return fallbackLocation || "Not set";
     }
 
     function normalizeProgressText(value) {
@@ -871,12 +892,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const orderId = escapeHtml(getRecordOrderId(booking) || "-");
         const model = escapeHtml(getModelLabelFromRecord(booking));
         const bikeColor = escapeHtml(getBikeColorLabelFromRecord(booking) || "-");
+        const itemName = escapeHtml(
+            (getBikeColorLabelFromRecord(booking) || "").trim()
+                ? (getModelLabelFromRecord(booking) + " (" + getBikeColorLabelFromRecord(booking) + ")")
+                : getModelLabelFromRecord(booking)
+        );
         const service = escapeHtml(String((booking && booking.service) || "-"));
         const payment = escapeHtml(String((booking && booking.payment) || "-"));
         const schedule = escapeHtml(formatScheduleFromRecord(booking));
         const fulfillment = escapeHtml(String((booking && booking.fulfillmentStatus) || "-"));
         const trackingLocation = escapeHtml(String((booking && booking.trackingLocation) || "Not set"));
-        const shippingAddress = escapeHtml(String((booking && booking.shippingAddress) || "-"));
+        const shippingAddress = escapeHtml(getReceiptAddress(booking));
         const installmentSummary = getInstallmentReceiptSummary(booking);
         const statusLabel = installmentSummary
             ? (String((booking && booking.status) || "-") + " (Hulog: " + installmentSummary.progressLabel + ")")
@@ -908,10 +934,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 + "<div class=\"row\"><span class=\"label\">Discount</span><span class=\"value\">" + escapeHtml(formatPeso(0)) + "</span></div>"
                 + "<div class=\"row strong\"><span class=\"label\">TOTAL</span><span class=\"value\">" + total + "</span></div>"
             );
-        const serviceLine = String((booking && booking.service) || "").toLowerCase().includes("delivery")
-            ? "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
-            : "";
-
         return "<!DOCTYPE html>"
             + "<html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
             + "<title>Ecodrive Receipt " + escapeHtml(receiptNumber) + "</title>"
@@ -934,18 +956,19 @@ document.addEventListener("DOMContentLoaded", function () {
             + "<div class=\"row\"><span class=\"label\">Order ID</span><span class=\"value\">" + orderId + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Customer</span><span class=\"value\">" + customer + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Email</span><span class=\"value\">" + email + "</span></div>"
+            + "<div class=\"row\"><span class=\"label\">Model</span><span class=\"value\">" + model + "</span></div>"
+            + "<div class=\"row\"><span class=\"label\">Color</span><span class=\"value\">" + bikeColor + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Service</span><span class=\"value\">" + service + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Payment</span><span class=\"value\">" + payment + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Schedule</span><span class=\"value\">" + schedule + "</span></div>"
-            + "<div class=\"row\"><span class=\"label\">Color</span><span class=\"value\">" + bikeColor + "</span></div>"
-            + serviceLine
+            + "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
             + installmentInfoRows
             + "<div class=\"hr\"></div>"
             + "<div class=\"items-head strong\"><span class=\"item-name\">Item</span><span class=\"item-qty\">Qty</span><span class=\"item-amount\">Amount</span></div>"
-            + "<div class=\"item\"><span class=\"item-name\">" + model + "</span><span class=\"item-qty\">1</span><span class=\"item-amount\">" + total + "</span></div>"
+            + "<div class=\"item\"><span class=\"item-name\">" + itemName + "</span><span class=\"item-qty\">1</span><span class=\"item-amount\">" + total + "</span></div>"
             + "<div class=\"hr\"></div>"
             + "<div class=\"totals\">"
             + installmentTotalsRows
@@ -1040,9 +1063,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 ? installmentSummary.totalPayableForReceipt
                 : ((booking && booking.total) || 0)
         );
-        const deliveryAddress = String((booking && booking.service) || "").toLowerCase().includes("delivery")
-            ? String((booking && booking.shippingAddress) || "-")
-            : "";
+        const deliveryAddress = getReceiptAddress(booking);
+        const modelLabel = getModelLabelFromRecord(booking);
+        const bikeColorLabel = String(getBikeColorLabelFromRecord(booking) || "-");
+        const itemLabel = bikeColorLabel && bikeColorLabel !== "-"
+            ? (modelLabel + " (" + bikeColorLabel + ")")
+            : modelLabel;
 
         let y = 20;
 
@@ -1083,13 +1109,12 @@ document.addEventListener("DOMContentLoaded", function () {
         writeLine("Order ID: " + String(getRecordOrderId(booking) || "-"));
         writeLine("Customer: " + String(buildNameFromRecord(booking) || "Customer"));
         writeLine("Email: " + String(getRecordEmail(booking) || "-"));
+        writeLine("Model: " + modelLabel);
+        writeLine("Color: " + bikeColorLabel);
         writeLine("Service: " + String((booking && booking.service) || "-"));
         writeLine("Payment: " + String((booking && booking.payment) || "-"));
         writeLine("Schedule: " + String(formatScheduleFromRecord(booking)));
-        writeLine("Color: " + String(getBikeColorLabelFromRecord(booking) || "-"));
-        if (deliveryAddress) {
-            writeLine("Address: " + deliveryAddress);
-        }
+        writeLine("Address: " + deliveryAddress);
         writeLine("Status: " + statusLabel);
         writeLine("Progress: " + String((booking && booking.fulfillmentStatus) || "-"));
         writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));
@@ -1104,7 +1129,7 @@ document.addEventListener("DOMContentLoaded", function () {
             );
         }
         writeRule();
-        writeLine("1 x " + getModelLabelFromRecord(booking));
+        writeLine("1 x " + itemLabel);
         writeLine("Amount: " + amountLabel);
         writeRule();
         if (installmentSummary) {
@@ -1512,11 +1537,130 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    async function updateFulfillmentStatusViaApi(orderId, payload) {
+        try {
+            const response = await fetch(
+                getApiUrl(`/api/admin/bookings/${encodeURIComponent(orderId)}/fulfillment-status`),
+                {
+                    method: "POST",
+                    headers: buildApiHeaders({
+                        "Content-Type": "application/json"
+                    }),
+                    body: JSON.stringify(payload || {})
+                }
+            );
+
+            if (response.status === 404 || response.status === 405) {
+                return { mode: "unavailable", booking: null };
+            }
+
+            const payloadJson = await response.json().catch(function () {
+                return {};
+            });
+            if (!response.ok || payloadJson.success !== true || !payloadJson.booking) {
+                return {
+                    mode: "error",
+                    message: payloadJson.message || "Unable to update fulfillment status.",
+                    booking: null
+                };
+            }
+
+            return {
+                mode: "ok",
+                booking: payloadJson.booking,
+                message: payloadJson.message || "Delivery status updated."
+            };
+        } catch (_error) {
+            return { mode: "unavailable", booking: null };
+        }
+    }
+
+    function buildDefaultFulfillmentStatus(record) {
+        if (isPickupService(record)) {
+            return "Preparing for Pick up";
+        }
+        if (getBookingMode(record) === "installment") {
+            return "Application Approved";
+        }
+        return "Preparing for Dispatch";
+    }
+
+    function ensureSelectHasOption(selectEl, optionValue) {
+        if (!(selectEl instanceof HTMLSelectElement)) {
+            return;
+        }
+        const text = String(optionValue || "").trim();
+        if (!text) {
+            return;
+        }
+        const existing = Array.from(selectEl.options).some(function (option) {
+            return String(option.value || "").trim().toLowerCase() === text.toLowerCase();
+        });
+        if (existing) {
+            return;
+        }
+        const option = document.createElement("option");
+        option.value = text;
+        option.textContent = text;
+        selectEl.appendChild(option);
+    }
+
+    function syncFulfillmentEditor(booking) {
+        if (!fulfillmentStatusInput || !fulfillmentLocationInput || !fulfillmentEtaInput) {
+            return;
+        }
+        const statusText = String(booking && booking.fulfillmentStatus || "").trim() || buildDefaultFulfillmentStatus(booking);
+        ensureSelectHasOption(fulfillmentStatusInput, statusText);
+        fulfillmentStatusInput.value = statusText;
+        fulfillmentLocationInput.value = String(booking && booking.trackingLocation || "").trim();
+        fulfillmentEtaInput.value = String(booking && booking.trackingEta || "").trim();
+    }
+
+    function updateFulfillmentEditorState(booking) {
+        if (!updateFulfillmentBtn || !fulfillmentStatusInput || !fulfillmentLocationInput || !fulfillmentEtaInput) {
+            return;
+        }
+        const mergedStatus = (
+            String(booking && booking.status || "")
+            + " "
+            + String(booking && booking.fulfillmentStatus || "")
+        ).toLowerCase();
+        const isRejectedOrCancelled = mergedStatus.includes("reject") || mergedStatus.includes("cancel");
+        const isApproved = canPrintReceiptStatus(booking && booking.status, booking && booking.fulfillmentStatus);
+        const disabled = !booking || !isApproved || isRejectedOrCancelled;
+        updateFulfillmentBtn.disabled = disabled;
+        fulfillmentStatusInput.disabled = disabled;
+        fulfillmentLocationInput.disabled = disabled;
+        fulfillmentEtaInput.disabled = disabled;
+        if (!fulfillmentUpdateHint) {
+            return;
+        }
+        if (!booking) {
+            fulfillmentUpdateHint.textContent = "Select a booking first.";
+            return;
+        }
+        if (isRejectedOrCancelled) {
+            fulfillmentUpdateHint.textContent = "Rejected or cancelled bookings cannot be updated.";
+            return;
+        }
+        if (!isApproved) {
+            fulfillmentUpdateHint.textContent = "Approve booking first before updating progress.";
+            return;
+        }
+        fulfillmentUpdateHint.textContent = "Changes here update Delivery Status, Location, and ETA in real time.";
+    }
+
     function setEmptyState(show) {
         detailsEmpty.hidden = !show;
         detailsContent.hidden = show;
         approveBtn.disabled = show;
         rejectBtn.disabled = show;
+        if (show && fulfillmentStatusInput && fulfillmentLocationInput && fulfillmentEtaInput) {
+            fulfillmentStatusInput.value = "";
+            fulfillmentLocationInput.value = "";
+            fulfillmentEtaInput.value = "";
+        }
+        updateFulfillmentEditorState(show ? null : currentBooking);
         if (show) {
             updateReceiptActionButtons(null);
         }
@@ -1538,6 +1682,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         updatePrimaryActionLabels(bookingMode, booking);
+        syncFulfillmentEditor(booking);
+        updateFulfillmentEditorState(booking);
         updateReceiptActionButtons(booking);
     }
 
@@ -1647,6 +1793,63 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 openReceiptView(currentBooking);
+            });
+        }
+
+        if (updateFulfillmentBtn) {
+            updateFulfillmentBtn.addEventListener("click", async function () {
+                if (!currentBooking) {
+                    return;
+                }
+                const nextStatus = String(
+                    fulfillmentStatusInput && fulfillmentStatusInput.value
+                        ? fulfillmentStatusInput.value
+                        : ""
+                ).trim() || buildDefaultFulfillmentStatus(currentBooking);
+                const nextLocation = String(
+                    fulfillmentLocationInput && fulfillmentLocationInput.value
+                        ? fulfillmentLocationInput.value
+                        : ""
+                ).trim();
+                const nextEta = String(
+                    fulfillmentEtaInput && fulfillmentEtaInput.value
+                        ? fulfillmentEtaInput.value
+                        : ""
+                ).trim();
+                if (!nextStatus) {
+                    window.alert("Please select a delivery status.");
+                    if (fulfillmentStatusInput) {
+                        fulfillmentStatusInput.focus();
+                    }
+                    return;
+                }
+                const confirmMessage = "Update delivery status to \"" + nextStatus + "\"?";
+                if (!window.confirm(confirmMessage)) {
+                    return;
+                }
+
+                const originalLabel = updateFulfillmentBtn.textContent || "Update Delivery Status";
+                updateFulfillmentBtn.disabled = true;
+                updateFulfillmentBtn.textContent = "Saving...";
+
+                const result = await updateFulfillmentStatusViaApi(orderId, {
+                    fulfillmentStatus: nextStatus,
+                    trackingLocation: nextLocation,
+                    trackingEta: nextEta
+                });
+                if (result.mode === "ok" && result.booking) {
+                    currentBooking = mergeBookingSnapshot(currentBooking, result.booking);
+                    localStorage.setItem(selectedBookingKey, JSON.stringify(currentBooking));
+                    renderBookingDetails(currentBooking);
+                    window.alert(result.message || "Delivery status updated.");
+                } else if (result.mode === "error") {
+                    window.alert(result.message || "Unable to update fulfillment status.");
+                } else {
+                    window.alert("API unavailable. Unable to update fulfillment status.");
+                }
+
+                updateFulfillmentBtn.textContent = originalLabel;
+                updateFulfillmentEditorState(currentBooking);
             });
         }
 

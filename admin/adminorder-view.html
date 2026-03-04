@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="adminorder-view.css">
+    <link rel="stylesheet" href="adminorder-view.css?v=20260304b">
     <link rel="stylesheet" href="admin-font-tuning.css">
 </head>
 <body>
@@ -27,6 +27,7 @@
             <nav class="sidebar-nav">
                 <a class="nav-btn" href="admin.html">Dashboard</a>
                 <a class="nav-btn active" href="adminorder.html">Booking Request</a>
+                <a class="nav-btn" href="adminbooking-history.html">Booking History</a>
                 <a class="nav-btn" href="adminprice.html">Price Management</a>
                 <a class="nav-btn" href="adminstock.html">Stocks</a>
                 <a class="nav-btn" href="adminuser.html">Users</a>
@@ -57,6 +58,7 @@
                                     <div class="info-row"><span class="row-label">Order Status</span><span id="instOrderStatus" class="status-pill">-</span></div>
                                     <div class="info-row"><span class="row-label">Delivery Details</span><span id="instDeliveryMethod" class="row-value">-</span></div>
                                     <div class="info-row"><span class="row-label">Delivery Status</span><span id="instDeliveryStatus" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Current Location</span><span id="instCurrentLocation" class="row-value">-</span></div>
                                     <div class="info-row"><span class="row-label">Estimated Delivery</span><span id="instEstimatedDelivery" class="row-value">-</span></div>
                                     <div id="instRepairDescriptionRow" class="info-row" hidden><span class="row-label">Repair Description</span><span id="instRepairDescription" class="row-value">-</span></div>
                                 </div>
@@ -132,6 +134,7 @@
                                     <div class="info-row"><span class="row-label">Order Status</span><span id="cashOrderStatus" class="status-pill">-</span></div>
                                     <div class="info-row"><span class="row-label">Delivery Details</span><span id="cashDeliveryMethod" class="row-value">-</span></div>
                                     <div class="info-row"><span class="row-label">Delivery Status</span><span id="cashDeliveryStatus" class="row-value">-</span></div>
+                                    <div class="info-row"><span class="row-label">Current Location</span><span id="cashCurrentLocation" class="row-value">-</span></div>
                                     <div class="info-row"><span class="row-label">Estimated Delivery</span><span id="cashEstimatedDelivery" class="row-value">-</span></div>
                                     <div id="cashRepairDescriptionRow" class="info-row" hidden><span class="row-label">Repair Description</span><span id="cashRepairDescription" class="row-value">-</span></div>
                                 </div>
@@ -175,6 +178,38 @@
                         </div>
                     </section>
 
+                    <section class="mode-card fulfillment-update-panel">
+                        <h3>Delivery Progress Update</h3>
+                        <div class="fulfillment-update-grid">
+                            <label>
+                                <span>Status</span>
+                                <select id="fulfillmentStatusInput">
+                                    <option value="">Select status</option>
+                                    <option value="Preparing for Dispatch">Preparing for Dispatch</option>
+                                    <option value="Out for Delivery">Out for Delivery</option>
+                                    <option value="Delivered">Delivered</option>
+                                    <option value="Preparing for Pick up">Preparing for Pick up</option>
+                                    <option value="Picked up successfully">Picked up successfully</option>
+                                    <option value="Application Approved">Application Approved</option>
+                                    <option value="Installment Active">Installment Active</option>
+                                    <option value="Installment Completed">Installment Completed</option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Current Location</span>
+                                <input id="fulfillmentLocationInput" type="text" maxlength="120" placeholder="Current location or note">
+                            </label>
+                            <label>
+                                <span>ETA (optional)</span>
+                                <input id="fulfillmentEtaInput" type="text" maxlength="80" placeholder="Example: 30 mins">
+                            </label>
+                        </div>
+                        <div class="fulfillment-update-actions">
+                            <button id="updateFulfillmentBtn" type="button" class="action-btn update">Update Delivery Status</button>
+                            <p id="fulfillmentUpdateHint" class="fulfillment-update-hint">Approve booking first before updating progress.</p>
+                        </div>
+                    </section>
+
                     <div class="action-row">
                         <button id="approveBtn" type="button" class="action-btn approve">Approve</button>
                         <button id="rejectBtn" type="button" class="action-btn reject">Reject</button>
@@ -186,7 +221,7 @@
         </main>
     </div>
     <script src="../session.js?v=20260221-2"></script>
-    <script src="adminorder-view.js?v=20260228d"></script>
+    <script src="adminorder-view.js?v=20260304f"></script>
 </body>
 </html>
 
