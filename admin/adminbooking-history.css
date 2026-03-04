@@ -228,6 +228,22 @@ body {
     background: #eef2ff;
 }
 
+.action-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.action-btn.remove {
+    border-color: #ac2634;
+    color: #8f1e2d;
+}
+
+.action-btn.remove:hover {
+    background: #fff1f3;
+}
+
 .empty-state {
     margin-top: 10px;
     min-height: 220px;

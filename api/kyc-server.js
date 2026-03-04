@@ -5753,6 +5753,53 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
     }
 }
 
+async function handleAdminBookingRemove(_req, res, orderId) {
+    try {
+        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        if (!authSession) {
+            return;
+        }
+
+        const normalizedOrderId = normalizeOrderId(orderId, false);
+        if (!normalizedOrderId) {
+            sendJson(res, 400, { success: false, message: "Invalid booking order id." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const [beforeRows] = await pool.execute(
+            `SELECT id
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const [deleteResult] = await pool.execute(
+            `DELETE FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!deleteResult || Number(deleteResult.affectedRows || 0) < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        sendJson(res, 200, {
+            success: true,
+            orderId: normalizedOrderId,
+            message: "Booking removed from history."
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to remove booking." });
+    }
+}
+
 async function handleAdminBookingPaymentStatus(_req, res, orderId) {
     try {
         const authSession = requireAuthSession(_req, res, { role: "admin" });
@@ -7310,6 +7357,16 @@ async function requestListener(req, res) {
             res,
             decodeURIComponent(adminBookingDecisionMatch[1]),
             adminBookingDecisionMatch[2]
+        );
+        return;
+    }
+
+    const adminBookingRemoveMatch = pathname.match(/^\/api\/admin\/bookings\/([^/]+)\/remove$/);
+    if (req.method === "POST" && adminBookingRemoveMatch) {
+        await handleAdminBookingRemove(
+            req,
+            res,
+            decodeURIComponent(adminBookingRemoveMatch[1])
         );
         return;
     }

@@ -300,6 +300,53 @@ document.addEventListener("DOMContentLoaded", function () {
         return dedupeRecords(merged);
     }
 
+    function matchesBookingRecord(record, orderId, createdAt) {
+        if (!record || typeof record !== "object") {
+            return false;
+        }
+        if (getRecordOrderId(record) !== String(orderId || "").trim()) {
+            return false;
+        }
+        const targetCreatedAt = String(createdAt || "").trim();
+        if (!targetCreatedAt) {
+            return true;
+        }
+        const recordCreatedAt = getRecordCreatedAt(record);
+        if (!recordCreatedAt) {
+            return true;
+        }
+        return recordCreatedAt === targetCreatedAt;
+    }
+
+    function removeBookingFromLocal(orderId, createdAt) {
+        let changed = false;
+        bookingStorageKeys.forEach(function (key) {
+            const parsed = safeParse(localStorage.getItem(key));
+            if (!Array.isArray(parsed)) {
+                return;
+            }
+            const next = parsed.filter(function (record) {
+                return !matchesBookingRecord(record, orderId, createdAt);
+            });
+            if (next.length !== parsed.length) {
+                changed = true;
+                localStorage.setItem(key, JSON.stringify(next));
+            }
+        });
+
+        const latest = safeParse(localStorage.getItem("latestBooking"));
+        if (matchesBookingRecord(latest, orderId, createdAt)) {
+            localStorage.removeItem("latestBooking");
+            changed = true;
+        }
+        const selected = safeParse(localStorage.getItem(selectedBookingKey));
+        if (matchesBookingRecord(selected, orderId, createdAt)) {
+            localStorage.removeItem(selectedBookingKey);
+            changed = true;
+        }
+        return changed;
+    }
+
     async function fetchBookingsFromApi() {
         try {
             const response = await fetch(getApiUrl("/api/admin/bookings?scope=all"), {
@@ -318,6 +365,39 @@ document.addEventListener("DOMContentLoaded", function () {
             return { success: true, bookings: dedupeRecords(payload.bookings) };
         } catch (_error) {
             return { success: false, bookings: [] };
+        }
+    }
+
+    async function removeBookingViaApi(orderId) {
+        try {
+            const response = await fetch(getApiUrl(`/api/admin/bookings/${encodeToken(orderId)}/remove`), {
+                method: "POST",
+                headers: buildApiHeaders()
+            });
+            if (response.status === 404 || response.status === 405) {
+                return {
+                    mode: "error",
+                    message: "Remove endpoint is unavailable on API."
+                };
+            }
+            const payload = await response.json().catch(function () {
+                return {};
+            });
+            if (!response.ok || payload.success !== true) {
+                return {
+                    mode: "error",
+                    message: payload.message || "Unable to remove booking."
+                };
+            }
+            return {
+                mode: "ok",
+                message: payload.message || "Booking removed successfully."
+            };
+        } catch (_error) {
+            return {
+                mode: "unavailable",
+                message: "API unavailable. Unable to remove booking."
+            };
         }
     }
 
@@ -368,7 +448,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 + "<span>" + escapeHtml(item.fulfillment) + "</span>"
                 + "<span>" + escapeHtml(item.hulog) + "</span>"
                 + "<span>" + escapeHtml(formatPeso(item.total)) + "</span>"
-                + "<span><button type=\"button\" class=\"action-btn\" data-action=\"view\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">View</button></span>";
+                + "<span class=\"action-group\">"
+                + "<button type=\"button\" class=\"action-btn\" data-action=\"view\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">View</button>"
+                + "<button type=\"button\" class=\"action-btn remove\" data-action=\"remove\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Remove</button>"
+                + "</span>";
             fragment.appendChild(row);
         });
         rowsContainer.appendChild(fragment);
@@ -383,14 +466,38 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    rowsContainer.addEventListener("click", function (event) {
-        const button = event.target && event.target.closest ? event.target.closest("[data-action='view']") : null;
+    rowsContainer.addEventListener("click", async function (event) {
+        const button = event.target && event.target.closest ? event.target.closest("[data-action]") : null;
         if (!button) {
             return;
         }
+        const action = String(button.getAttribute("data-action") || "").trim().toLowerCase();
         const orderId = decodeURIComponent(String(button.getAttribute("data-order-id") || ""));
         const createdAt = decodeURIComponent(String(button.getAttribute("data-created-at") || ""));
         if (!orderId) {
+            return;
+        }
+
+        if (action === "remove") {
+            if (!window.confirm("Remove this booking from history?")) {
+                return;
+            }
+            const originalLabel = button.textContent || "Remove";
+            button.disabled = true;
+            button.textContent = "Removing...";
+            const apiResult = await removeBookingViaApi(orderId);
+            if (apiResult.mode === "ok") {
+                removeBookingFromLocal(orderId, createdAt);
+                await initialize();
+                window.alert(apiResult.message || "Booking removed successfully.");
+                return;
+            }
+            button.disabled = false;
+            button.textContent = originalLabel;
+            window.alert(apiResult.message || "Unable to remove booking.");
+            return;
+        }
+        if (action !== "view") {
             return;
         }
 

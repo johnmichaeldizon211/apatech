@@ -441,34 +441,37 @@ body {
 
 @media (max-width: 980px) {
     .navbar {
-        padding: 10px 14px;
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 10px;
+        padding: 10px 14px 12px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        align-items: stretch;
     }
 
     .nav-right {
         width: 100%;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: start;
+        gap: 8px;
     }
 
     .nav-links {
-        gap: 10px;
+        gap: 8px;
         flex-wrap: wrap;
-        justify-content: flex-end;
+        justify-content: flex-start;
     }
 
     .nav-links a {
-        height: 30px;
+        height: 32px;
         padding: 0 8px;
-        font-size: 11.5px;
+        font-size: 11px;
         justify-content: center;
     }
 
     .profile-menu {
-        margin-left: auto;
+        margin-left: 0;
+        justify-self: end;
     }
 
     .dropdown {
@@ -561,18 +564,36 @@ body {
 @media (max-width: 640px) {
     .navbar {
         padding: 10px 10px 12px;
+        gap: 10px;
     }
 
     .logo {
         font-size: 16px;
     }
 
-    .nav-links {
+    .nav-right {
         grid-template-columns: 1fr;
     }
 
+    .nav-links {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .nav-links li {
+        width: 100%;
+    }
+
     .nav-links a {
-        height: 34px;
+        width: 100%;
+        height: 32px;
+        padding: 0 6px;
+        font-size: 10.5px;
+    }
+
+    .profile-menu {
+        justify-self: end;
     }
 
     .bookings-layout {
@@ -617,5 +638,11 @@ body {
         bottom: 64px;
         width: calc(100vw - 16px);
         border-radius: 10px;
+    }
+}
+
+@media (max-width: 430px) {
+    .nav-links {
+        grid-template-columns: 1fr;
     }
 }
