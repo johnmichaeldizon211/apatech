@@ -194,6 +194,10 @@
         }).join(" ");
     }
 
+    function normalizeText(value) {
+        return String(value || "").trim().replace(/\s+/g, " ");
+    }
+
     function normalizePhoneValue(phone) {
         const cleaned = String(phone || "").trim().replace(/[\s-]/g, "");
         if (/^\+639\d{9}$/.test(cleaned)) {
