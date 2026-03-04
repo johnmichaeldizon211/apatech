@@ -34,7 +34,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const CHAT_MODE_BOT = "bot";
     const CHAT_MODE_ADMIN = "admin";
-    const CHAT_POLL_MS = 2500;
+    const CHAT_POLL_BASE_MS = 2500;
+    const CHAT_POLL_BACKOFF_MS = 8000;
+    const CHAT_POLL_MAX_MS = 15000;
+    const CHAT_POLL_FAILURE_STEP = 4;
+    const CHAT_REQUEST_TIMEOUT_MS = 12000;
     const CHAT_MAX_MEDIA_BYTES = Number.POSITIVE_INFINITY;
     const CHAT_MAX_MEDIA_DATA_URL_LENGTH = Number.POSITIVE_INFINITY;
 
@@ -42,9 +46,13 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedUser: null,
         mode: CHAT_MODE_BOT,
         pollTimer: null,
+        pollIntervalMs: CHAT_POLL_BASE_MS,
+        consecutiveFailures: 0,
+        lastFailureType: "",
         loading: false,
         sending: false,
-        latestMessageId: 0
+        latestMessageId: 0,
+        lastStatusKey: ""
     };
     const voiceState = {
         recording: false,
@@ -114,6 +122,135 @@ document.addEventListener("DOMContentLoaded", () => {
         throw (lastError || new Error("Network request failed."));
     }
 
+    function toSameOriginChatPath(pathInput) {
+        return normalizeApiPath(pathInput);
+    }
+
+    function shouldUseGenericChatFallback(result) {
+        if (!result || result.ok) {
+            return false;
+        }
+        const status = Number(result.status || 0);
+        return status === 404 || status === 405 || status === 501;
+    }
+
+    function readErrorMessageFromPayload(payloadInput) {
+        const payload = payloadInput && typeof payloadInput === "object" ? payloadInput : null;
+        if (!payload) {
+            return "";
+        }
+        if (typeof payload.message === "string" && payload.message.trim()) {
+            return payload.message.trim();
+        }
+        if (typeof payload.error === "string" && payload.error.trim()) {
+            return payload.error.trim();
+        }
+        if (typeof payload.reason === "string" && payload.reason.trim()) {
+            return payload.reason.trim();
+        }
+        return "";
+    }
+
+    async function requestChatApi(path, optionsInput, _metaInput) {
+        const options = optionsInput && typeof optionsInput === "object" ? optionsInput : {};
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timeoutId = controller
+            ? setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS)
+            : null;
+
+        let response = null;
+        try {
+            response = await fetch(toSameOriginChatPath(path), {
+                ...options,
+                signal: controller ? controller.signal : options.signal
+            });
+        } catch (error) {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+            const fallbackMessage = error && error.name === "AbortError"
+                ? "Request timed out. Please try again."
+                : "Unable to reach chat API.";
+            return {
+                ok: false,
+                status: 0,
+                payload: null,
+                networkError: true,
+                errorMessage: error && error.message ? error.message : fallbackMessage
+            };
+        }
+
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+
+        const payload = await response.json().catch(() => null);
+        if (response.ok) {
+            return {
+                ok: true,
+                status: Number(response.status || 200),
+                payload: payload,
+                networkError: false,
+                errorMessage: ""
+            };
+        }
+
+        const payloadMessage = readErrorMessageFromPayload(payload);
+        return {
+            ok: false,
+            status: Number(response.status || 0),
+            payload: payload,
+            networkError: false,
+            errorMessage: payloadMessage || response.statusText || "Chat request failed."
+        };
+    }
+
+    function normalizeChatApiFailure(resultInput, fallbackMessage) {
+        const result = resultInput && typeof resultInput === "object" ? resultInput : {};
+        if (result.ok) {
+            return { mode: "ok", payload: result.payload, status: Number(result.status || 200) };
+        }
+
+        const status = Number(result.status || 0);
+        const networkError = Boolean(result.networkError) || status < 1;
+        let failureType = "http";
+        if (networkError) {
+            failureType = "network";
+        } else if (status === 401 || status === 403) {
+            failureType = "auth";
+        } else if (status >= 500) {
+            failureType = "server";
+        }
+
+        const payloadMessage = readErrorMessageFromPayload(result.payload);
+        return {
+            mode: "error",
+            status: status,
+            failureType: failureType,
+            payload: result.payload && typeof result.payload === "object" ? result.payload : {},
+            message: payloadMessage || String(result.errorMessage || fallbackMessage || "Chat request failed.")
+        };
+    }
+
+    function getChatFailureMessage(resultInput, fallbackMessage, optionsInput) {
+        const result = resultInput && typeof resultInput === "object" ? resultInput : {};
+        const options = optionsInput && typeof optionsInput === "object" ? optionsInput : {};
+
+        if (result.failureType === "network") {
+            return options.retrying ? "Connection issue, retrying..." : "Connection issue. Please check your internet and retry.";
+        }
+        if (result.failureType === "auth") {
+            return result.message || "Admin session expired. Please sign in again.";
+        }
+        if (Number(result.status || 0) === 404 && result.message) {
+            return result.message;
+        }
+        if (result.failureType === "server") {
+            return result.message || "Backend error while processing chat request.";
+        }
+        return result.message || fallbackMessage || "Unable to process chat request.";
+    }
+
     function escapeHtml(value) {
         return String(value || "")
             .replace(/&/g, "&amp;")
@@ -156,10 +293,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function setChatStatus(message, tone) {
         if (!chatStatusEl) return;
-        chatStatusEl.textContent = String(message || "");
+        const normalizedTone = tone === "error" || tone === "success" ? tone : "";
+        const normalizedMessage = String(message || "");
+        const statusKey = `${normalizedTone}|${normalizedMessage}`;
+        if (chatState.lastStatusKey === statusKey) {
+            return;
+        }
+        chatState.lastStatusKey = statusKey;
+
+        chatStatusEl.textContent = normalizedMessage;
         chatStatusEl.classList.remove("error", "success");
-        if (tone === "error" || tone === "success") {
-            chatStatusEl.classList.add(tone);
+        if (normalizedTone) {
+            chatStatusEl.classList.add(normalizedTone);
         }
     }
 
@@ -173,10 +318,10 @@ document.addEventListener("DOMContentLoaded", () => {
         chatModePill.textContent = mode === CHAT_MODE_ADMIN ? "Admin Takeover" : "Bot Active";
 
         if (chatTakeoverBtn) {
-            chatTakeoverBtn.disabled = mode === CHAT_MODE_ADMIN || !chatState.selectedUser;
+            chatTakeoverBtn.disabled = mode === CHAT_MODE_ADMIN || !chatState.selectedUser || !chatState.selectedUser.id;
         }
         if (chatReleaseBtn) {
-            chatReleaseBtn.disabled = mode !== CHAT_MODE_ADMIN || !chatState.selectedUser;
+            chatReleaseBtn.disabled = mode !== CHAT_MODE_ADMIN || !chatState.selectedUser || !chatState.selectedUser.id;
         }
         if (chatClearBtn) {
             chatClearBtn.disabled = !chatState.selectedUser;
@@ -276,27 +421,68 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function stopChatPolling() {
         if (chatState.pollTimer) {
-            clearInterval(chatState.pollTimer);
+            clearTimeout(chatState.pollTimer);
             chatState.pollTimer = null;
         }
     }
 
+    function nextPollIntervalMsForFailures(failureCountInput) {
+        const failureCount = Number(failureCountInput || 0);
+        if (!Number.isFinite(failureCount) || failureCount < CHAT_POLL_FAILURE_STEP) {
+            return CHAT_POLL_BASE_MS;
+        }
+        if (failureCount >= CHAT_POLL_FAILURE_STEP * 2) {
+            return CHAT_POLL_MAX_MS;
+        }
+        return CHAT_POLL_BACKOFF_MS;
+    }
+
+    function recordChatPollSuccess() {
+        chatState.consecutiveFailures = 0;
+        chatState.lastFailureType = "";
+        chatState.pollIntervalMs = CHAT_POLL_BASE_MS;
+    }
+
+    function recordChatPollFailure(failureTypeInput) {
+        chatState.consecutiveFailures += 1;
+        chatState.lastFailureType = String(failureTypeInput || "http");
+        chatState.pollIntervalMs = nextPollIntervalMsForFailures(chatState.consecutiveFailures);
+    }
+
+    function scheduleNextChatPoll() {
+        if (!chatState.selectedUser || !chatModal || !chatModal.classList.contains("open") || document.hidden) {
+            return;
+        }
+        stopChatPolling();
+        chatState.pollTimer = setTimeout(async () => {
+            chatState.pollTimer = null;
+            await loadChatThread(false, { isPolling: true });
+            scheduleNextChatPoll();
+        }, chatState.pollIntervalMs);
+    }
+
     function startChatPolling() {
         stopChatPolling();
-        chatState.pollTimer = setInterval(() => {
-            void loadChatThread(false);
-        }, CHAT_POLL_MS);
+        recordChatPollSuccess();
+        scheduleNextChatPoll();
     }
 
     function openChatModal(user) {
-        chatState.selectedUser = user;
+        const selected = user && typeof user === "object" ? user : {};
+        chatState.selectedUser = {
+            id: Number(selected.id || 0),
+            name: String(selected.name || "N/A"),
+            email: normalizeChatEmail(selected.email || ""),
+            chatMode: normalizeChatMode(selected.chatMode)
+        };
+        recordChatPollSuccess();
         setChatStatus("", "");
         clearChatMessages();
         setChatMode(CHAT_MODE_BOT);
 
         if (chatUserLabel) {
-            const name = String(user && user.name ? user.name : "N/A");
-            const email = String(user && user.email ? user.email : "N/A");
+            const name = String(chatState.selectedUser && chatState.selectedUser.name ? chatState.selectedUser.name : "N/A");
+            const email = String(chatState.selectedUser && chatState.selectedUser.email ? chatState.selectedUser.email : "N/A");
             chatUserLabel.textContent = `${name} (${email})`;
         }
 
@@ -334,6 +520,9 @@ document.addEventListener("DOMContentLoaded", () => {
         resetVoiceState();
         chatState.selectedUser = null;
         chatState.mode = CHAT_MODE_BOT;
+        chatState.pollIntervalMs = CHAT_POLL_BASE_MS;
+        chatState.consecutiveFailures = 0;
+        chatState.lastFailureType = "";
         chatState.loading = false;
         chatState.sending = false;
         chatState.latestMessageId = 0;
@@ -412,123 +601,76 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function fetchChatThreadByEmail(emailInput, limitInput) {
-        const email = normalizeChatEmail(emailInput);
-        if (!email) {
-            return { mode: "error", message: "User email is missing." };
+    async function fetchChatThreadByEmail(userInput, limitInput) {
+        const user = userInput && typeof userInput === "object" ? userInput : {};
+        const userId = Number(user.id || 0);
+        const email = normalizeChatEmail(user.email);
+        if (userId < 1 && !email) {
+            return { mode: "error", failureType: "http", status: 400, message: "User id or email is missing." };
         }
 
-        try {
-            const params = new URLSearchParams();
+        const params = new URLSearchParams();
+        if (userId > 0) {
+            params.set("userId", String(Math.floor(userId)));
+        }
+        if (email) {
             params.set("email", email);
-            const limit = Number(limitInput || 0);
-            if (Number.isFinite(limit) && limit > 0) {
-                params.set("limit", String(Math.floor(limit)));
-            }
-
-            const response = await fetchWithApiFallback(
-                `/api/chat/thread?${params.toString()}`,
-                { method: "GET" }
-            );
-
-            if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable" };
-            }
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success !== true) {
-                return {
-                    mode: "error",
-                    message: payload.message || "Unable to load user chat."
-                };
-            }
-
-            return {
-                mode: "ok",
-                payload: payload
-            };
-        } catch (_error) {
-            return { mode: "unavailable" };
         }
+        const limit = Number(limitInput || 0);
+        if (Number.isFinite(limit) && limit > 0) {
+            params.set("limit", String(Math.floor(limit)));
+        }
+
+        const apiResult = await requestChatApi(
+            `/api/chat/thread?${params.toString()}`,
+            { method: "GET" },
+            { action: "thread-fallback", userId, email }
+        );
+        return normalizeChatApiFailure(apiResult, "Unable to load user chat.");
     }
 
     async function postAdminChatAction(userId, endpointSuffix, body) {
         if (!userId) {
-            return { mode: "error", message: "User id is missing." };
+            return { mode: "error", failureType: "http", status: 400, message: "User id is missing." };
         }
 
-        try {
-            const response = await fetchWithApiFallback(
-                `/api/admin/chat/users/${encodeURIComponent(userId)}/${endpointSuffix}`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(body || {})
-                }
-            );
-
-            if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable" };
-            }
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success !== true) {
-                return {
-                    mode: "error",
-                    message: payload.message || "Unable to complete chat action."
-                };
-            }
-
-            return {
-                mode: "ok",
-                payload: payload
-            };
-        } catch (_error) {
-            return { mode: "unavailable" };
-        }
+        const apiResult = await requestChatApi(
+            `/api/admin/chat/users/${encodeURIComponent(userId)}/${endpointSuffix}`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body || {})
+            },
+            { action: endpointSuffix, userId }
+        );
+        return normalizeChatApiFailure(apiResult, "Unable to complete chat action.");
     }
 
-    async function clearAdminChatThread(userEmail) {
-        const email = String(userEmail || "").trim().toLowerCase();
-        if (!email) {
-            return { mode: "error", message: "User email is missing." };
+    async function clearAdminChatThread(userInput) {
+        const user = userInput && typeof userInput === "object" ? userInput : {};
+        const userId = Number(user.id || 0);
+        const email = normalizeChatEmail(user.email);
+        if (userId < 1 && !email) {
+            return { mode: "error", failureType: "http", status: 400, message: "User id or email is missing." };
         }
 
-        try {
-            const response = await fetchWithApiFallback(
-                "/api/chat/thread/clear",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        email: email
-                    })
-                }
-            );
-
-            if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable" };
-            }
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success !== true) {
-                return {
-                    mode: "error",
-                    message: payload.message || "Unable to clear chat conversation."
-                };
-            }
-
-            return {
-                mode: "ok",
-                payload: payload
-            };
-        } catch (_error) {
-            return { mode: "unavailable" };
-        }
+        const apiResult = await requestChatApi(
+            "/api/chat/thread/clear",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    userId: userId > 0 ? userId : undefined,
+                    email: email || undefined
+                })
+            },
+            { action: "clear-thread", userId, email }
+        );
+        return normalizeChatApiFailure(apiResult, "Unable to clear chat conversation.");
     }
 
     async function fetchAdminChatThread(userInput) {
@@ -537,44 +679,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const userEmail = normalizeChatEmail(user.email);
 
         if (userId > 0) {
-            try {
-                const response = await fetchWithApiFallback(
-                    `/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`,
-                    { method: "GET" }
-                );
-
-                if (response.status === 404 || response.status === 405) {
-                    if (userEmail) {
-                        return await fetchChatThreadByEmail(userEmail, 250);
-                    }
-                    return { mode: "unavailable" };
-                }
-
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok || payload.success !== true) {
-                    return {
-                        mode: "error",
-                        message: payload.message || "Unable to load user chat."
-                    };
-                }
-
-                return {
-                    mode: "ok",
-                    payload: payload
-                };
-            } catch (_error) {
-                if (userEmail) {
-                    return await fetchChatThreadByEmail(userEmail, 250);
-                }
-                return { mode: "unavailable" };
+            const primaryResult = await requestChatApi(
+                `/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`,
+                { method: "GET" },
+                { action: "admin-thread", userId }
+            );
+            if (primaryResult.ok) {
+                return normalizeChatApiFailure(primaryResult, "Unable to load user chat.");
             }
+            if (shouldUseGenericChatFallback(primaryResult)) {
+                return fetchChatThreadByEmail({ id: userId, email: userEmail }, 250);
+            }
+            return normalizeChatApiFailure(primaryResult, "Unable to load user chat.");
         }
 
         if (userEmail) {
-            return await fetchChatThreadByEmail(userEmail, 250);
+            return fetchChatThreadByEmail({ email: userEmail }, 250);
         }
 
-        return { mode: "error", message: "User id is missing." };
+        return { mode: "error", failureType: "http", status: 400, message: "User id or email is missing." };
     }
 
     async function sendAdminChatMessage(userInput, payloadInput) {
@@ -582,114 +705,95 @@ document.addEventListener("DOMContentLoaded", () => {
         const userId = Number(user.id || 0);
         const userEmail = normalizeChatEmail(user.email);
         if (userId < 1 && !userEmail) {
-            return { mode: "error", message: "User id is missing." };
+            return { mode: "error", failureType: "http", status: 400, message: "User id or email is missing." };
         }
+
         const payload = toOutgoingMediaPayload(payloadInput || {});
         if (!payload) {
-            return { mode: "error", message: "Message text or media is required." };
+            return { mode: "error", failureType: "http", status: 400, message: "Message text or media is required." };
         }
 
-        try {
-            if (userId > 0) {
-                const response = await fetchWithApiFallback(
-                    `/api/admin/chat/users/${encodeURIComponent(userId)}/messages`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            message: payload.text,
-                            mediaType: payload.mediaType,
-                            mediaDataUrl: payload.mediaDataUrl,
-                            mediaMime: payload.mediaMime,
-                            mediaName: payload.mediaName,
-                            mediaSizeBytes: payload.mediaSizeBytes
-                        })
-                    }
-                );
-
-                if (!(response.status === 404 || response.status === 405)) {
-                    const payload = await response.json().catch(() => ({}));
-                    if (!response.ok || payload.success !== true) {
-                        return {
-                            mode: "error",
-                            message: payload.message || "Unable to send admin message."
-                        };
-                    }
-
-                    return {
-                        mode: "ok",
-                        payload: payload
-                    };
-                }
-            }
-
-            if (!userEmail) {
-                return { mode: "unavailable" };
-            }
-
-            const response = await fetchWithApiFallback(
-                "/api/chat/messages",
+        if (userId > 0) {
+            const primaryResult = await requestChatApi(
+                `/api/admin/chat/users/${encodeURIComponent(userId)}/messages`,
                 {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        email: userEmail,
-                        entries: [
-                            {
-                                role: "admin",
-                                message: payload.text,
-                                mediaType: payload.mediaType,
-                                mediaDataUrl: payload.mediaDataUrl,
-                                mediaMime: payload.mediaMime,
-                                mediaName: payload.mediaName,
-                                mediaSizeBytes: payload.mediaSizeBytes,
-                                clientMessageId: `admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-                            }
-                        ]
+                        message: payload.text,
+                        mediaType: payload.mediaType,
+                        mediaDataUrl: payload.mediaDataUrl,
+                        mediaMime: payload.mediaMime,
+                        mediaName: payload.mediaName,
+                        mediaSizeBytes: payload.mediaSizeBytes
                     })
-                }
+                },
+                { action: "admin-send", userId }
             );
 
-            if (response.status === 404 || response.status === 405) {
-                return { mode: "unavailable" };
+            if (primaryResult.ok) {
+                return normalizeChatApiFailure(primaryResult, "Unable to send admin message.");
             }
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success !== true) {
-                return {
-                    mode: "error",
-                    message: payload.message || "Unable to send admin message."
-                };
+            if (!shouldUseGenericChatFallback(primaryResult)) {
+                return normalizeChatApiFailure(primaryResult, "Unable to send admin message.");
             }
-
-            return {
-                mode: "ok",
-                payload: payload
-            };
-        } catch (_error) {
-            return { mode: "unavailable" };
         }
+
+        const genericBody = {
+            userId: userId > 0 ? userId : undefined,
+            email: userEmail || undefined,
+            entries: [
+                {
+                    role: "admin",
+                    message: payload.text,
+                    mediaType: payload.mediaType,
+                    mediaDataUrl: payload.mediaDataUrl,
+                    mediaMime: payload.mediaMime,
+                    mediaName: payload.mediaName,
+                    mediaSizeBytes: payload.mediaSizeBytes,
+                    clientMessageId: `admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+                }
+            ]
+        };
+        const fallbackResult = await requestChatApi(
+            "/api/chat/messages",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(genericBody)
+            },
+            { action: "send-fallback", userId, email: userEmail }
+        );
+        return normalizeChatApiFailure(fallbackResult, "Unable to send admin message.");
     }
 
-    async function loadChatThread(forceScroll) {
-        if (!chatState.selectedUser || !chatState.selectedUser.id || chatState.loading) {
+    async function loadChatThread(forceScroll, optionsInput) {
+        const options = optionsInput && typeof optionsInput === "object" ? optionsInput : {};
+        const isPolling = Boolean(options.isPolling);
+        if (!chatState.selectedUser || chatState.loading) {
             return;
         }
 
         const requestUserId = Number(chatState.selectedUser.id || 0);
+        const requestUserEmail = normalizeChatEmail(chatState.selectedUser.email);
+        const requestUserKey = `${requestUserId}|${requestUserEmail}`;
         chatState.loading = true;
         const previousLatestId = chatState.latestMessageId;
         const result = await fetchAdminChatThread({
             id: requestUserId,
-            email: chatState.selectedUser.email
+            email: requestUserEmail
         });
         chatState.loading = false;
 
-        if (!chatState.selectedUser || Number(chatState.selectedUser.id || 0) !== requestUserId) {
+        if (!chatState.selectedUser) {
+            return;
+        }
+        const activeUserKey = `${Number(chatState.selectedUser.id || 0)}|${normalizeChatEmail(chatState.selectedUser.email)}`;
+        if (activeUserKey !== requestUserKey) {
             return;
         }
 
@@ -710,14 +814,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
             renderChatMessages(messages, shouldScroll);
             setChatStatus("", "");
+            if (isPolling) {
+                recordChatPollSuccess();
+            }
             return;
         }
 
-        if (result.mode === "unavailable") {
-            setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
-            return;
+        if (isPolling) {
+            recordChatPollFailure(result.failureType);
         }
-        setChatStatus(result.message || "Unable to load chat thread.", "error");
+        setChatStatus(
+            getChatFailureMessage(result, "Unable to load chat thread.", { retrying: isPolling }),
+            "error"
+        );
     }
 
     async function loadUsers() {
@@ -831,10 +940,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (result.mode === "ok") {
                 setChatStatus("Admin takeover is now active. Chatbot replies are paused.", "success");
                 await loadChatThread(true);
-            } else if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             } else {
-                setChatStatus(result.message || "Unable to start takeover.", "error");
+                setChatStatus(getChatFailureMessage(result, "Unable to start takeover."), "error");
             }
             setChatMode(chatState.mode);
         });
@@ -850,10 +957,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (result.mode === "ok") {
                 setChatStatus("Chatbot has been re-enabled for this user.", "success");
                 await loadChatThread(true);
-            } else if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             } else {
-                setChatStatus(result.message || "Unable to release takeover.", "error");
+                setChatStatus(getChatFailureMessage(result, "Unable to release takeover."), "error");
             }
             setChatMode(chatState.mode);
         });
@@ -1011,7 +1116,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (chatClearBtn) {
         chatClearBtn.addEventListener("click", async () => {
-            if (!chatState.selectedUser || !chatState.selectedUser.email) {
+            if (!chatState.selectedUser || (!chatState.selectedUser.id && !chatState.selectedUser.email)) {
                 return;
             }
             if (!window.confirm("Delete this user's entire chat conversation?")) {
@@ -1022,7 +1127,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const originalText = chatClearBtn.textContent;
             chatClearBtn.textContent = "Deleting...";
 
-            const result = await clearAdminChatThread(chatState.selectedUser.email);
+            const result = await clearAdminChatThread(chatState.selectedUser);
 
             chatClearBtn.textContent = originalText;
             setChatMode(chatState.mode);
@@ -1040,17 +1145,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
-            } else {
-                setChatStatus(result.message || "Unable to delete conversation.", "error");
-            }
+            setChatStatus(getChatFailureMessage(result, "Unable to delete conversation."), "error");
         });
     }
 
     async function submitAdminMessage(payloadInput, optionsInput) {
         const options = optionsInput && typeof optionsInput === "object" ? optionsInput : {};
-        if (!chatState.selectedUser || !chatState.selectedUser.id || chatState.sending) {
+        if (
+            !chatState.selectedUser
+            || (!chatState.selectedUser.id && !chatState.selectedUser.email)
+            || chatState.sending
+        ) {
             return false;
         }
 
@@ -1094,18 +1199,18 @@ document.addEventListener("DOMContentLoaded", () => {
             return true;
         }
 
-        if (result.mode === "unavailable") {
-            setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
-        } else {
-            setChatStatus(result.message || "Unable to send message.", "error");
-        }
+        setChatStatus(getChatFailureMessage(result, "Unable to send message."), "error");
         return false;
     }
 
     if (chatForm) {
         chatForm.addEventListener("submit", async (event) => {
             event.preventDefault();
-            if (!chatState.selectedUser || !chatState.selectedUser.id || chatState.sending) {
+            if (
+                !chatState.selectedUser
+                || (!chatState.selectedUser.id && !chatState.selectedUser.email)
+                || chatState.sending
+            ) {
                 return;
             }
 
@@ -1119,7 +1224,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function sendAdminMediaFile(fileInput, preferredType) {
         const file = fileInput || null;
-        if (!file || !chatState.selectedUser || !chatState.selectedUser.id) {
+        if (!file || !chatState.selectedUser || (!chatState.selectedUser.id && !chatState.selectedUser.email)) {
             return;
         }
         const fileName = typeof file.name === "string" && file.name

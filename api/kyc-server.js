@@ -4856,11 +4856,35 @@ async function handleBlockToggle(req, res, userId, action) {
     }
 }
 
-async function resolveChatTargetUserFromEmail(pool, authSession, requestedEmailInput) {
-    const requestedEmail = normalizeEmail(requestedEmailInput);
+async function resolveChatTargetUser(pool, authSession, targetInput) {
+    const target = targetInput && typeof targetInput === "object" ? targetInput : {};
+    const sessionRole = normalizeUserRole(authSession && authSession.role);
+    const requestedEmail = normalizeEmail(target.email || target.userEmail);
+    const requestedUserId = parsePositiveId(target.userId || target.user_id || target.id);
+
+    if (sessionRole === "admin") {
+        if (requestedUserId > 0) {
+            const userById = await findChatUserById(pool, requestedUserId);
+            if (userById) {
+                return { ok: true, user: userById };
+            }
+            if (!isValidEmail(requestedEmail)) {
+                return { ok: false, statusCode: 404, message: "User not found." };
+            }
+        }
+
+        if (!isValidEmail(requestedEmail)) {
+            return { ok: false, statusCode: 400, message: "A valid userId or email is required." };
+        }
+        const userByEmail = await findChatUserByEmail(pool, requestedEmail);
+        if (!userByEmail) {
+            return { ok: false, statusCode: 404, message: "User not found." };
+        }
+        return { ok: true, user: userByEmail };
+    }
+
     const sessionEmail = normalizeEmail(authSession && authSession.email);
     const targetEmail = isValidEmail(requestedEmail) ? requestedEmail : sessionEmail;
-
     if (!isValidEmail(targetEmail)) {
         return { ok: false, statusCode: 400, message: "A valid email is required." };
     }
@@ -4893,10 +4917,13 @@ async function handleChatThreadGet(req, res, parsedUrl) {
         }
 
         const pool = await getDbPool();
-        const target = await resolveChatTargetUserFromEmail(
+        const target = await resolveChatTargetUser(
             pool,
             authSession,
-            parsedUrl.searchParams.get("email")
+            {
+                email: parsedUrl.searchParams.get("email"),
+                userId: parsedUrl.searchParams.get("userId")
+            }
         );
         if (!target.ok) {
             sendJson(res, target.statusCode, { success: false, message: target.message });
@@ -4960,10 +4987,13 @@ async function handleChatMessagesPost(req, res) {
         }
 
         const pool = await getDbPool();
-        const target = await resolveChatTargetUserFromEmail(
+        const target = await resolveChatTargetUser(
             pool,
             authSession,
-            body.email || body.userEmail
+            {
+                email: body.email || body.userEmail,
+                userId: body.userId || body.user_id
+            }
         );
         if (!target.ok) {
             sendJson(res, target.statusCode, { success: false, message: target.message });
@@ -5058,10 +5088,13 @@ async function handleChatThreadClear(req, res) {
 
         const body = await readBody(req);
         const pool = await getDbPool();
-        const target = await resolveChatTargetUserFromEmail(
+        const target = await resolveChatTargetUser(
             pool,
             authSession,
-            body.email || body.userEmail
+            {
+                email: body.email || body.userEmail,
+                userId: body.userId || body.user_id
+            }
         );
         if (!target.ok) {
             sendJson(res, target.statusCode, { success: false, message: target.message });
