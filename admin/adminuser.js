@@ -65,6 +65,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return normalized;
     }
 
+    function normalizeChatEmail(value) {
+        return String(value || "").trim().toLowerCase();
+    }
+
     function getApiUrl(path) {
         const normalizedPath = normalizeApiPath(path);
         return API_BASE ? `${API_BASE}${normalizedPath}` : normalizedPath;
@@ -408,14 +412,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function fetchAdminChatThread(userId) {
-        if (!userId) {
-            return { mode: "error", message: "User id is missing." };
+    async function fetchChatThreadByEmail(emailInput, limitInput) {
+        const email = normalizeChatEmail(emailInput);
+        if (!email) {
+            return { mode: "error", message: "User email is missing." };
         }
 
         try {
+            const params = new URLSearchParams();
+            params.set("email", email);
+            const limit = Number(limitInput || 0);
+            if (Number.isFinite(limit) && limit > 0) {
+                params.set("limit", String(Math.floor(limit)));
+            }
+
             const response = await fetchWithApiFallback(
-                `/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`,
+                `/api/chat/thread?${params.toString()}`,
                 { method: "GET" }
             );
 
@@ -519,8 +531,57 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function sendAdminChatMessage(userId, payloadInput) {
-        if (!userId) {
+    async function fetchAdminChatThread(userInput) {
+        const user = userInput && typeof userInput === "object" ? userInput : {};
+        const userId = Number(user.id || 0);
+        const userEmail = normalizeChatEmail(user.email);
+
+        if (userId > 0) {
+            try {
+                const response = await fetchWithApiFallback(
+                    `/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`,
+                    { method: "GET" }
+                );
+
+                if (response.status === 404 || response.status === 405) {
+                    if (userEmail) {
+                        return await fetchChatThreadByEmail(userEmail, 250);
+                    }
+                    return { mode: "unavailable" };
+                }
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload.success !== true) {
+                    return {
+                        mode: "error",
+                        message: payload.message || "Unable to load user chat."
+                    };
+                }
+
+                return {
+                    mode: "ok",
+                    payload: payload
+                };
+            } catch (_error) {
+                if (userEmail) {
+                    return await fetchChatThreadByEmail(userEmail, 250);
+                }
+                return { mode: "unavailable" };
+            }
+        }
+
+        if (userEmail) {
+            return await fetchChatThreadByEmail(userEmail, 250);
+        }
+
+        return { mode: "error", message: "User id is missing." };
+    }
+
+    async function sendAdminChatMessage(userInput, payloadInput) {
+        const user = userInput && typeof userInput === "object" ? userInput : {};
+        const userId = Number(user.id || 0);
+        const userEmail = normalizeChatEmail(user.email);
+        if (userId < 1 && !userEmail) {
             return { mode: "error", message: "User id is missing." };
         }
         const payload = toOutgoingMediaPayload(payloadInput || {});
@@ -529,20 +590,66 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
+            if (userId > 0) {
+                const response = await fetchWithApiFallback(
+                    `/api/admin/chat/users/${encodeURIComponent(userId)}/messages`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            message: payload.text,
+                            mediaType: payload.mediaType,
+                            mediaDataUrl: payload.mediaDataUrl,
+                            mediaMime: payload.mediaMime,
+                            mediaName: payload.mediaName,
+                            mediaSizeBytes: payload.mediaSizeBytes
+                        })
+                    }
+                );
+
+                if (!(response.status === 404 || response.status === 405)) {
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload.success !== true) {
+                        return {
+                            mode: "error",
+                            message: payload.message || "Unable to send admin message."
+                        };
+                    }
+
+                    return {
+                        mode: "ok",
+                        payload: payload
+                    };
+                }
+            }
+
+            if (!userEmail) {
+                return { mode: "unavailable" };
+            }
+
             const response = await fetchWithApiFallback(
-                `/api/admin/chat/users/${encodeURIComponent(userId)}/messages`,
+                "/api/chat/messages",
                 {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        message: payload.text,
-                        mediaType: payload.mediaType,
-                        mediaDataUrl: payload.mediaDataUrl,
-                        mediaMime: payload.mediaMime,
-                        mediaName: payload.mediaName,
-                        mediaSizeBytes: payload.mediaSizeBytes
+                        email: userEmail,
+                        entries: [
+                            {
+                                role: "admin",
+                                message: payload.text,
+                                mediaType: payload.mediaType,
+                                mediaDataUrl: payload.mediaDataUrl,
+                                mediaMime: payload.mediaMime,
+                                mediaName: payload.mediaName,
+                                mediaSizeBytes: payload.mediaSizeBytes,
+                                clientMessageId: `admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+                            }
+                        ]
                     })
                 }
             );
@@ -576,7 +683,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const requestUserId = Number(chatState.selectedUser.id || 0);
         chatState.loading = true;
         const previousLatestId = chatState.latestMessageId;
-        const result = await fetchAdminChatThread(requestUserId);
+        const result = await fetchAdminChatThread({
+            id: requestUserId,
+            email: chatState.selectedUser.email
+        });
         chatState.loading = false;
 
         if (!chatState.selectedUser || Number(chatState.selectedUser.id || 0) !== requestUserId) {
@@ -956,7 +1066,7 @@ document.addEventListener("DOMContentLoaded", () => {
             chatVoiceBtn.disabled = true;
         }
 
-        const result = await sendAdminChatMessage(chatState.selectedUser.id, payloadInput);
+        const result = await sendAdminChatMessage(chatState.selectedUser, payloadInput);
 
         chatState.sending = false;
         if (chatSendBtn) {
