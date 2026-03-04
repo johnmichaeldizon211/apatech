@@ -2955,8 +2955,11 @@ function parseChatMediaPayload(input) {
         };
     }
 
-    const match = rawDataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
-    if (!match) {
+    const loweredRawDataUrl = rawDataUrl.toLowerCase();
+    const dataPrefix = "data:";
+    const base64Marker = ";base64,";
+    const markerIndex = loweredRawDataUrl.indexOf(base64Marker);
+    if (!loweredRawDataUrl.startsWith(dataPrefix) || markerIndex <= dataPrefix.length) {
         return {
             hasMedia: false,
             mediaType: "text",
@@ -2968,9 +2971,10 @@ function parseChatMediaPayload(input) {
         };
     }
 
-    const mediaMime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
-    const base64Payload = String(match[2] || "").replace(/\s+/g, "");
-    if (!base64Payload) {
+    const mimeSection = rawDataUrl.slice(dataPrefix.length, markerIndex).trim();
+    const mediaMime = String((mimeSection.split(";")[0] || "")).trim().toLowerCase().slice(0, 120);
+    const base64Payload = String(rawDataUrl.slice(markerIndex + base64Marker.length) || "").replace(/\s+/g, "");
+    if (!mediaMime || !base64Payload || !/^[a-zA-Z0-9+/=]+$/.test(base64Payload)) {
         return {
             hasMedia: false,
             mediaType: "text",

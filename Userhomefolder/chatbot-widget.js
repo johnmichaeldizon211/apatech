@@ -5,7 +5,7 @@
     var DRAG_MOVE_TOLERANCE_PX = 5;
     var POSITION_STORAGE_KEY = "ecodrive_chat_widget_position_v1";
     var MESSAGE_STORAGE_KEY = "ecodrive_chat_messages_v1";
-    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260304d";
+    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260304e";
     var MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
 
     function safeParse(raw) {
@@ -220,13 +220,19 @@
         if (!raw || raw.length > MAX_MEDIA_DATA_URL_LENGTH) {
             return null;
         }
-        var match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
-        if (!match) {
+
+        var loweredRaw = raw.toLowerCase();
+        var prefix = "data:";
+        var marker = ";base64,";
+        var markerIndex = loweredRaw.indexOf(marker);
+        if (loweredRaw.indexOf(prefix) !== 0 || markerIndex <= prefix.length) {
             return null;
         }
-        var mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
-        var base64 = String(match[2] || "").replace(/\s+/g, "");
-        if (!mime || !base64) {
+
+        var mimeSection = raw.slice(prefix.length, markerIndex).trim();
+        var mime = String((mimeSection.split(";")[0] || "")).trim().toLowerCase().slice(0, 120);
+        var base64 = String(raw.slice(markerIndex + marker.length) || "").replace(/\s+/g, "");
+        if (!mime || !base64 || !/^[a-zA-Z0-9+/=]+$/.test(base64)) {
             return null;
         }
 

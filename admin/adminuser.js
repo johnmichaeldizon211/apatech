@@ -733,14 +733,19 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!raw || raw.length > CHAT_MAX_MEDIA_DATA_URL_LENGTH) {
             return null;
         }
-        const match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
-        if (!match) {
+
+        const loweredRaw = raw.toLowerCase();
+        const prefix = "data:";
+        const marker = ";base64,";
+        const markerIndex = loweredRaw.indexOf(marker);
+        if (!loweredRaw.startsWith(prefix) || markerIndex <= prefix.length) {
             return null;
         }
 
-        const mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
-        const base64 = String(match[2] || "").replace(/\s+/g, "");
-        if (!mime || !base64) {
+        const mimeSection = raw.slice(prefix.length, markerIndex).trim();
+        const mime = String((mimeSection.split(";")[0] || "")).trim().toLowerCase().slice(0, 120);
+        const base64 = String(raw.slice(markerIndex + marker.length) || "").replace(/\s+/g, "");
+        if (!mime || !base64 || !/^[a-zA-Z0-9+/=]+$/.test(base64)) {
             return null;
         }
 

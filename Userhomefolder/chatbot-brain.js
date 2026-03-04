@@ -141,6 +141,7 @@
         style.textContent = [
             ".chat-clear-btn{margin-left:8px;border:1.5px solid #b13232;background:#fff5f5;color:#9f2222;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;}",
             ".chat-suggestions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0;}",
+            ".chat-suggestions.is-hidden{display:none;}",
             ".chat-suggestion-btn{border:1.5px solid #3557a1;background:#f4f7ff;color:#123f79;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;}",
             ".chat-suggestion-btn:hover{background:#e8eeff;}",
             ".chat-form.ecodrive-chat-media-ready{display:grid;grid-template-columns:auto auto 1fr auto;gap:7px;align-items:center;}",
@@ -406,17 +407,43 @@
             }
         }
 
-        if (!panel.querySelector(".chat-suggestions")) {
-            var suggestionWrap = global.document.createElement("div");
-            suggestionWrap.className = "chat-suggestions";
+        var suggestionWrap = panel.querySelector(".chat-suggestions");
+        var suggestionQuestions = getSuggestionQuestions();
+        if (!suggestionWrap) {
+            suggestionWrap = global.document.createElement("div");
+            suggestionWrap.className = "chat-suggestions is-hidden";
+            panel.insertBefore(suggestionWrap, form);
+        }
 
-            getSuggestionQuestions().forEach(function (question) {
+        function renderSuggestionChips(queryText) {
+            if (!suggestionWrap) {
+                return;
+            }
+
+            var query = String(queryText || "").trim().toLowerCase();
+            suggestionWrap.innerHTML = "";
+            if (!query) {
+                suggestionWrap.classList.add("is-hidden");
+                return;
+            }
+
+            var matches = suggestionQuestions.filter(function (question) {
+                return String(question || "").toLowerCase().indexOf(query) >= 0;
+            }).slice(0, 4);
+
+            if (!matches.length) {
+                suggestionWrap.classList.add("is-hidden");
+                return;
+            }
+
+            matches.forEach(function (question) {
                 var chip = global.document.createElement("button");
                 chip.type = "button";
                 chip.className = "chat-suggestion-btn";
                 chip.textContent = question;
                 chip.addEventListener("click", function () {
                     input.value = question;
+                    renderSuggestionChips("");
                     if (typeof form.requestSubmit === "function") {
                         form.requestSubmit();
                     } else {
@@ -426,8 +453,29 @@
                 suggestionWrap.appendChild(chip);
             });
 
-            panel.insertBefore(suggestionWrap, form);
+            suggestionWrap.classList.remove("is-hidden");
         }
+
+        if (!input.dataset.ecodriveSuggestionBound) {
+            input.dataset.ecodriveSuggestionBound = "1";
+            input.addEventListener("input", function () {
+                renderSuggestionChips(input.value);
+            });
+            input.addEventListener("focus", function () {
+                renderSuggestionChips(input.value);
+            });
+        }
+
+        if (!form.dataset.ecodriveSuggestionSubmitBound) {
+            form.dataset.ecodriveSuggestionSubmitBound = "1";
+            form.addEventListener("submit", function () {
+                global.setTimeout(function () {
+                    renderSuggestionChips("");
+                }, 0);
+            });
+        }
+
+        renderSuggestionChips("");
 
         form.classList.add("ecodrive-chat-media-ready");
 
@@ -1032,14 +1080,18 @@
             return null;
         }
 
-        var match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
-        if (!match) {
+        var loweredRaw = raw.toLowerCase();
+        var prefix = "data:";
+        var marker = ";base64,";
+        var markerIndex = loweredRaw.indexOf(marker);
+        if (loweredRaw.indexOf(prefix) !== 0 || markerIndex <= prefix.length) {
             return null;
         }
 
-        var mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
-        var base64 = String(match[2] || "").replace(/\s+/g, "");
-        if (!mime || !base64) {
+        var mimeSection = raw.slice(prefix.length, markerIndex).trim();
+        var mime = String((mimeSection.split(";")[0] || "")).trim().toLowerCase().slice(0, 120);
+        var base64 = String(raw.slice(markerIndex + marker.length) || "").replace(/\s+/g, "");
+        if (!mime || !base64 || !/^[a-zA-Z0-9+/=]+$/.test(base64)) {
             return null;
         }
 
