@@ -76,40 +76,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function buildApiFetchCandidates(path) {
         const normalizedPath = normalizeApiPath(path);
-        const primaryUrl = getApiUrl(normalizedPath);
-        const candidates = [primaryUrl];
-
-        if (API_BASE && primaryUrl !== normalizedPath) {
-            let shouldAppendSameOrigin = true;
-            try {
-                const apiOrigin = String(new URL(API_BASE).origin || "").trim().toLowerCase();
-                const currentOrigin = window.location && window.location.origin
-                    ? String(window.location.origin).trim().toLowerCase()
-                    : "";
-                if (apiOrigin && currentOrigin && apiOrigin === currentOrigin) {
-                    shouldAppendSameOrigin = false;
-                }
-            } catch (_error) {
-                // keep same-origin candidate as fallback
-            }
-
-            if (shouldAppendSameOrigin) {
-                candidates.push(normalizedPath);
-            }
+        const candidates = [normalizedPath];
+        const configuredBaseUrl = getApiUrl(normalizedPath);
+        if (configuredBaseUrl && configuredBaseUrl !== normalizedPath) {
+            candidates.push(configuredBaseUrl);
         }
-
         return candidates.filter((entry, index, source) => entry && source.indexOf(entry) === index);
+    }
+
+    function shouldRetryNextCandidate(response, hasRemainingCandidate) {
+        if (!response || !hasRemainingCandidate) {
+            return false;
+        }
+        const retryStatuses = new Set([404, 405, 408, 429, 500, 502, 503, 504]);
+        return retryStatuses.has(Number(response.status || 0));
     }
 
     async function fetchWithApiFallback(path, options) {
         const candidates = buildApiFetchCandidates(path);
         let lastError = null;
+        let lastResponse = null;
         for (let i = 0; i < candidates.length; i += 1) {
             try {
-                return await fetch(candidates[i], options);
+                const response = await fetch(candidates[i], options);
+                lastResponse = response;
+                if (shouldRetryNextCandidate(response, i < candidates.length - 1)) {
+                    continue;
+                }
+                return response;
             } catch (error) {
                 lastError = error;
             }
+        }
+        if (lastResponse) {
+            return lastResponse;
         }
         throw (lastError || new Error("Network request failed."));
     }
