@@ -40,45 +40,6 @@ body {
     text-transform: uppercase;
 }
 
-.nav-toggle {
-    display: none;
-    width: 36px;
-    height: 34px;
-    border: 1.5px solid #0b3b66;
-    border-radius: 8px;
-    background: #ffffff;
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.nav-toggle span {
-    width: 18px;
-    height: 2px;
-    background: #0b3b66;
-    border-radius: 2px;
-    transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-.nav-toggle[aria-expanded="true"] span:nth-child(1) {
-    transform: translateY(6px) rotate(45deg);
-}
-
-.nav-toggle[aria-expanded="true"] span:nth-child(2) {
-    opacity: 0;
-}
-
-.nav-toggle[aria-expanded="true"] span:nth-child(3) {
-    transform: translateY(-6px) rotate(-45deg);
-}
-
-.nav-toggle:focus-visible {
-    outline: 2px solid #3158b3;
-    outline-offset: 2px;
-}
-
 .nav-right {
     display: flex;
     align-items: center;
@@ -480,56 +441,34 @@ body {
 
 @media (max-width: 980px) {
     .navbar {
-        padding: 10px 14px 12px;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
+        padding: 10px 14px;
+        align-items: flex-start;
+        flex-wrap: wrap;
         gap: 10px;
     }
 
-    .nav-toggle {
-        display: inline-flex;
-    }
-
     .nav-right {
-        margin-top: 0;
         width: 100%;
-        grid-column: 1 / -1;
-        display: none;
-        grid-template-columns: 1fr;
-        gap: 8px;
-        align-items: start;
-        padding-top: 8px;
-        border-top: 1px solid #aec7d4;
-    }
-
-    .nav-right.open {
-        display: grid;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
     }
 
     .nav-links {
-        grid-column: 1 / -1;
-        width: 100%;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-        gap: 8px;
-        justify-content: stretch;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 
     .nav-links a {
-        width: 100%;
-        height: 32px;
-        padding: 0 10px;
+        height: 30px;
+        padding: 0 8px;
         font-size: 11.5px;
-        justify-content: flex-start;
-    }
-
-    .nav-links li {
-        width: 100%;
+        justify-content: center;
     }
 
     .profile-menu {
-        justify-self: end;
+        margin-left: auto;
     }
 
     .dropdown {

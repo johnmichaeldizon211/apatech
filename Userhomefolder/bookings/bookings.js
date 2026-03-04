@@ -1,7 +1,4 @@
 (function () {
-            const navbar = document.querySelector(".navbar");
-            const navToggle = document.getElementById("nav-toggle");
-            const navRight = document.getElementById("nav-right");
             const profileBtn = document.querySelector(".profile-menu .profile-btn");
             const dropdown = document.querySelector(".profile-menu .dropdown");
             const bookingRows = document.getElementById("bookingRows");
@@ -26,49 +23,6 @@
             let bookingRefreshInFlight = false;
             let latestRenderedBookingItems = [];
             let receiptPdfLibPromise = null;
-
-            function isMobileMenuLayout() {
-                return window.matchMedia("(max-width: 980px)").matches;
-            }
-
-            function closeNavMenu() {
-                if (!navRight || !navToggle) {
-                    return;
-                }
-                navRight.classList.remove("open");
-                navToggle.setAttribute("aria-expanded", "false");
-            }
-
-            if (navToggle && navRight) {
-                navToggle.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    const willOpen = !navRight.classList.contains("open");
-                    navRight.classList.toggle("open", willOpen);
-                    navToggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
-                });
-
-                navRight.addEventListener("click", function (event) {
-                    const navLink = event.target.closest(".nav-links a");
-                    if (navLink && isMobileMenuLayout()) {
-                        closeNavMenu();
-                    }
-                });
-
-                window.addEventListener("resize", function () {
-                    if (!isMobileMenuLayout()) {
-                        closeNavMenu();
-                    }
-                });
-
-                document.addEventListener("click", function (event) {
-                    if (!isMobileMenuLayout()) {
-                        return;
-                    }
-                    if (navbar && !navbar.contains(event.target)) {
-                        closeNavMenu();
-                    }
-                });
-            }
 
             if (profileBtn && dropdown) {
                 profileBtn.addEventListener("click", function (e) {
@@ -1888,7 +1842,6 @@
             document.addEventListener("keydown", function (event) {
                 if (event.key === "Escape") {
                     closeChat();
-                    closeNavMenu();
                     if (dropdown) {
                         dropdown.classList.remove("show");
                     }
