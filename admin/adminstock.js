@@ -912,7 +912,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function getModelOptions() {
         const seen = {};
         const options = [];
-        products.forEach(function (product) {
+        getVisibleProducts().forEach(function (product) {
             const modelKey = normalizeModelKey(product.model);
             if (!modelKey || seen[modelKey]) {
                 return;
@@ -1156,6 +1156,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function getVisibleProducts() {
+        return products.filter(function (item) {
+            return Boolean(item && item.isActive);
+        });
+    }
+
     function setAddStatus(message, tone) {
         addStatusEl.textContent = String(message || "");
         addStatusEl.classList.remove("is-success", "is-warning", "is-error", "is-muted");
@@ -1245,15 +1251,14 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function renderStats() {
-        const totalModels = products.length;
-        const available = products.filter(function (item) {
-            return item.isActive;
-        }).length;
-        const unavailable = totalModels - available;
+        const visibleProducts = getVisibleProducts();
+        const totalModels = visibleProducts.length;
+        const available = visibleProducts.length;
+        const unavailable = 0;
 
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const newThisMonth = products.filter(function (item) {
+        const newThisMonth = visibleProducts.filter(function (item) {
             const raw = String(item.createdAt || "").trim();
             if (!raw) {
                 return false;
@@ -1272,8 +1277,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function renderStockCards() {
+        const visibleProducts = getVisibleProducts();
         stockGridEl.innerHTML = "";
-        if (!products.length) {
+        if (!visibleProducts.length) {
             const emptyCard = document.createElement("article");
             emptyCard.className = "panel stock-card stock-card-empty";
             emptyCard.textContent = "No models found.";
@@ -1282,7 +1288,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const fragment = document.createDocumentFragment();
-        products.forEach(function (item) {
+        visibleProducts.forEach(function (item) {
             fragment.appendChild(createStockCard(item));
         });
         stockGridEl.appendChild(fragment);
@@ -1301,7 +1307,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function fetchProductsFromApi() {
         const endpoints = [
-            "/api/admin/products?includeInactive=true",
+            "/api/admin/products",
             "/api/products"
         ];
         let sawHttpError = false;
