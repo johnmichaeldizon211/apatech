@@ -346,7 +346,7 @@
     }
 
     function normalizeLocationRows(rows) {
-        return (Array.isArray(rows) ? rows : [])
+        const normalizedRows = (Array.isArray(rows) ? rows : [])
             .map(function (row) {
                 if (!row || typeof row !== "object") {
                     return null;
@@ -364,6 +364,107 @@
                 };
             })
             .filter(Boolean);
+
+        return normalizedRows.sort(function (a, b) {
+            return String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" });
+        });
+    }
+
+    function parseShippingAddressParts(addressInput) {
+        const normalizedAddress = normalizeLocationText(addressInput).replace(/\s+/g, " ").trim();
+        if (!normalizedAddress) {
+            return {
+                street: "",
+                barangay: "",
+                city: "",
+                province: ""
+            };
+        }
+
+        const segments = normalizedAddress
+            .split(",")
+            .map(function (segment) {
+                return normalizeLocationText(segment).replace(/\s+/g, " ").trim();
+            })
+            .filter(Boolean);
+
+        if (segments.length >= 4) {
+            return {
+                street: segments.slice(0, segments.length - 3).join(", "),
+                barangay: segments[segments.length - 3],
+                city: segments[segments.length - 2],
+                province: segments[segments.length - 1]
+            };
+        }
+
+        if (segments.length === 3) {
+            return {
+                street: segments[0],
+                barangay: segments[1],
+                city: segments[2],
+                province: ""
+            };
+        }
+
+        if (segments.length === 2) {
+            return {
+                street: segments[0],
+                barangay: segments[1],
+                city: "",
+                province: ""
+            };
+        }
+
+        return {
+            street: normalizedAddress,
+            barangay: "",
+            city: "",
+            province: ""
+        };
+    }
+
+    function deriveStep2SeedFromCheckoutDraft(existingDataInput) {
+        const existingData = existingDataInput && typeof existingDataInput === "object"
+            ? existingDataInput
+            : {};
+        const draft = getCheckoutDraft();
+        if (!draft || typeof draft !== "object") {
+            return Object.assign({}, existingData);
+        }
+
+        const next = Object.assign({}, existingData);
+        if (!next.personalEmail && draft.email) {
+            next.personalEmail = String(draft.email).trim();
+        }
+
+        const shippingAddress = String(draft.shippingAddress || "").trim();
+        const serviceText = String(draft.service || "").trim().toLowerCase();
+        const commaCount = shippingAddress ? shippingAddress.split(",").length : 0;
+        const shouldSeedAddress = shippingAddress && (
+            serviceText.includes("deliver")
+            || serviceText.includes("home service")
+            || commaCount >= 3
+        );
+
+        if (!shouldSeedAddress) {
+            return next;
+        }
+
+        const parsedAddress = parseShippingAddressParts(shippingAddress);
+        if (!next.street && parsedAddress.street) {
+            next.street = parsedAddress.street;
+        }
+        if (!next.province && parsedAddress.province) {
+            next.province = parsedAddress.province;
+        }
+        if (!next.city && parsedAddress.city) {
+            next.city = parsedAddress.city;
+        }
+        if (!next.barangay && parsedAddress.barangay) {
+            next.barangay = parsedAddress.barangay;
+        }
+
+        return next;
     }
 
     async function fetchLocationRows(url) {
@@ -880,7 +981,11 @@
     }
 
     function seedStep2() {
-        const data = getInstallmentFormData();
+        const storedData = getInstallmentFormData();
+        const data = deriveStep2SeedFromCheckoutDraft(storedData);
+        if (JSON.stringify(data) !== JSON.stringify(storedData)) {
+            setInstallmentFormData(data);
+        }
         const fields = [
             "firstName", "middleName", "lastName", "gender", "age", "personalEmail",
             "cellphone", "zipCode", "street", "civilStatus", "dob",
@@ -894,10 +999,9 @@
             }
         });
 
-        const draft = getCheckoutDraft();
         const emailInput = document.getElementById("personalEmail");
-        if (emailInput && !emailInput.value && draft && draft.email) {
-            emailInput.value = draft.email;
+        if (emailInput && !emailInput.value && data.personalEmail) {
+            emailInput.value = data.personalEmail;
         }
 
         return data;
@@ -946,8 +1050,6 @@
             return;
         }
 
-        const existing = getInstallmentFormData();
-
         form.addEventListener("submit", function (event) {
             event.preventDefault();
             if (error) {
@@ -955,6 +1057,7 @@
             }
 
             const timestamp = new Date().toISOString();
+            const existing = deriveStep2SeedFromCheckoutDraft(getInstallmentFormData());
             const next = {
                 ...existing,
                 idType: "Requirements Review",
