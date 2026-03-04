@@ -57,8 +57,57 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
+    function normalizeApiPath(pathInput) {
+        let normalized = String(pathInput || "").trim();
+        if (!normalized.startsWith("/")) {
+            normalized = `/${normalized}`;
+        }
+        return normalized;
+    }
+
     function getApiUrl(path) {
-        return API_BASE ? `${API_BASE}${path}` : path;
+        const normalizedPath = normalizeApiPath(path);
+        return API_BASE ? `${API_BASE}${normalizedPath}` : normalizedPath;
+    }
+
+    function buildApiFetchCandidates(path) {
+        const normalizedPath = normalizeApiPath(path);
+        const primaryUrl = getApiUrl(normalizedPath);
+        const candidates = [primaryUrl];
+
+        if (API_BASE && primaryUrl !== normalizedPath) {
+            let shouldAppendSameOrigin = true;
+            try {
+                const apiOrigin = String(new URL(API_BASE).origin || "").trim().toLowerCase();
+                const currentOrigin = window.location && window.location.origin
+                    ? String(window.location.origin).trim().toLowerCase()
+                    : "";
+                if (apiOrigin && currentOrigin && apiOrigin === currentOrigin) {
+                    shouldAppendSameOrigin = false;
+                }
+            } catch (_error) {
+                // keep same-origin candidate as fallback
+            }
+
+            if (shouldAppendSameOrigin) {
+                candidates.push(normalizedPath);
+            }
+        }
+
+        return candidates.filter((entry, index, source) => entry && source.indexOf(entry) === index);
+    }
+
+    async function fetchWithApiFallback(path, options) {
+        const candidates = buildApiFetchCandidates(path);
+        let lastError = null;
+        for (let i = 0; i < candidates.length; i += 1) {
+            try {
+                return await fetch(candidates[i], options);
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        throw (lastError || new Error("Network request failed."));
     }
 
     function escapeHtml(value) {
@@ -310,7 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function fetchUsersFromApi() {
         try {
-            const response = await fetch(getApiUrl("/api/admin/users"), { method: "GET" });
+            const response = await fetchWithApiFallback("/api/admin/users", { method: "GET" });
 
             if (response.status === 404 || response.status === 405) {
                 return { mode: "unavailable" };
@@ -336,8 +385,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            const response = await fetch(
-                getApiUrl(`/api/admin/users/${encodeURIComponent(user.id)}/${action}`),
+            const response = await fetchWithApiFallback(
+                `/api/admin/users/${encodeURIComponent(user.id)}/${action}`,
                 { method: "POST" }
             );
 
@@ -365,8 +414,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            const response = await fetch(
-                getApiUrl(`/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`),
+            const response = await fetchWithApiFallback(
+                `/api/admin/chat/users/${encodeURIComponent(userId)}?limit=250`,
                 { method: "GET" }
             );
 
@@ -397,8 +446,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            const response = await fetch(
-                getApiUrl(`/api/admin/chat/users/${encodeURIComponent(userId)}/${endpointSuffix}`),
+            const response = await fetchWithApiFallback(
+                `/api/admin/chat/users/${encodeURIComponent(userId)}/${endpointSuffix}`,
                 {
                     method: "POST",
                     headers: {
@@ -436,8 +485,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            const response = await fetch(
-                getApiUrl("/api/chat/thread/clear"),
+            const response = await fetchWithApiFallback(
+                "/api/chat/thread/clear",
                 {
                     method: "POST",
                     headers: {
@@ -480,8 +529,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            const response = await fetch(
-                getApiUrl(`/api/admin/chat/users/${encodeURIComponent(userId)}/messages`),
+            const response = await fetchWithApiFallback(
+                `/api/admin/chat/users/${encodeURIComponent(userId)}/messages`,
                 {
                     method: "POST",
                     headers: {
@@ -555,7 +604,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (result.mode === "unavailable") {
-            setChatStatus("Chat API is unavailable. Make sure the backend server is running.", "error");
+            setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             return;
         }
         setChatStatus(result.message || "Unable to load chat thread.", "error");
@@ -673,7 +722,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 setChatStatus("Admin takeover is now active. Chatbot replies are paused.", "success");
                 await loadChatThread(true);
             } else if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Start the backend server.", "error");
+                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             } else {
                 setChatStatus(result.message || "Unable to start takeover.", "error");
             }
@@ -692,7 +741,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 setChatStatus("Chatbot has been re-enabled for this user.", "success");
                 await loadChatThread(true);
             } else if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Start the backend server.", "error");
+                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             } else {
                 setChatStatus(result.message || "Unable to release takeover.", "error");
             }
@@ -882,7 +931,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Start the backend server.", "error");
+                setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
             } else {
                 setChatStatus(result.message || "Unable to delete conversation.", "error");
             }
@@ -936,7 +985,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (result.mode === "unavailable") {
-            setChatStatus("Chat API unavailable. Start the backend server.", "error");
+            setChatStatus("Chat API unavailable. Refresh this page or clear old API base cache.", "error");
         } else {
             setChatStatus(result.message || "Unable to send message.", "error");
         }

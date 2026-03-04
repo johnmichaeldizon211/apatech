@@ -113,6 +113,11 @@
             return true;
         }
 
+        // For Vercel preview/prod deployments, avoid sticky API base from another deployment host.
+        if (/\.vercel\.app$/i.test(currentHost) && storedHost !== currentHost) {
+            return true;
+        }
+
         return false;
     }
 
