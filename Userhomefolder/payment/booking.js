@@ -588,15 +588,6 @@
         const queryImage = params.get("image");
         const querySubtitle = params.get("subtitle") || params.get("category");
         const queryColor = normalizeColorLabel(params.get("bikeColor") || params.get("color") || params.get("selectedColor"));
-        if (queryModel || queryTotal || queryImage) {
-            return {
-                model: String(queryModel || "Ecodrive E-Bike"),
-                total: Number.isFinite(queryTotal) && queryTotal > 0 ? queryTotal : 68000,
-                image: String(queryImage || "../image 1.png"),
-                subtitle: String(querySubtitle || "E-Bike"),
-                bikeColor: queryColor
-            };
-        }
 
         const candidates = [
             safeParse(localStorage.getItem("ecodrive_checkout_selection")),
@@ -605,6 +596,47 @@
             safeParse(localStorage.getItem("checkout_selection")),
             safeParse(localStorage.getItem("latestBooking"))
         ];
+        const queryModelKey = normalizeText(queryModel).toLowerCase();
+        let matchedSelection = null;
+        let firstSelection = null;
+        for (let i = 0; i < candidates.length; i += 1) {
+            const selected = extractSelection(candidates[i]);
+            if (!selected) {
+                continue;
+            }
+            if (!firstSelection) {
+                firstSelection = selected;
+            }
+            if (!queryModelKey) {
+                if (!matchedSelection) {
+                    matchedSelection = selected;
+                }
+                continue;
+            }
+            if (normalizeText(selected.model).toLowerCase() === queryModelKey) {
+                matchedSelection = selected;
+                break;
+            }
+        }
+
+        if (queryModel || queryTotal || queryImage) {
+            const fallbackSelection = matchedSelection || firstSelection || getFallbackBikeByReferrer() || {
+                model: "Ecodrive E-Bike",
+                total: 68000,
+                image: "../image 1.png",
+                subtitle: "E-Bike",
+                bikeColor: ""
+            };
+            return {
+                model: String(queryModel || fallbackSelection.model || "Ecodrive E-Bike"),
+                total: Number.isFinite(queryTotal) && queryTotal > 0
+                    ? queryTotal
+                    : (Number(fallbackSelection.total || 0) || 68000),
+                image: String(queryImage || fallbackSelection.image || "../image 1.png"),
+                subtitle: String(querySubtitle || fallbackSelection.subtitle || "E-Bike"),
+                bikeColor: queryColor || normalizeColorLabel(fallbackSelection.bikeColor || fallbackSelection.color || "")
+            };
+        }
 
         for (let i = 0; i < candidates.length; i += 1) {
             const selected = extractSelection(candidates[i]);
