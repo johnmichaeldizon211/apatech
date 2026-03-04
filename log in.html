@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ecodrive Login</title>
-    <link rel="stylesheet" href="log in.css">
+    <link rel="stylesheet" href="log in.css?v=20260304b">
 </head>
 <body>
 
@@ -27,7 +27,10 @@
             <input type="email" id="email" placeholder="Enter your email" autocomplete="username" required>
 
             <label>Password</label>
-            <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required>
+            <div class="password-wrap">
+                <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required>
+                <button type="button" id="togglePasswordBtn" class="toggle-password-btn" aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
 
             <div class="extras">
                 <div class="remember">
@@ -48,7 +51,7 @@
 </div>
 
 <script src="session.js?v=20260302-loginfix1"></script>
-<script src="log in.js?v=20260302-loginfix1"></script>
+<script src="log in.js?v=20260304b"></script>
 </body>
 </html>
 

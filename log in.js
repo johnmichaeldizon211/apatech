@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var form = document.getElementById("loginForm");
     var loginIdInput = document.getElementById("email");
     var passwordInput = document.getElementById("password");
+    var togglePasswordBtn = document.getElementById("togglePasswordBtn");
     var rememberInput = document.getElementById("remember");
     var loginError = document.getElementById("loginError");
 
@@ -55,6 +56,15 @@ document.addEventListener("DOMContentLoaded", function () {
         if (loginError) {
             loginError.textContent = "";
         }
+    }
+
+    if (togglePasswordBtn) {
+        togglePasswordBtn.addEventListener("click", function () {
+            var shouldShow = passwordInput.type === "password";
+            passwordInput.type = shouldShow ? "text" : "password";
+            togglePasswordBtn.textContent = shouldShow ? "Hide" : "Show";
+            togglePasswordBtn.setAttribute("aria-pressed", shouldShow ? "true" : "false");
+        });
     }
 
     form.addEventListener("submit", async function (event) {
