@@ -189,7 +189,10 @@ const ALLOWED_PAYMENT_STATUSES = new Set([
 const CHAT_THREAD_MODE_BOT = "bot";
 const CHAT_THREAD_MODE_ADMIN = "admin";
 const CHAT_ALLOWED_MESSAGE_ROLES = new Set(["user", "bot", "admin", "system"]);
+const CHAT_ALLOWED_MEDIA_TYPES = new Set(["text", "image", "video", "audio"]);
 const MAX_CHAT_MESSAGE_TEXT_LENGTH = 2000;
+const MAX_CHAT_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
+const MAX_CHAT_MEDIA_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CHAT_MESSAGE_LIMIT = 180;
 const MAX_CHAT_MESSAGE_LIMIT = 300;
 
@@ -1441,6 +1444,11 @@ async function ensureDbSchema() {
                 sender_role ENUM('user', 'bot', 'admin', 'system') NOT NULL,
                 sender_label VARCHAR(80) NULL,
                 message_text TEXT NOT NULL,
+                message_type ENUM('text', 'image', 'video', 'audio') NOT NULL DEFAULT 'text',
+                media_data_url MEDIUMTEXT NULL,
+                media_mime VARCHAR(120) NULL,
+                media_name VARCHAR(255) NULL,
+                media_size_bytes INT UNSIGNED NULL,
                 client_message_id VARCHAR(120) NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
@@ -1456,6 +1464,46 @@ async function ensureDbSchema() {
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add chat_messages.client_message_id automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN message_type ENUM('text', 'image', 'video', 'audio') NOT NULL DEFAULT 'text' AFTER message_text"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.message_type automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN media_data_url MEDIUMTEXT NULL AFTER message_type"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.media_data_url automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN media_mime VARCHAR(120) NULL AFTER media_data_url"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.media_mime automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN media_name VARCHAR(255) NULL AFTER media_mime"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.media_name automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE chat_messages ADD COLUMN media_size_bytes INT UNSIGNED NULL AFTER media_name"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add chat_messages.media_size_bytes automatically:", alterError.message || alterError);
         }
     } catch (error) {
         console.warn("[db-schema] Unable to auto-prepare schema:", error.message || error);
@@ -2812,6 +2860,237 @@ function normalizeChatMessageText(value) {
     return text.slice(0, MAX_CHAT_MESSAGE_TEXT_LENGTH);
 }
 
+function normalizeChatMediaType(value, fallbackType) {
+    const fallback = String(fallbackType || "text").trim().toLowerCase();
+    const normalized = String(value || fallback).trim().toLowerCase();
+    if (CHAT_ALLOWED_MEDIA_TYPES.has(normalized)) {
+        return normalized;
+    }
+    if (CHAT_ALLOWED_MEDIA_TYPES.has(fallback)) {
+        return fallback;
+    }
+    return "text";
+}
+
+function inferChatMediaTypeFromMime(mimeInput) {
+    const mime = String(mimeInput || "").trim().toLowerCase();
+    if (mime.startsWith("image/")) {
+        return "image";
+    }
+    if (mime.startsWith("video/")) {
+        return "video";
+    }
+    if (mime.startsWith("audio/")) {
+        return "audio";
+    }
+    return "text";
+}
+
+function estimateDecodedBase64Bytes(base64Input) {
+    const base64 = String(base64Input || "").replace(/\s+/g, "");
+    if (!base64) {
+        return 0;
+    }
+    let padding = 0;
+    if (base64.endsWith("==")) {
+        padding = 2;
+    } else if (base64.endsWith("=")) {
+        padding = 1;
+    }
+    return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
+
+function normalizeChatMediaName(value) {
+    const name = String(value || "").trim();
+    if (!name) {
+        return "";
+    }
+    return name.replace(/[\r\n\t]+/g, " ").slice(0, 255);
+}
+
+function getChatMediaFallbackText(mediaTypeInput) {
+    const mediaType = normalizeChatMediaType(mediaTypeInput, "text");
+    if (mediaType === "image") {
+        return "[Image]";
+    }
+    if (mediaType === "video") {
+        return "[Video]";
+    }
+    if (mediaType === "audio") {
+        return "[Voice message]";
+    }
+    return "";
+}
+
+function parseChatMediaPayload(input) {
+    const source = input && typeof input === "object" ? input : {};
+    const rawDataUrl = String(
+        source.mediaDataUrl
+        || source.media_data_url
+        || source.mediaUrl
+        || source.media_url
+        || ""
+    ).trim();
+    if (!rawDataUrl) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: ""
+        };
+    }
+
+    if (rawDataUrl.length > MAX_CHAT_MEDIA_DATA_URL_LENGTH) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Attached media is too large. Maximum is 4MB."
+        };
+    }
+
+    const match = rawDataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+    if (!match) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Invalid media format. Use a valid image, video, or audio file."
+        };
+    }
+
+    const mediaMime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
+    const base64Payload = String(match[2] || "").replace(/\s+/g, "");
+    if (!base64Payload) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Invalid media format. Empty attachment data."
+        };
+    }
+
+    const inferredMediaType = inferChatMediaTypeFromMime(mediaMime);
+    const requestedMediaType = normalizeChatMediaType(
+        source.mediaType || source.media_type || source.messageType || source.message_type,
+        inferredMediaType
+    );
+    const mediaType = requestedMediaType === "text"
+        ? inferredMediaType
+        : requestedMediaType;
+
+    if (mediaType === "text") {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Unsupported media type. Only image, video, and voice are allowed."
+        };
+    }
+
+    if (
+        (mediaType === "image" && !mediaMime.startsWith("image/"))
+        || (mediaType === "video" && !mediaMime.startsWith("video/"))
+        || (mediaType === "audio" && !mediaMime.startsWith("audio/"))
+    ) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Attachment type does not match the selected media type."
+        };
+    }
+
+    const mediaSizeBytes = estimateDecodedBase64Bytes(base64Payload);
+    if (!mediaSizeBytes || mediaSizeBytes > MAX_CHAT_MEDIA_BYTES) {
+        return {
+            hasMedia: false,
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: "Attached media is too large. Maximum is 4MB."
+        };
+    }
+
+    const normalizedDataUrl = `data:${mediaMime};base64,${base64Payload}`;
+    return {
+        hasMedia: true,
+        mediaType: mediaType,
+        mediaDataUrl: normalizedDataUrl,
+        mediaMime: mediaMime,
+        mediaName: normalizeChatMediaName(source.mediaName || source.media_name) || null,
+        mediaSizeBytes: mediaSizeBytes,
+        error: ""
+    };
+}
+
+function normalizeChatMessageInput(input) {
+    const source = input && typeof input === "object"
+        ? input
+        : { text: input };
+    const text = normalizeChatMessageText(
+        source.text || source.message || source.messageText || source.message_text
+    );
+    const media = parseChatMediaPayload(source);
+    if (media.error) {
+        return {
+            valid: false,
+            text: "",
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: media.error
+        };
+    }
+
+    const messageText = text || (media.hasMedia ? getChatMediaFallbackText(media.mediaType) : "");
+    if (!messageText && !media.hasMedia) {
+        return {
+            valid: false,
+            text: "",
+            mediaType: "text",
+            mediaDataUrl: null,
+            mediaMime: null,
+            mediaName: null,
+            mediaSizeBytes: null,
+            error: ""
+        };
+    }
+
+    return {
+        valid: true,
+        text: messageText,
+        mediaType: media.hasMedia ? media.mediaType : "text",
+        mediaDataUrl: media.hasMedia ? media.mediaDataUrl : null,
+        mediaMime: media.hasMedia ? media.mediaMime : null,
+        mediaName: media.hasMedia ? media.mediaName : null,
+        mediaSizeBytes: media.hasMedia ? media.mediaSizeBytes : null,
+        error: ""
+    };
+}
+
 function normalizeChatClientMessageId(value) {
     const cleaned = String(value || "").trim().replace(/[^a-zA-Z0-9._\-:]/g, "");
     if (!cleaned) {
@@ -3396,12 +3675,23 @@ function mapChatThreadRow(row) {
 }
 
 function mapChatMessageRow(row) {
+    const messageType = normalizeChatMediaType(row.message_type, "text");
+    const mediaDataUrl = row.media_data_url ? String(row.media_data_url) : "";
+    const mediaMime = row.media_mime ? String(row.media_mime) : "";
+    const mediaName = row.media_name ? String(row.media_name) : "";
+    const mediaSizeBytes = Number(row.media_size_bytes || 0);
     return {
         id: Number(row.id || 0),
         threadId: Number(row.thread_id || 0),
         role: normalizeChatMessageRole(row.sender_role, "user"),
         senderLabel: String(row.sender_label || ""),
         text: String(row.message_text || ""),
+        messageType: messageType,
+        mediaType: messageType,
+        mediaDataUrl: mediaDataUrl,
+        mediaMime: mediaMime,
+        mediaName: mediaName,
+        mediaSizeBytes: Number.isFinite(mediaSizeBytes) && mediaSizeBytes > 0 ? mediaSizeBytes : 0,
         clientMessageId: String(row.client_message_id || ""),
         createdAt: row.created_at || null
     };
@@ -3612,7 +3902,7 @@ async function setChatThreadMode(pool, threadId, mode, adminSession) {
     return mapChatThreadRow(rows[0]);
 }
 
-async function insertChatMessage(pool, threadId, role, text, options) {
+async function insertChatMessage(pool, threadId, role, messageInput, options) {
     const parsedThreadId = parsePositiveId(threadId);
     if (!parsedThreadId) {
         return null;
@@ -3620,7 +3910,16 @@ async function insertChatMessage(pool, threadId, role, text, options) {
 
     const opts = options && typeof options === "object" ? options : {};
     const senderRole = normalizeChatMessageRole(role, "user");
-    const messageText = normalizeChatMessageText(text);
+    const normalizedMessage = normalizeChatMessageInput(messageInput);
+    if (normalizedMessage.error) {
+        throw new Error(normalizedMessage.error);
+    }
+    if (!normalizedMessage.valid || (!normalizedMessage.text && !normalizedMessage.mediaDataUrl)) {
+        return null;
+    }
+
+    const messageType = normalizeChatMediaType(normalizedMessage.mediaType, "text");
+    const messageText = normalizedMessage.text || getChatMediaFallbackText(messageType);
     if (!messageText) {
         return null;
     }
@@ -3634,13 +3933,27 @@ async function insertChatMessage(pool, threadId, role, text, options) {
             sender_role,
             sender_label,
             message_text,
+            message_type,
+            media_data_url,
+            media_mime,
+            media_name,
+            media_size_bytes,
             client_message_id
-        ) VALUES (?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             parsedThreadId,
             senderRole,
             senderLabel,
             messageText,
+            messageType,
+            messageType === "text" ? null : (normalizedMessage.mediaDataUrl || null),
+            messageType === "text" ? null : (normalizedMessage.mediaMime || null),
+            messageType === "text" ? null : (normalizedMessage.mediaName || null),
+            messageType === "text"
+                ? null
+                : (Number.isFinite(Number(normalizedMessage.mediaSizeBytes)) && Number(normalizedMessage.mediaSizeBytes) > 0
+                    ? Math.floor(Number(normalizedMessage.mediaSizeBytes))
+                    : null),
             clientMessageId || null
         ]
     );
@@ -4615,7 +4928,13 @@ function parseIncomingChatEntries(bodyInput) {
     if (body.entry && typeof body.entry === "object") {
         return [body.entry];
     }
-    if (body.message || body.text) {
+    if (
+        body.message
+        || body.text
+        || body.messageText
+        || body.mediaDataUrl
+        || body.media_data_url
+    ) {
         return [body];
     }
     return [];
@@ -4669,8 +4988,12 @@ async function handleChatMessagesPost(req, res) {
                 continue;
             }
 
-            const text = normalizeChatMessageText(entry.text || entry.message || entry.messageText);
-            if (!text) {
+            const normalizedMessage = normalizeChatMessageInput(entry);
+            if (normalizedMessage.error) {
+                sendJson(res, 400, { success: false, message: normalizedMessage.error });
+                return;
+            }
+            if (!normalizedMessage.valid || (!normalizedMessage.text && !normalizedMessage.mediaDataUrl)) {
                 continue;
             }
 
@@ -4681,7 +5004,7 @@ async function handleChatMessagesPost(req, res) {
                     ? normalizeText(authSession.name || authSession.email || "Admin")
                     : "Ecodrive Bot");
 
-            const inserted = await insertChatMessage(pool, thread.id, role, text, {
+            const inserted = await insertChatMessage(pool, thread.id, role, normalizedMessage, {
                 senderLabel: senderLabel,
                 clientMessageId: clientMessageId
             });
@@ -4908,9 +5231,13 @@ async function handleAdminChatSendMessage(req, res, userId) {
         }
 
         const body = await readBody(req);
-        const messageText = normalizeChatMessageText(body.message || body.text || body.messageText);
-        if (!messageText) {
-            sendJson(res, 400, { success: false, message: "Message text is required." });
+        const normalizedMessage = normalizeChatMessageInput(body);
+        if (normalizedMessage.error) {
+            sendJson(res, 400, { success: false, message: normalizedMessage.error });
+            return;
+        }
+        if (!normalizedMessage.valid || (!normalizedMessage.text && !normalizedMessage.mediaDataUrl)) {
+            sendJson(res, 400, { success: false, message: "Message text or media attachment is required." });
             return;
         }
 
@@ -4928,7 +5255,7 @@ async function handleAdminChatSendMessage(req, res, userId) {
         }
 
         const updatedThread = await setChatThreadMode(pool, thread.id, CHAT_THREAD_MODE_ADMIN, authSession);
-        const message = await insertChatMessage(pool, thread.id, "admin", messageText, {
+        const message = await insertChatMessage(pool, thread.id, "admin", normalizedMessage, {
             senderLabel: normalizeText(authSession.name || authSession.email || "Admin"),
             clientMessageId: normalizeChatClientMessageId(body.clientMessageId || body.client_message_id)
         });

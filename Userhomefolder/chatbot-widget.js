@@ -5,7 +5,8 @@
     var DRAG_MOVE_TOLERANCE_PX = 5;
     var POSITION_STORAGE_KEY = "ecodrive_chat_widget_position_v1";
     var MESSAGE_STORAGE_KEY = "ecodrive_chat_messages_v1";
-    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260225c";
+    var BRAIN_SCRIPT_SRC = "/Userhomefolder/chatbot-brain.js?v=20260304d";
+    var MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
 
     function safeParse(raw) {
         try {
@@ -192,6 +193,77 @@
         };
     }
 
+    function inferMediaTypeFromMime(mimeInput) {
+        var mime = String(mimeInput || "").trim().toLowerCase();
+        if (mime.indexOf("image/") === 0) {
+            return "image";
+        }
+        if (mime.indexOf("video/") === 0) {
+            return "video";
+        }
+        if (mime.indexOf("audio/") === 0) {
+            return "audio";
+        }
+        return "";
+    }
+
+    function normalizeMediaType(value) {
+        var normalized = String(value || "").trim().toLowerCase();
+        if (normalized === "image" || normalized === "video" || normalized === "audio") {
+            return normalized;
+        }
+        return "";
+    }
+
+    function normalizeMediaDataUrl(value, requestedTypeInput) {
+        var raw = String(value || "").trim();
+        if (!raw || raw.length > MAX_MEDIA_DATA_URL_LENGTH) {
+            return null;
+        }
+        var match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+        if (!match) {
+            return null;
+        }
+        var mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
+        var base64 = String(match[2] || "").replace(/\s+/g, "");
+        if (!mime || !base64) {
+            return null;
+        }
+
+        var inferred = inferMediaTypeFromMime(mime);
+        var requested = normalizeMediaType(requestedTypeInput);
+        var mediaType = requested || inferred;
+        if (!mediaType) {
+            return null;
+        }
+        if (
+            (mediaType === "image" && mime.indexOf("image/") !== 0)
+            || (mediaType === "video" && mime.indexOf("video/") !== 0)
+            || (mediaType === "audio" && mime.indexOf("audio/") !== 0)
+        ) {
+            return null;
+        }
+
+        return {
+            mediaType: mediaType,
+            mediaMime: mime,
+            mediaDataUrl: "data:" + mime + ";base64," + base64
+        };
+    }
+
+    function fallbackTextForMedia(mediaType) {
+        if (mediaType === "image") {
+            return "[Image]";
+        }
+        if (mediaType === "video") {
+            return "[Video]";
+        }
+        if (mediaType === "audio") {
+            return "[Voice message]";
+        }
+        return "";
+    }
+
     function normalizeMessages(raw) {
         var list = Array.isArray(raw) ? raw : [];
         return list
@@ -203,14 +275,29 @@
                 if (from !== "user" && from !== "admin" && from !== "system") {
                     from = "bot";
                 }
+                var media = normalizeMediaDataUrl(
+                    entry.mediaDataUrl || entry.media_data_url || entry.mediaUrl || entry.media_url || "",
+                    entry.mediaType || entry.media_type || entry.messageType || entry.message_type
+                );
+                var mediaType = media ? media.mediaType : "";
                 var text = String(entry.text || "").trim();
-                if (!text) {
+                if (!text && mediaType) {
+                    text = fallbackTextForMedia(mediaType);
+                }
+                if (!text && !media) {
                     return null;
                 }
                 return {
                     from: from,
                     text: text,
-                    createdAt: String(entry.createdAt || "")
+                    mediaType: mediaType,
+                    mediaDataUrl: media ? media.mediaDataUrl : "",
+                    mediaMime: media ? media.mediaMime : "",
+                    mediaName: String(entry.mediaName || entry.media_name || "").trim().slice(0, 255),
+                    mediaSizeBytes: Number(entry.mediaSizeBytes || entry.media_size_bytes || 0) || 0,
+                    createdAt: String(entry.createdAt || ""),
+                    clientMessageId: String(entry.clientMessageId || entry.client_message_id || "").trim(),
+                    serverMessageId: Number(entry.serverMessageId || entry.server_message_id || entry.id || 0) || 0
                 };
             })
             .filter(Boolean);
@@ -242,6 +329,33 @@
             var bubble = global.document.createElement("div");
             bubble.className = "chat-bubble " + (entry.from === "user" ? "user" : "bot");
             bubble.textContent = entry.text;
+            if (entry.mediaDataUrl) {
+                var previewWrap = global.document.createElement("div");
+                previewWrap.className = "chat-media-preview";
+                if (entry.mediaType === "image") {
+                    var image = global.document.createElement("img");
+                    image.src = entry.mediaDataUrl;
+                    image.alt = entry.mediaName || "Chat image attachment";
+                    image.loading = "lazy";
+                    previewWrap.appendChild(image);
+                } else if (entry.mediaType === "video") {
+                    var video = global.document.createElement("video");
+                    video.src = entry.mediaDataUrl;
+                    video.controls = true;
+                    video.preload = "metadata";
+                    previewWrap.appendChild(video);
+                } else if (entry.mediaType === "audio") {
+                    var audio = global.document.createElement("audio");
+                    audio.src = entry.mediaDataUrl;
+                    audio.controls = true;
+                    audio.preload = "metadata";
+                    previewWrap.appendChild(audio);
+                }
+                if (previewWrap.childNodes.length > 0) {
+                    bubble.classList.add("has-media");
+                    bubble.appendChild(previewWrap);
+                }
+            }
             body.appendChild(bubble);
         });
         body.scrollTop = body.scrollHeight;

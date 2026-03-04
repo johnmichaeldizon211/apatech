@@ -28,10 +28,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const chatForm = document.getElementById("admin-chat-form");
     const chatInput = document.getElementById("admin-chat-input");
     const chatSendBtn = document.getElementById("admin-chat-send");
+    const chatAttachBtn = document.getElementById("admin-chat-attach");
+    const chatVoiceBtn = document.getElementById("admin-chat-voice");
+    const chatMediaInput = document.getElementById("admin-chat-media-input");
 
     const CHAT_MODE_BOT = "bot";
     const CHAT_MODE_ADMIN = "admin";
     const CHAT_POLL_MS = 2500;
+    const CHAT_MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+    const CHAT_MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
 
     const chatState = {
         selectedUser: null,
@@ -40,6 +45,12 @@ document.addEventListener("DOMContentLoaded", () => {
         loading: false,
         sending: false,
         latestMessageId: 0
+    };
+    const voiceState = {
+        recording: false,
+        mediaRecorder: null,
+        stream: null,
+        chunks: []
     };
 
     if (!window.EcodriveSession || typeof window.EcodriveSession.requireRole !== "function" || !window.EcodriveSession.requireRole("admin")) {
@@ -126,6 +137,27 @@ document.addEventListener("DOMContentLoaded", () => {
         chatState.latestMessageId = 0;
     }
 
+    function resetVoiceState() {
+        voiceState.recording = false;
+        voiceState.chunks = [];
+        voiceState.mediaRecorder = null;
+        if (voiceState.stream && typeof voiceState.stream.getTracks === "function") {
+            voiceState.stream.getTracks().forEach((track) => {
+                try {
+                    track.stop();
+                } catch (_error) {
+                    // ignore track stop issues
+                }
+            });
+        }
+        voiceState.stream = null;
+
+        if (chatVoiceBtn) {
+            chatVoiceBtn.classList.remove("recording");
+            chatVoiceBtn.textContent = "Voice";
+        }
+    }
+
     function renderStats(stats) {
         totalUsersEl.textContent = String(stats.totalUsers || 0);
         activeUsersEl.textContent = String(stats.activeUsers || 0);
@@ -151,9 +183,19 @@ document.addEventListener("DOMContentLoaded", () => {
             const wrapper = document.createElement("article");
             wrapper.className = `chat-msg ${className}`;
 
+            const fallbackMediaText = fallbackTextForMedia(
+                message && (message.mediaType || message.media_type || message.messageType)
+            );
+            const displayText = String((message && message.text) || "").trim() || fallbackMediaText;
             const textEl = document.createElement("p");
-            textEl.textContent = String((message && message.text) || "");
+            textEl.textContent = displayText;
             wrapper.appendChild(textEl);
+
+            const previewNode = createMediaPreviewNode(message);
+            if (previewNode) {
+                wrapper.classList.add("has-media");
+                wrapper.appendChild(previewNode);
+            }
 
             const metaEl = document.createElement("div");
             metaEl.className = "chat-msg-meta";
@@ -214,9 +256,20 @@ document.addEventListener("DOMContentLoaded", () => {
             chatInput.value = "";
             chatInput.focus();
         }
+        if (chatMediaInput) {
+            chatMediaInput.value = "";
+        }
         if (chatSendBtn) {
             chatSendBtn.disabled = false;
             chatSendBtn.textContent = "Send";
+        }
+        if (chatAttachBtn) {
+            chatAttachBtn.disabled = false;
+        }
+        if (chatVoiceBtn) {
+            chatVoiceBtn.disabled = false;
+            chatVoiceBtn.classList.remove("recording");
+            chatVoiceBtn.textContent = "Voice";
         }
 
         void loadChatThread(true);
@@ -225,6 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function closeChatModal() {
         stopChatPolling();
+        resetVoiceState();
         chatState.selectedUser = null;
         chatState.mode = CHAT_MODE_BOT;
         chatState.loading = false;
@@ -240,6 +294,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (chatSendBtn) {
             chatSendBtn.disabled = true;
             chatSendBtn.textContent = "Send";
+        }
+        if (chatAttachBtn) {
+            chatAttachBtn.disabled = true;
+        }
+        if (chatVoiceBtn) {
+            chatVoiceBtn.disabled = true;
+            chatVoiceBtn.classList.remove("recording");
+            chatVoiceBtn.textContent = "Voice";
         }
         if (chatClearBtn) {
             chatClearBtn.disabled = true;
@@ -408,9 +470,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function sendAdminChatMessage(userId, messageText) {
+    async function sendAdminChatMessage(userId, payloadInput) {
         if (!userId) {
             return { mode: "error", message: "User id is missing." };
+        }
+        const payload = toOutgoingMediaPayload(payloadInput || {});
+        if (!payload) {
+            return { mode: "error", message: "Message text or media is required." };
         }
 
         try {
@@ -422,7 +488,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        message: messageText
+                        message: payload.text,
+                        mediaType: payload.mediaType,
+                        mediaDataUrl: payload.mediaDataUrl,
+                        mediaMime: payload.mediaMime,
+                        mediaName: payload.mediaName,
+                        mediaSizeBytes: payload.mediaSizeBytes
                     })
                 }
             );
@@ -629,6 +700,151 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    function inferMediaTypeFromMime(mimeInput) {
+        const mime = String(mimeInput || "").trim().toLowerCase();
+        if (mime.startsWith("image/")) return "image";
+        if (mime.startsWith("video/")) return "video";
+        if (mime.startsWith("audio/")) return "audio";
+        return "";
+    }
+
+    function normalizeMediaType(value, fallbackType) {
+        const fallback = String(fallbackType || "").trim().toLowerCase();
+        const normalized = String(value || fallback).trim().toLowerCase();
+        if (normalized === "image" || normalized === "video" || normalized === "audio") {
+            return normalized;
+        }
+        if (fallback === "image" || fallback === "video" || fallback === "audio") {
+            return fallback;
+        }
+        return "";
+    }
+
+    function fallbackTextForMedia(mediaTypeInput) {
+        const mediaType = normalizeMediaType(mediaTypeInput, "");
+        if (mediaType === "image") return "[Image]";
+        if (mediaType === "video") return "[Video]";
+        if (mediaType === "audio") return "[Voice message]";
+        return "";
+    }
+
+    function normalizeMediaDataUrl(rawValue, requestedTypeInput) {
+        const raw = String(rawValue || "").trim();
+        if (!raw || raw.length > CHAT_MAX_MEDIA_DATA_URL_LENGTH) {
+            return null;
+        }
+        const match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+        if (!match) {
+            return null;
+        }
+
+        const mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
+        const base64 = String(match[2] || "").replace(/\s+/g, "");
+        if (!mime || !base64) {
+            return null;
+        }
+
+        const inferredType = inferMediaTypeFromMime(mime);
+        const requestedType = normalizeMediaType(requestedTypeInput, inferredType);
+        const mediaType = requestedType || inferredType;
+        if (!mediaType) {
+            return null;
+        }
+        if (
+            (mediaType === "image" && !mime.startsWith("image/"))
+            || (mediaType === "video" && !mime.startsWith("video/"))
+            || (mediaType === "audio" && !mime.startsWith("audio/"))
+        ) {
+            return null;
+        }
+
+        return {
+            mediaType,
+            mediaMime: mime,
+            mediaDataUrl: `data:${mime};base64,${base64}`
+        };
+    }
+
+    function toOutgoingMediaPayload(rawPayload) {
+        const payload = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
+        const normalizedMedia = normalizeMediaDataUrl(
+            payload.mediaDataUrl || payload.media_data_url || payload.mediaUrl || "",
+            payload.mediaType || payload.media_type || payload.messageType || ""
+        );
+        const text = String(payload.text || payload.message || payload.messageText || "").trim();
+        const mediaType = normalizedMedia ? normalizedMedia.mediaType : "";
+        const fallbackText = mediaType ? fallbackTextForMedia(mediaType) : "";
+
+        if (!text && !normalizedMedia) {
+            return null;
+        }
+
+        return {
+            text: text || fallbackText,
+            mediaType: mediaType,
+            mediaDataUrl: normalizedMedia ? normalizedMedia.mediaDataUrl : "",
+            mediaMime: normalizedMedia ? normalizedMedia.mediaMime : "",
+            mediaName: String(payload.mediaName || payload.media_name || "").trim().slice(0, 255),
+            mediaSizeBytes: Number(payload.mediaSizeBytes || payload.media_size_bytes || 0) || 0
+        };
+    }
+
+    function createMediaPreviewNode(messageInput) {
+        const message = messageInput && typeof messageInput === "object" ? messageInput : {};
+        const normalizedMedia = normalizeMediaDataUrl(
+            message.mediaDataUrl || message.media_data_url || message.mediaUrl || "",
+            message.mediaType || message.media_type || message.messageType || inferMediaTypeFromMime(message.mediaMime || message.media_mime || "")
+        );
+        if (!normalizedMedia) {
+            return null;
+        }
+
+        const wrap = document.createElement("div");
+        wrap.className = "chat-media-preview";
+
+        if (normalizedMedia.mediaType === "image") {
+            const image = document.createElement("img");
+            image.src = normalizedMedia.mediaDataUrl;
+            image.alt = String(message.mediaName || "Chat image attachment");
+            image.loading = "lazy";
+            wrap.appendChild(image);
+            return wrap;
+        }
+
+        if (normalizedMedia.mediaType === "video") {
+            const video = document.createElement("video");
+            video.src = normalizedMedia.mediaDataUrl;
+            video.controls = true;
+            video.preload = "metadata";
+            wrap.appendChild(video);
+            return wrap;
+        }
+
+        if (normalizedMedia.mediaType === "audio") {
+            const audio = document.createElement("audio");
+            audio.src = normalizedMedia.mediaDataUrl;
+            audio.controls = true;
+            audio.preload = "metadata";
+            wrap.appendChild(audio);
+            return wrap;
+        }
+
+        return null;
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            if (!file || typeof FileReader === "undefined") {
+                reject(new Error("File reading is not supported on this browser."));
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(new Error("Failed to read media file."));
+            reader.readAsDataURL(file);
+        });
+    }
+
     if (chatClearBtn) {
         chatClearBtn.addEventListener("click", async () => {
             if (!chatState.selectedUser || !chatState.selectedUser.email) {
@@ -668,6 +884,60 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    async function submitAdminMessage(payloadInput, optionsInput) {
+        const options = optionsInput && typeof optionsInput === "object" ? optionsInput : {};
+        if (!chatState.selectedUser || !chatState.selectedUser.id || chatState.sending) {
+            return false;
+        }
+
+        chatState.sending = true;
+        if (chatSendBtn) {
+            chatSendBtn.disabled = true;
+            chatSendBtn.textContent = "Sending...";
+        }
+        if (chatAttachBtn) {
+            chatAttachBtn.disabled = true;
+        }
+        if (chatVoiceBtn) {
+            chatVoiceBtn.disabled = true;
+        }
+
+        const result = await sendAdminChatMessage(chatState.selectedUser.id, payloadInput);
+
+        chatState.sending = false;
+        if (chatSendBtn) {
+            chatSendBtn.disabled = false;
+            chatSendBtn.textContent = "Send";
+        }
+        if (chatAttachBtn) {
+            chatAttachBtn.disabled = false;
+        }
+        if (chatVoiceBtn) {
+            chatVoiceBtn.disabled = false;
+        }
+
+        if (result.mode === "ok") {
+            if (options.clearText !== false && chatInput) {
+                chatInput.value = "";
+                chatInput.focus();
+            }
+            if (options.successStatus) {
+                setChatStatus(options.successStatus, "success");
+            } else {
+                setChatStatus("", "");
+            }
+            await loadChatThread(true);
+            return true;
+        }
+
+        if (result.mode === "unavailable") {
+            setChatStatus("Chat API unavailable. Start the backend server.", "error");
+        } else {
+            setChatStatus(result.message || "Unable to send message.", "error");
+        }
+        return false;
+    }
+
     if (chatForm) {
         chatForm.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -679,36 +949,164 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!text) {
                 return;
             }
+            await submitAdminMessage({ text });
+        });
+    }
 
-            chatState.sending = true;
-            if (chatSendBtn) {
-                chatSendBtn.disabled = true;
-                chatSendBtn.textContent = "Sending...";
-            }
+    async function sendAdminMediaFile(fileInput, preferredType) {
+        const file = fileInput || null;
+        if (!file || !chatState.selectedUser || !chatState.selectedUser.id) {
+            return;
+        }
+        const fileName = typeof file.name === "string" && file.name
+            ? file.name
+            : (String(preferredType || "").toLowerCase() === "audio" ? "voice-message.webm" : "chat-media");
 
-            const result = await sendAdminChatMessage(chatState.selectedUser.id, text);
+        const mediaType = normalizeMediaType(preferredType, inferMediaTypeFromMime(file.type || ""));
+        if (!mediaType) {
+            setChatStatus("Unsupported file type. Only image, video, and audio are allowed.", "error");
+            return;
+        }
+        if (file.size > CHAT_MAX_MEDIA_BYTES) {
+            setChatStatus("Attachment is too large. Maximum is 4MB.", "error");
+            return;
+        }
 
-            chatState.sending = false;
-            if (chatSendBtn) {
-                chatSendBtn.disabled = false;
-                chatSendBtn.textContent = "Send";
-            }
-
-            if (result.mode === "ok") {
-                if (chatInput) {
-                    chatInput.value = "";
-                    chatInput.focus();
-                }
-                setChatStatus("", "");
-                await loadChatThread(true);
+        try {
+            setChatStatus("Preparing " + mediaType + " file...", "");
+            const dataUrl = await readFileAsDataUrl(file);
+            const payload = toOutgoingMediaPayload({
+                text: fallbackTextForMedia(mediaType),
+                mediaType: mediaType,
+                mediaDataUrl: dataUrl,
+                mediaName: fileName,
+                mediaSizeBytes: file.size || 0
+            });
+            if (!payload) {
+                setChatStatus("Unsupported media attachment.", "error");
                 return;
             }
+            await submitAdminMessage(payload, {
+                clearText: false,
+                successStatus: "Media message sent."
+            });
+        } catch (error) {
+            setChatStatus(error && error.message ? error.message : "Unable to process media file.", "error");
+        }
+    }
 
-            if (result.mode === "unavailable") {
-                setChatStatus("Chat API unavailable. Start the backend server.", "error");
-            } else {
-                setChatStatus(result.message || "Unable to send message.", "error");
+    if (chatAttachBtn && chatMediaInput) {
+        chatAttachBtn.addEventListener("click", () => {
+            if (!chatState.selectedUser || !chatState.selectedUser.id || chatState.sending) {
+                return;
             }
+            chatMediaInput.value = "";
+            chatMediaInput.click();
+        });
+
+        chatMediaInput.addEventListener("change", async () => {
+            const selectedFile = chatMediaInput.files && chatMediaInput.files[0]
+                ? chatMediaInput.files[0]
+                : null;
+            chatMediaInput.value = "";
+            if (!selectedFile) {
+                return;
+            }
+            await sendAdminMediaFile(selectedFile);
+        });
+    }
+
+    async function startVoiceRecording() {
+        if (!chatVoiceBtn || !chatState.selectedUser || !chatState.selectedUser.id || chatState.sending) {
+            return;
+        }
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function" || typeof MediaRecorder === "undefined") {
+            setChatStatus("Voice recording is not supported on this browser.", "error");
+            return;
+        }
+
+        try {
+            setChatStatus("Requesting microphone permission...", "");
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorderOptions = {};
+            if (typeof MediaRecorder.isTypeSupported === "function") {
+                const preferredMimeTypes = [
+                    "audio/webm;codecs=opus",
+                    "audio/webm",
+                    "audio/ogg;codecs=opus",
+                    "audio/ogg",
+                    "audio/mp4"
+                ];
+                for (const mimeType of preferredMimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mimeType)) {
+                        recorderOptions.mimeType = mimeType;
+                        break;
+                    }
+                }
+            }
+
+            const recorder = new MediaRecorder(stream, recorderOptions);
+            voiceState.recording = true;
+            voiceState.mediaRecorder = recorder;
+            voiceState.stream = stream;
+            voiceState.chunks = [];
+
+            recorder.addEventListener("dataavailable", (event) => {
+                if (event && event.data && event.data.size > 0) {
+                    voiceState.chunks.push(event.data);
+                }
+            });
+
+            recorder.start();
+            chatVoiceBtn.classList.add("recording");
+            chatVoiceBtn.textContent = "Stop";
+            setChatStatus("Recording voice note... click Stop to send.", "");
+        } catch (error) {
+            resetVoiceState();
+            setChatStatus(error && error.message ? error.message : "Unable to access microphone.", "error");
+        }
+    }
+
+    async function stopVoiceRecording() {
+        if (!voiceState.recording || !voiceState.mediaRecorder) {
+            return;
+        }
+        const recorder = voiceState.mediaRecorder;
+        voiceState.recording = false;
+        if (chatVoiceBtn) {
+            chatVoiceBtn.classList.remove("recording");
+            chatVoiceBtn.textContent = "Processing...";
+        }
+
+        await new Promise((resolve) => {
+            recorder.addEventListener("stop", resolve, { once: true });
+            try {
+                recorder.stop();
+            } catch (_error) {
+                resolve();
+            }
+        });
+
+        const chunks = voiceState.chunks.slice();
+        const mimeType = String(recorder.mimeType || "audio/webm").trim() || "audio/webm";
+        const blob = new Blob(chunks, { type: mimeType });
+        resetVoiceState();
+
+        if (!blob || !blob.size) {
+            setChatStatus("Voice recording is empty. Try again.", "error");
+            return;
+        }
+
+        await sendAdminMediaFile(blob, "audio");
+    }
+
+    if (chatVoiceBtn) {
+        chatVoiceBtn.addEventListener("click", async () => {
+            if (voiceState.recording) {
+                await stopVoiceRecording();
+                return;
+            }
+            await startVoiceRecording();
         });
     }
 
@@ -733,6 +1131,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setChatMode(CHAT_MODE_BOT);
     if (chatSendBtn) {
         chatSendBtn.disabled = true;
+    }
+    if (chatAttachBtn) {
+        chatAttachBtn.disabled = true;
+    }
+    if (chatVoiceBtn) {
+        chatVoiceBtn.disabled = true;
     }
     if (chatClearBtn) {
         chatClearBtn.disabled = true;

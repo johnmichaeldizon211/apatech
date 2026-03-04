@@ -11,7 +11,7 @@
     var DEFAULT_RENDER_API_BASE = "https://apatech.onrender.com";
     var DEFAULT_REMOTE_API_BASE = DEFAULT_RENDER_API_BASE;
     var DEFAULT_API_BASE = detectDefaultApiBase();
-    var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304b";
+    var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304c";
     var PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
     var LEGACY_PROFILE_STORAGE_KEY = "ecodrive_profile_settings";
     var USERS_STORAGE_KEY = "users";

@@ -106,6 +106,9 @@
             <div id="admin-chat-messages" class="chat-dialog-body" role="log" aria-live="polite"></div>
 
             <form id="admin-chat-form" class="chat-dialog-form" action="#">
+                <input id="admin-chat-media-input" type="file" accept="image/*,video/*,audio/*" hidden>
+                <button id="admin-chat-attach" type="button" class="action-btn message">Media</button>
+                <button id="admin-chat-voice" type="button" class="action-btn message">Voice</button>
                 <input id="admin-chat-input" type="text" placeholder="Type your reply..." maxlength="2000" autocomplete="off">
                 <button id="admin-chat-send" type="submit" class="action-btn block">Send</button>
             </form>
@@ -113,7 +116,7 @@
     </section>
 
     <script src="../session.js"></script>
-    <script src="adminuser.js?v=20260302c"></script>
+    <script src="adminuser.js?v=20260304a"></script>
 </body>
 </html>
 

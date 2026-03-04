@@ -356,6 +356,7 @@
 
     const STORAGE_KEY = "ecodrive_chat_messages_v1";
     let messages = [];
+    let liveChatRuntime = null;
 
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
@@ -387,10 +388,14 @@
       messages.forEach(renderMessage);
     }
 
-    function appendMessage(msg) {
+    function appendMessage(msg, options) {
+      const opts = options && typeof options === "object" ? options : {};
       messages.push(msg);
       saveMessages();
       renderMessage(msg);
+      if (!opts.skipSync && liveChatRuntime && typeof liveChatRuntime.notifyLocalMessagesUpdated === "function") {
+        void liveChatRuntime.notifyLocalMessagesUpdated();
+      }
     }
 
     function removeTyping() {
@@ -420,6 +425,9 @@
 
       setTimeout(() => {
         removeTyping();
+        if (liveChatRuntime && typeof liveChatRuntime.canBotReply === "function" && !liveChatRuntime.canBotReply()) {
+          return;
+        }
         appendMessage({ from: "bot", text: reply, time: Date.now() });
       }, 700 + Math.random() * 500);
     }
@@ -479,6 +487,20 @@
         time: Date.now()
       }];
       saveMessages();
+    }
+
+    if (window.EcodriveChatbotBrain && typeof window.EcodriveChatbotBrain.attachLiveChat === "function") {
+      liveChatRuntime = window.EcodriveChatbotBrain.attachLiveChat({
+        getMessages: function () {
+          return messages;
+        },
+        setMessages: function (nextMessages) {
+          messages = Array.isArray(nextMessages) ? nextMessages : [];
+          saveMessages();
+          renderAll();
+        }
+      });
+      void liveChatRuntime.notifyLocalMessagesUpdated();
     }
   }
 

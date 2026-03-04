@@ -30,6 +30,13 @@
     var CHAT_SYNC_INTERVAL_MS = 3000;
     var CHAT_MAX_LOCAL_MESSAGES = 180;
     var CHAT_MAX_PUSH_BATCH = 60;
+    var CHAT_MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+    var CHAT_MAX_MEDIA_DATA_URL_LENGTH = 8 * 1024 * 1024;
+    var CHAT_ALLOWED_MEDIA_TYPES = {
+        image: true,
+        video: true,
+        audio: true
+    };
     var API_BASE = String(
         localStorage.getItem("ecodrive_api_base")
         || localStorage.getItem("ecodrive_kyc_api_base")
@@ -42,6 +49,7 @@
 
     var liveCatalog = DEFAULT_BIKE_CATALOG.slice();
     var defaultAliasMap = buildDefaultAliasMap();
+    var latestLiveChatRuntime = null;
 
     function safeParse(raw) {
         try {
@@ -134,10 +142,201 @@
             ".chat-clear-btn{margin-left:8px;border:1.5px solid #b13232;background:#fff5f5;color:#9f2222;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;}",
             ".chat-suggestions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0;}",
             ".chat-suggestion-btn{border:1.5px solid #3557a1;background:#f4f7ff;color:#123f79;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;}",
-            ".chat-suggestion-btn:hover{background:#e8eeff;}"
+            ".chat-suggestion-btn:hover{background:#e8eeff;}",
+            ".chat-form.ecodrive-chat-media-ready{display:grid;grid-template-columns:auto auto 1fr auto;gap:7px;align-items:center;}",
+            ".chat-form.ecodrive-chat-media-ready input[type='text']{min-width:0;}",
+            ".chat-media-btn,.chat-voice-btn{height:34px;min-width:70px;border:1.5px solid #3353a6;background:#eef3ff;color:#143b80;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;padding:0 10px;}",
+            ".chat-voice-btn.recording{background:#ffe7e7;border-color:#b42318;color:#8f1d1d;}",
+            ".chat-media-status{grid-column:1/-1;font-size:11px;color:#2348c7;line-height:1.35;padding:2px 0 0;word-break:break-word;}",
+            ".chat-media-status.error{color:#b42318;}",
+            ".chat-media-preview{margin-top:6px;display:grid;gap:6px;}",
+            ".chat-media-preview img,.chat-media-preview video{display:block;width:100%;max-width:220px;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid rgba(53,87,161,.35);background:#e9eef8;}",
+            ".chat-media-preview audio{display:block;width:min(230px,100%);}",
+            ".chat-message.has-media,.chat-bubble.has-media{padding-bottom:8px;}"
         ].join("");
 
         global.document.head.appendChild(style);
+    }
+
+    function getActiveLiveChatRuntime() {
+        if (latestLiveChatRuntime && typeof latestLiveChatRuntime.getLocalMessages === "function") {
+            return latestLiveChatRuntime;
+        }
+        return null;
+    }
+
+    function createMediaNode(message) {
+        if (!message || !message.mediaDataUrl || !global.document) {
+            return null;
+        }
+
+        var mediaType = normalizeChatMediaType(message.mediaType, inferChatMediaTypeFromMime(message.mediaMime || ""));
+        if (!mediaType) {
+            return null;
+        }
+
+        var wrap = global.document.createElement("div");
+        wrap.className = "chat-media-preview";
+
+        if (mediaType === "image") {
+            var image = global.document.createElement("img");
+            image.src = message.mediaDataUrl;
+            image.alt = normalizeChatMediaName(message.mediaName || "") || "Chat image attachment";
+            image.loading = "lazy";
+            wrap.appendChild(image);
+            return wrap;
+        }
+
+        if (mediaType === "video") {
+            var video = global.document.createElement("video");
+            video.src = message.mediaDataUrl;
+            video.controls = true;
+            video.preload = "metadata";
+            wrap.appendChild(video);
+            return wrap;
+        }
+
+        if (mediaType === "audio") {
+            var audio = global.document.createElement("audio");
+            audio.src = message.mediaDataUrl;
+            audio.controls = true;
+            audio.preload = "metadata";
+            wrap.appendChild(audio);
+            return wrap;
+        }
+
+        return null;
+    }
+
+    function decorateChatBodyWithMedia(chatBody) {
+        if (!chatBody || !global.document) {
+            return;
+        }
+
+        var runtime = getActiveLiveChatRuntime();
+        if (!runtime || typeof runtime.getLocalMessages !== "function") {
+            return;
+        }
+
+        var messages = runtime.getLocalMessages();
+        if (!Array.isArray(messages) || !messages.length) {
+            return;
+        }
+
+        var bubbles = Array.prototype.slice.call(
+            chatBody.querySelectorAll(".chat-bubble, .chat-message, .chat-msg")
+        ).filter(function (node) {
+            return node && node.nodeType === 1 && !node.hasAttribute("data-typing");
+        });
+        if (!bubbles.length) {
+            return;
+        }
+
+        var messageIndex = messages.length - 1;
+        var bubbleIndex = bubbles.length - 1;
+        while (messageIndex >= 0 && bubbleIndex >= 0) {
+            var message = messages[messageIndex];
+            var bubble = bubbles[bubbleIndex];
+            var hasMedia = Boolean(message && message.mediaDataUrl);
+            var existingPreview = bubble.querySelector(".chat-media-preview");
+
+            if (!hasMedia && existingPreview) {
+                existingPreview.remove();
+                bubble.classList.remove("has-media");
+            } else if (hasMedia && !existingPreview) {
+                var previewNode = createMediaNode(message);
+                if (previewNode) {
+                    bubble.appendChild(previewNode);
+                    bubble.classList.add("has-media");
+                }
+            } else if (hasMedia && existingPreview) {
+                var mediaElement = existingPreview.querySelector("img,video,audio");
+                if (mediaElement && mediaElement.src !== message.mediaDataUrl) {
+                    mediaElement.src = message.mediaDataUrl;
+                }
+                bubble.classList.add("has-media");
+            }
+
+            messageIndex -= 1;
+            bubbleIndex -= 1;
+        }
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise(function (resolve, reject) {
+            if (!file || typeof FileReader === "undefined") {
+                reject(new Error("File reading is not supported on this browser."));
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function () {
+                resolve(String(reader.result || ""));
+            };
+            reader.onerror = function () {
+                reject(new Error("Failed to read file."));
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function resolveMediaTypeFromFile(file) {
+        var mime = String(file && file.type ? file.type : "").trim().toLowerCase();
+        return inferChatMediaTypeFromMime(mime);
+    }
+
+    function appendUserMediaMessage(payload) {
+        var runtime = getActiveLiveChatRuntime();
+        var nextEntry = {
+            from: "user",
+            text: payload && payload.text ? payload.text : "",
+            mediaType: payload && payload.mediaType ? payload.mediaType : "",
+            mediaDataUrl: payload && payload.mediaDataUrl ? payload.mediaDataUrl : "",
+            mediaMime: payload && payload.mediaMime ? payload.mediaMime : "",
+            mediaName: payload && payload.mediaName ? payload.mediaName : "",
+            mediaSizeBytes: payload && payload.mediaSizeBytes ? payload.mediaSizeBytes : 0,
+            createdAt: new Date().toISOString()
+        };
+
+        if (!runtime || typeof runtime.appendLocalMessage !== "function") {
+            var normalized = normalizeLocalChatMessage(nextEntry);
+            if (!normalized) {
+                throw new Error("Unable to add media message.");
+            }
+
+            var localMessages = normalizeLocalChatMessages(
+                safeParse(localStorage.getItem(getScopedChatStorageKey()))
+                || safeParse(localStorage.getItem(LEGACY_CHAT_STORAGE_KEY))
+                || []
+            );
+            localMessages.push(normalized);
+            localMessages = normalizeLocalChatMessages(localMessages);
+            localStorage.setItem(getScopedChatStorageKey(), JSON.stringify(localMessages));
+
+            var chatBody = global.document ? global.document.getElementById("chat-body") : null;
+            if (chatBody) {
+                var bubble = global.document.createElement("div");
+                bubble.className = chatBody.querySelector(".chat-message")
+                    ? "chat-message user has-media"
+                    : "chat-bubble user has-media";
+                bubble.textContent = normalized.text;
+                var previewNode = createMediaNode(normalized);
+                if (previewNode) {
+                    bubble.appendChild(previewNode);
+                }
+                chatBody.appendChild(bubble);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+            return normalized;
+        }
+
+        var inserted = runtime.appendLocalMessage(nextEntry);
+        if (!inserted) {
+            throw new Error("Unable to add media message.");
+        }
+        if (typeof runtime.notifyLocalMessagesUpdated === "function") {
+            void runtime.notifyLocalMessagesUpdated();
+        }
+        return inserted;
     }
 
     function injectChatEnhancements() {
@@ -228,6 +427,250 @@
             });
 
             panel.insertBefore(suggestionWrap, form);
+        }
+
+        form.classList.add("ecodrive-chat-media-ready");
+
+        var mediaInput = form.querySelector(".chat-media-input");
+        if (!mediaInput) {
+            mediaInput = global.document.createElement("input");
+            mediaInput.type = "file";
+            mediaInput.className = "chat-media-input";
+            mediaInput.accept = "image/*,video/*,audio/*";
+            mediaInput.style.display = "none";
+            form.appendChild(mediaInput);
+        }
+
+        var mediaBtn = form.querySelector(".chat-media-btn");
+        if (!mediaBtn) {
+            mediaBtn = global.document.createElement("button");
+            mediaBtn.type = "button";
+            mediaBtn.className = "chat-media-btn";
+            mediaBtn.textContent = "Media";
+            if (input.parentNode === form) {
+                form.insertBefore(mediaBtn, input);
+            } else {
+                form.appendChild(mediaBtn);
+            }
+        }
+
+        var voiceBtn = form.querySelector(".chat-voice-btn");
+        if (!voiceBtn) {
+            voiceBtn = global.document.createElement("button");
+            voiceBtn.type = "button";
+            voiceBtn.className = "chat-voice-btn";
+            voiceBtn.textContent = "Voice";
+            if (input.parentNode === form) {
+                form.insertBefore(voiceBtn, input);
+            } else {
+                form.appendChild(voiceBtn);
+            }
+        }
+
+        var mediaStatus = panel.querySelector(".chat-media-status");
+        if (!mediaStatus) {
+            mediaStatus = global.document.createElement("div");
+            mediaStatus.className = "chat-media-status";
+            mediaStatus.setAttribute("aria-live", "polite");
+            form.appendChild(mediaStatus);
+        }
+
+        function setMediaStatus(message, isError) {
+            mediaStatus.textContent = String(message || "");
+            mediaStatus.classList.toggle("error", Boolean(isError));
+        }
+
+        if (!form.dataset.ecodriveMediaBound) {
+            form.dataset.ecodriveMediaBound = "1";
+            var voiceState = {
+                recording: false,
+                mediaRecorder: null,
+                stream: null,
+                chunks: []
+            };
+
+            async function sendMediaData(dataUrl, requestedType, mediaNameInput, mediaSizeBytesInput) {
+                var normalized = normalizeChatMediaDataUrl(dataUrl, requestedType);
+                if (!normalized) {
+                    setMediaStatus("Unsupported media file. Use image, video, or audio up to 4MB.", true);
+                    return;
+                }
+
+                try {
+                    appendUserMediaMessage({
+                        text: getChatMediaFallbackText(normalized.mediaType),
+                        mediaType: normalized.mediaType,
+                        mediaDataUrl: normalized.mediaDataUrl,
+                        mediaMime: normalized.mediaMime,
+                        mediaName: normalizeChatMediaName(mediaNameInput || ""),
+                        mediaSizeBytes: Number(mediaSizeBytesInput || normalized.mediaSizeBytes) || normalized.mediaSizeBytes
+                    });
+                    decorateChatBodyWithMedia(body);
+                    setMediaStatus("Sent " + normalized.mediaType + " message.", false);
+                } catch (error) {
+                    setMediaStatus(error && error.message ? error.message : "Unable to send media right now.", true);
+                }
+            }
+
+            mediaBtn.addEventListener("click", function () {
+                setMediaStatus("", false);
+                mediaInput.click();
+            });
+
+            mediaInput.addEventListener("change", async function () {
+                var selected = mediaInput.files && mediaInput.files[0] ? mediaInput.files[0] : null;
+                mediaInput.value = "";
+                if (!selected) {
+                    return;
+                }
+
+                var mediaType = resolveMediaTypeFromFile(selected);
+                if (!mediaType) {
+                    setMediaStatus("Unsupported file type. Only image, video, and audio are allowed.", true);
+                    return;
+                }
+                if (selected.size > CHAT_MAX_MEDIA_BYTES) {
+                    setMediaStatus("File is too large. Maximum is 4MB.", true);
+                    return;
+                }
+
+                setMediaStatus("Preparing " + mediaType + "...", false);
+                try {
+                    var dataUrl = await readFileAsDataUrl(selected);
+                    await sendMediaData(dataUrl, mediaType, selected.name || "", selected.size || 0);
+                } catch (error) {
+                    setMediaStatus(error && error.message ? error.message : "Unable to read file.", true);
+                }
+            });
+
+            function resetVoiceState() {
+                voiceState.recording = false;
+                voiceBtn.classList.remove("recording");
+                voiceBtn.textContent = "Voice";
+                if (voiceState.stream && typeof voiceState.stream.getTracks === "function") {
+                    voiceState.stream.getTracks().forEach(function (track) {
+                        try {
+                            track.stop();
+                        } catch (_error) {
+                            // ignore
+                        }
+                    });
+                }
+                voiceState.stream = null;
+                voiceState.mediaRecorder = null;
+                voiceState.chunks = [];
+            }
+
+            async function stopVoiceRecording() {
+                if (!voiceState.recording || !voiceState.mediaRecorder) {
+                    return;
+                }
+                var recorder = voiceState.mediaRecorder;
+                voiceState.recording = false;
+                voiceBtn.textContent = "Processing...";
+                voiceBtn.classList.remove("recording");
+
+                await new Promise(function (resolve) {
+                    recorder.addEventListener("stop", resolve, { once: true });
+                    try {
+                        recorder.stop();
+                    } catch (_error) {
+                        resolve();
+                    }
+                });
+
+                var chunks = voiceState.chunks.slice();
+                var mimeType = String(recorder.mimeType || "audio/webm").trim() || "audio/webm";
+                var blob = new Blob(chunks, { type: mimeType });
+                resetVoiceState();
+
+                if (!blob || !blob.size) {
+                    setMediaStatus("Voice recording is empty. Try again.", true);
+                    return;
+                }
+                if (blob.size > CHAT_MAX_MEDIA_BYTES) {
+                    setMediaStatus("Voice recording is too large. Maximum is 4MB.", true);
+                    return;
+                }
+
+                setMediaStatus("Uploading voice message...", false);
+                try {
+                    var voiceDataUrl = await readFileAsDataUrl(blob);
+                    await sendMediaData(voiceDataUrl, "audio", "voice-message.webm", blob.size);
+                } catch (error) {
+                    setMediaStatus(error && error.message ? error.message : "Unable to process voice recording.", true);
+                } finally {
+                    voiceBtn.textContent = "Voice";
+                }
+            }
+
+            async function startVoiceRecording() {
+                if (!global.navigator || !global.navigator.mediaDevices || typeof global.navigator.mediaDevices.getUserMedia !== "function" || typeof global.MediaRecorder === "undefined") {
+                    setMediaStatus("Voice recording is not supported on this browser.", true);
+                    return;
+                }
+
+                setMediaStatus("Requesting microphone permission...", false);
+                try {
+                    var stream = await global.navigator.mediaDevices.getUserMedia({ audio: true });
+                    var options = {};
+                    if (typeof global.MediaRecorder.isTypeSupported === "function") {
+                        var preferred = [
+                            "audio/webm;codecs=opus",
+                            "audio/webm",
+                            "audio/ogg;codecs=opus",
+                            "audio/ogg",
+                            "audio/mp4"
+                        ];
+                        for (var i = 0; i < preferred.length; i += 1) {
+                            if (global.MediaRecorder.isTypeSupported(preferred[i])) {
+                                options.mimeType = preferred[i];
+                                break;
+                            }
+                        }
+                    }
+
+                    var recorder = new global.MediaRecorder(stream, options);
+                    voiceState.recording = true;
+                    voiceState.stream = stream;
+                    voiceState.mediaRecorder = recorder;
+                    voiceState.chunks = [];
+
+                    recorder.addEventListener("dataavailable", function (event) {
+                        if (event && event.data && event.data.size > 0) {
+                            voiceState.chunks.push(event.data);
+                        }
+                    });
+                    recorder.start();
+
+                    voiceBtn.classList.add("recording");
+                    voiceBtn.textContent = "Stop";
+                    setMediaStatus("Recording voice... click Stop when done.", false);
+                } catch (error) {
+                    resetVoiceState();
+                    setMediaStatus(error && error.message ? error.message : "Unable to access microphone.", true);
+                }
+            }
+
+            voiceBtn.addEventListener("click", function () {
+                if (voiceState.recording) {
+                    void stopVoiceRecording();
+                    return;
+                }
+                void startVoiceRecording();
+            });
+        }
+
+        decorateChatBodyWithMedia(body);
+        if (!body.dataset.ecodriveMediaObserverBound && typeof MutationObserver === "function") {
+            body.dataset.ecodriveMediaObserverBound = "1";
+            var observer = new MutationObserver(function () {
+                decorateChatBodyWithMedia(body);
+            });
+            observer.observe(body, {
+                childList: true,
+                subtree: true
+            });
         }
     }
 
@@ -519,10 +962,135 @@
             .trim();
     }
 
+    function normalizeChatMediaType(value, fallbackType) {
+        var fallback = String(fallbackType || "").trim().toLowerCase();
+        var normalized = String(value || fallback || "").trim().toLowerCase();
+        if (normalized && Object.prototype.hasOwnProperty.call(CHAT_ALLOWED_MEDIA_TYPES, normalized)) {
+            return normalized;
+        }
+        if (fallback && Object.prototype.hasOwnProperty.call(CHAT_ALLOWED_MEDIA_TYPES, fallback)) {
+            return fallback;
+        }
+        return "";
+    }
+
+    function inferChatMediaTypeFromMime(mimeInput) {
+        var mime = String(mimeInput || "").trim().toLowerCase();
+        if (mime.indexOf("image/") === 0) {
+            return "image";
+        }
+        if (mime.indexOf("video/") === 0) {
+            return "video";
+        }
+        if (mime.indexOf("audio/") === 0) {
+            return "audio";
+        }
+        return "";
+    }
+
+    function estimateBase64Bytes(base64Input) {
+        var base64 = String(base64Input || "").replace(/\s+/g, "");
+        if (!base64) {
+            return 0;
+        }
+        var padding = 0;
+        if (/==$/.test(base64)) {
+            padding = 2;
+        } else if (/=$/.test(base64)) {
+            padding = 1;
+        }
+        return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+    }
+
+    function normalizeChatMediaName(value) {
+        return String(value || "")
+            .replace(/[\r\n\t]+/g, " ")
+            .trim()
+            .slice(0, 255);
+    }
+
+    function getChatMediaFallbackText(mediaTypeInput) {
+        var mediaType = normalizeChatMediaType(mediaTypeInput, "");
+        if (mediaType === "image") {
+            return "[Image]";
+        }
+        if (mediaType === "video") {
+            return "[Video]";
+        }
+        if (mediaType === "audio") {
+            return "[Voice message]";
+        }
+        return "";
+    }
+
+    function normalizeChatMediaDataUrl(rawValue, requestedTypeInput) {
+        var raw = String(rawValue || "").trim();
+        if (!raw) {
+            return null;
+        }
+        if (raw.length > CHAT_MAX_MEDIA_DATA_URL_LENGTH) {
+            return null;
+        }
+
+        var match = raw.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+        if (!match) {
+            return null;
+        }
+
+        var mime = String(match[1] || "").trim().toLowerCase().slice(0, 120);
+        var base64 = String(match[2] || "").replace(/\s+/g, "");
+        if (!mime || !base64) {
+            return null;
+        }
+
+        var inferredType = inferChatMediaTypeFromMime(mime);
+        var requestedType = normalizeChatMediaType(requestedTypeInput, inferredType);
+        var mediaType = requestedType || inferredType;
+        if (!mediaType) {
+            return null;
+        }
+        if (
+            (mediaType === "image" && mime.indexOf("image/") !== 0)
+            || (mediaType === "video" && mime.indexOf("video/") !== 0)
+            || (mediaType === "audio" && mime.indexOf("audio/") !== 0)
+        ) {
+            return null;
+        }
+
+        var sizeBytes = estimateBase64Bytes(base64);
+        if (!sizeBytes || sizeBytes > CHAT_MAX_MEDIA_BYTES) {
+            return null;
+        }
+
+        return {
+            mediaType: mediaType,
+            mediaDataUrl: "data:" + mime + ";base64," + base64,
+            mediaMime: mime,
+            mediaSizeBytes: sizeBytes
+        };
+    }
+
     function normalizeLocalChatMessage(entry) {
         var source = entry && typeof entry === "object" ? entry : {};
+        var media = normalizeChatMediaDataUrl(
+            source.mediaDataUrl || source.media_data_url || source.mediaUrl || source.media_url || "",
+            source.mediaType || source.media_type || source.messageType || source.message_type
+        );
+        var mediaType = media ? media.mediaType : "";
+        var mediaDataUrl = media ? media.mediaDataUrl : "";
+        var mediaMime = media ? media.mediaMime : normalizeMessageText(source.mediaMime || source.media_mime || "").slice(0, 120);
+        var mediaSizeBytes = media ? media.mediaSizeBytes : Number(source.mediaSizeBytes || source.media_size_bytes || 0);
+        if (!Number.isFinite(mediaSizeBytes) || mediaSizeBytes < 1) {
+            mediaSizeBytes = 0;
+        } else {
+            mediaSizeBytes = Math.floor(mediaSizeBytes);
+        }
+        var mediaName = normalizeChatMediaName(source.mediaName || source.media_name || "");
         var text = normalizeMessageText(source.text || source.message || "");
-        if (!text) {
+        if (!text && mediaType) {
+            text = getChatMediaFallbackText(mediaType);
+        }
+        if (!text && !mediaDataUrl) {
             return null;
         }
 
@@ -544,6 +1112,11 @@
         return {
             from: normalizeChatFrom(source.from),
             text: text,
+            mediaType: mediaType,
+            mediaDataUrl: mediaDataUrl,
+            mediaMime: mediaMime,
+            mediaName: mediaName,
+            mediaSizeBytes: mediaSizeBytes,
             createdAt: normalizedCreatedAt,
             clientMessageId: clientMessageId,
             serverMessageId: serverMessageId
@@ -585,8 +1158,17 @@
         var source = serverMessage && typeof serverMessage === "object" ? serverMessage : {};
         var role = String(source.role || source.senderRole || "").trim().toLowerCase();
         var from = mapServerRoleToLocalFrom(role);
+        var mediaTypeFromServer = normalizeChatMediaType(
+            source.mediaType || source.media_type || source.messageType || source.message_type,
+            inferChatMediaTypeFromMime(source.mediaMime || source.media_mime || "")
+        );
+        var mediaDataUrl = source.mediaDataUrl || source.media_data_url || source.mediaUrl || source.media_url || "";
+        var normalizedMedia = normalizeChatMediaDataUrl(mediaDataUrl, mediaTypeFromServer);
         var text = normalizeMessageText(source.text || source.message || source.messageText || source.message_text || "");
-        if (!text) {
+        if (!text && normalizedMedia && normalizedMedia.mediaType) {
+            text = getChatMediaFallbackText(normalizedMedia.mediaType);
+        }
+        if (!text && !normalizedMedia) {
             return null;
         }
 
@@ -598,6 +1180,11 @@
         return normalizeLocalChatMessage({
             from: from,
             text: displayText,
+            mediaType: normalizedMedia ? normalizedMedia.mediaType : "",
+            mediaDataUrl: normalizedMedia ? normalizedMedia.mediaDataUrl : "",
+            mediaMime: normalizedMedia ? normalizedMedia.mediaMime : "",
+            mediaName: source.mediaName || source.media_name || "",
+            mediaSizeBytes: normalizedMedia ? normalizedMedia.mediaSizeBytes : (source.mediaSizeBytes || source.media_size_bytes || 0),
             createdAt: source.createdAt || source.created_at || new Date().toISOString(),
             clientMessageId: source.clientMessageId || source.client_message_id || "",
             serverMessageId: source.id || source.serverMessageId || 0
@@ -636,10 +1223,65 @@
                         existingByClient.from = entry.from;
                         changed = true;
                     }
+                    if (existingByClient.text !== entry.text && entry.text) {
+                        existingByClient.text = entry.text;
+                        changed = true;
+                    }
+                    if (existingByClient.mediaType !== entry.mediaType) {
+                        existingByClient.mediaType = entry.mediaType || "";
+                        changed = true;
+                    }
+                    if (existingByClient.mediaDataUrl !== entry.mediaDataUrl) {
+                        existingByClient.mediaDataUrl = entry.mediaDataUrl || "";
+                        changed = true;
+                    }
+                    if (existingByClient.mediaMime !== entry.mediaMime) {
+                        existingByClient.mediaMime = entry.mediaMime || "";
+                        changed = true;
+                    }
+                    if (existingByClient.mediaName !== entry.mediaName) {
+                        existingByClient.mediaName = entry.mediaName || "";
+                        changed = true;
+                    }
+                    if (existingByClient.mediaSizeBytes !== entry.mediaSizeBytes) {
+                        existingByClient.mediaSizeBytes = Number(entry.mediaSizeBytes || 0) || 0;
+                        changed = true;
+                    }
                     return;
                 }
 
                 if (serverKey && Object.prototype.hasOwnProperty.call(serverIdMap, serverKey)) {
+                    var existingByServer = nextMessages[serverIdMap[serverKey]];
+                    if (existingByServer) {
+                        if (existingByServer.from !== entry.from) {
+                            existingByServer.from = entry.from;
+                            changed = true;
+                        }
+                        if (existingByServer.text !== entry.text && entry.text) {
+                            existingByServer.text = entry.text;
+                            changed = true;
+                        }
+                        if (existingByServer.mediaType !== entry.mediaType) {
+                            existingByServer.mediaType = entry.mediaType || "";
+                            changed = true;
+                        }
+                        if (existingByServer.mediaDataUrl !== entry.mediaDataUrl) {
+                            existingByServer.mediaDataUrl = entry.mediaDataUrl || "";
+                            changed = true;
+                        }
+                        if (existingByServer.mediaMime !== entry.mediaMime) {
+                            existingByServer.mediaMime = entry.mediaMime || "";
+                            changed = true;
+                        }
+                        if (existingByServer.mediaName !== entry.mediaName) {
+                            existingByServer.mediaName = entry.mediaName || "";
+                            changed = true;
+                        }
+                        if (existingByServer.mediaSizeBytes !== entry.mediaSizeBytes) {
+                            existingByServer.mediaSizeBytes = Number(entry.mediaSizeBytes || 0) || 0;
+                            changed = true;
+                        }
+                    }
                     return;
                 }
 
@@ -767,6 +1409,11 @@
                     outboundEntries.push({
                         role: entry.from,
                         text: entry.text,
+                        mediaType: entry.mediaType || "",
+                        mediaDataUrl: entry.mediaDataUrl || "",
+                        mediaMime: entry.mediaMime || "",
+                        mediaName: entry.mediaName || "",
+                        mediaSizeBytes: Number(entry.mediaSizeBytes || 0) || 0,
                         clientMessageId: entry.clientMessageId,
                         createdAt: entry.createdAt
                     });
@@ -826,11 +1473,29 @@
             return currentMode !== CHAT_THREAD_MODE_ADMIN;
         }
 
+        function appendLocalMessage(entry) {
+            var normalized = normalizeLocalChatMessage(entry);
+            if (!normalized) {
+                return null;
+            }
+            var localMessages = readLocalMessages();
+            localMessages.push(normalized);
+            writeLocalMessages(localMessages);
+            return normalized;
+        }
+
+        function getLocalMessages() {
+            return readLocalMessages();
+        }
+
         function stop() {
             destroyed = true;
             if (pollTimer) {
                 clearInterval(pollTimer);
                 pollTimer = null;
+            }
+            if (latestLiveChatRuntime && latestLiveChatRuntime.__runtimeId === runtimeId) {
+                latestLiveChatRuntime = null;
             }
         }
 
@@ -839,16 +1504,21 @@
         }, syncIntervalMs);
 
         void refreshFromServer();
-
-        return {
+        var runtimeId = "chat_rt_" + Date.now() + "_" + Math.random().toString(16).slice(2, 10);
+        var runtime = {
+            __runtimeId: runtimeId,
             canBotReply: canBotReply,
             refreshFromServer: refreshFromServer,
             notifyLocalMessagesUpdated: notifyLocalMessagesUpdated,
+            appendLocalMessage: appendLocalMessage,
+            getLocalMessages: getLocalMessages,
             stop: stop,
             getMode: function () {
                 return currentMode;
             }
         };
+        latestLiveChatRuntime = runtime;
+        return runtime;
     }
 
     function isCancelled(statusValue, fulfillmentValue) {
