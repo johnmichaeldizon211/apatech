@@ -154,7 +154,16 @@
             ".chat-media-preview{margin-top:6px;display:grid;gap:6px;}",
             ".chat-media-preview img,.chat-media-preview video{display:block;width:100%;max-width:220px;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid rgba(53,87,161,.35);background:#e9eef8;}",
             ".chat-media-preview audio{display:block;width:min(230px,100%);}",
-            ".chat-message.has-media,.chat-bubble.has-media{padding-bottom:8px;}"
+            ".chat-message.has-media,.chat-bubble.has-media{padding-bottom:8px;}",
+            ".chat-camera-overlay{position:fixed;inset:0;z-index:1200;background:rgba(12,20,42,.74);display:flex;align-items:center;justify-content:center;padding:12px;}",
+            ".chat-camera-sheet{width:min(420px,96vw);background:#0a162f;border:1.5px solid rgba(173,196,255,.34);border-radius:14px;padding:10px;box-shadow:0 12px 26px rgba(9,18,38,.55);}",
+            ".chat-camera-preview{display:block;width:100%;aspect-ratio:3/4;background:#081125;border-radius:10px;object-fit:cover;}",
+            ".chat-camera-actions{display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;}",
+            ".chat-camera-action{height:42px;min-width:42px;border:1.5px solid #4b6bc7;background:#f2f6ff;color:#143b80;border-radius:999px;padding:0 14px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}",
+            ".chat-camera-action.capture{height:50px;min-width:50px;padding:0;border:2px solid #dce6ff;background:#fff;font-size:20px;}",
+            ".chat-camera-action.is-disabled{opacity:.55;cursor:not-allowed;}",
+            ".chat-camera-action:disabled{opacity:.55;cursor:not-allowed;}",
+            "@media (max-width:560px){.chat-camera-sheet{width:100%;max-width:none;}.chat-camera-preview{aspect-ratio:9/16;}}"
         ].join("");
 
         global.document.head.appendChild(style);
@@ -496,7 +505,6 @@
             cameraInput.type = "file";
             cameraInput.className = "chat-camera-input";
             cameraInput.accept = "image/*";
-            cameraInput.setAttribute("capture", "environment");
             cameraInput.style.display = "none";
             form.appendChild(cameraInput);
         }
@@ -564,6 +572,248 @@
                 stream: null,
                 chunks: []
             };
+            var cameraState = {
+                overlay: null,
+                video: null,
+                switchBtn: null,
+                captureBtn: null,
+                closeBtn: null,
+                stream: null,
+                facingMode: "environment",
+                opening: false
+            };
+
+            function supportsCameraApi() {
+                return Boolean(
+                    global.navigator
+                    && global.navigator.mediaDevices
+                    && typeof global.navigator.mediaDevices.getUserMedia === "function"
+                );
+            }
+
+            function stopCameraStream() {
+                if (!cameraState.stream || typeof cameraState.stream.getTracks !== "function") {
+                    cameraState.stream = null;
+                    return;
+                }
+                cameraState.stream.getTracks().forEach(function (track) {
+                    try {
+                        track.stop();
+                    } catch (_error) {
+                        // ignore
+                    }
+                });
+                cameraState.stream = null;
+            }
+
+            function closeCameraOverlay() {
+                stopCameraStream();
+                cameraState.opening = false;
+                if (cameraState.video) {
+                    cameraState.video.srcObject = null;
+                }
+                if (cameraState.overlay && cameraState.overlay.parentNode) {
+                    cameraState.overlay.parentNode.removeChild(cameraState.overlay);
+                }
+                cameraState.overlay = null;
+                cameraState.video = null;
+                cameraState.switchBtn = null;
+                cameraState.captureBtn = null;
+                cameraState.closeBtn = null;
+            }
+
+            async function updateCameraSwitchAvailability() {
+                if (!cameraState.switchBtn) {
+                    return;
+                }
+                if (
+                    !global.navigator
+                    || !global.navigator.mediaDevices
+                    || typeof global.navigator.mediaDevices.enumerateDevices !== "function"
+                ) {
+                    cameraState.switchBtn.disabled = false;
+                    cameraState.switchBtn.classList.remove("is-disabled");
+                    return;
+                }
+                try {
+                    var devices = await global.navigator.mediaDevices.enumerateDevices();
+                    var videoInputs = (Array.isArray(devices) ? devices : []).filter(function (device) {
+                        return device && device.kind === "videoinput";
+                    });
+                    var canSwitch = videoInputs.length >= 2;
+                    cameraState.switchBtn.disabled = !canSwitch;
+                    cameraState.switchBtn.classList.toggle("is-disabled", !canSwitch);
+                } catch (_error) {
+                    cameraState.switchBtn.disabled = false;
+                    cameraState.switchBtn.classList.remove("is-disabled");
+                }
+            }
+
+            function ensureCameraOverlay() {
+                if (cameraState.overlay && cameraState.overlay.parentNode) {
+                    return;
+                }
+
+                var overlay = global.document.createElement("div");
+                overlay.className = "chat-camera-overlay";
+                overlay.innerHTML = ""
+                    + "<div class=\"chat-camera-sheet\" role=\"dialog\" aria-label=\"Capture photo\">"
+                    + "  <video class=\"chat-camera-preview\" autoplay playsinline muted></video>"
+                    + "  <div class=\"chat-camera-actions\">"
+                    + "    <button type=\"button\" class=\"chat-camera-action switch\" aria-label=\"Switch camera\">Switch</button>"
+                    + "    <button type=\"button\" class=\"chat-camera-action capture\" aria-label=\"Capture photo\">&#9679;</button>"
+                    + "    <button type=\"button\" class=\"chat-camera-action close\" aria-label=\"Close camera\">Close</button>"
+                    + "  </div>"
+                    + "</div>";
+                global.document.body.appendChild(overlay);
+
+                cameraState.overlay = overlay;
+                cameraState.video = overlay.querySelector(".chat-camera-preview");
+                cameraState.switchBtn = overlay.querySelector(".chat-camera-action.switch");
+                cameraState.captureBtn = overlay.querySelector(".chat-camera-action.capture");
+                cameraState.closeBtn = overlay.querySelector(".chat-camera-action.close");
+
+                overlay.addEventListener("click", function (event) {
+                    if (event.target === overlay) {
+                        closeCameraOverlay();
+                    }
+                });
+                if (cameraState.closeBtn) {
+                    cameraState.closeBtn.addEventListener("click", function () {
+                        closeCameraOverlay();
+                    });
+                }
+                if (cameraState.switchBtn) {
+                    cameraState.switchBtn.addEventListener("click", function () {
+                        if (cameraState.opening || cameraState.switchBtn.disabled) {
+                            return;
+                        }
+                        var previousFacingMode = cameraState.facingMode;
+                        cameraState.facingMode = cameraState.facingMode === "environment"
+                            ? "user"
+                            : "environment";
+                        void startCameraPreview().catch(function (error) {
+                            cameraState.facingMode = previousFacingMode;
+                            setMediaStatus(error && error.message ? error.message : "Unable to switch camera.", true);
+                            void startCameraPreview().catch(function () {
+                                // keep overlay open even if preview restart fails
+                            });
+                        });
+                    });
+                }
+                if (cameraState.captureBtn) {
+                    cameraState.captureBtn.addEventListener("click", function () {
+                        void capturePhotoFromCamera();
+                    });
+                }
+            }
+
+            async function startCameraPreview() {
+                if (!supportsCameraApi()) {
+                    throw new Error("Camera is not supported on this browser.");
+                }
+                ensureCameraOverlay();
+                if (!cameraState.video) {
+                    throw new Error("Unable to open camera preview.");
+                }
+
+                cameraState.opening = true;
+                try {
+                    stopCameraStream();
+                    var stream = null;
+                    try {
+                        stream = await global.navigator.mediaDevices.getUserMedia({
+                            video: {
+                                facingMode: {
+                                    ideal: cameraState.facingMode
+                                }
+                            },
+                            audio: false
+                        });
+                    } catch (primaryError) {
+                        stream = await global.navigator.mediaDevices.getUserMedia({
+                            video: {
+                                facingMode: cameraState.facingMode
+                            },
+                            audio: false
+                        });
+                    }
+
+                    cameraState.stream = stream;
+                    cameraState.video.srcObject = stream;
+                    try {
+                        await cameraState.video.play();
+                    } catch (_error) {
+                        // autoplay can fail silently; live stream still works after user taps
+                    }
+                    await updateCameraSwitchAvailability();
+                } finally {
+                    cameraState.opening = false;
+                }
+            }
+
+            async function capturePhotoFromCamera() {
+                if (!cameraState.video || !cameraState.captureBtn) {
+                    return;
+                }
+                if (!cameraState.video.videoWidth || !cameraState.video.videoHeight) {
+                    setMediaStatus("Camera is not ready yet.", true);
+                    return;
+                }
+
+                cameraState.captureBtn.disabled = true;
+                try {
+                    var canvas = global.document.createElement("canvas");
+                    canvas.width = cameraState.video.videoWidth;
+                    canvas.height = cameraState.video.videoHeight;
+                    var context = canvas.getContext("2d");
+                    if (!context) {
+                        throw new Error("Unable to capture image.");
+                    }
+                    context.drawImage(cameraState.video, 0, 0, canvas.width, canvas.height);
+
+                    var blob = await new Promise(function (resolve) {
+                        canvas.toBlob(resolve, "image/jpeg", 0.92);
+                    });
+                    if (!blob) {
+                        throw new Error("Unable to capture image.");
+                    }
+
+                    var filename = "camera-photo-" + Date.now() + ".jpg";
+                    var imageFile = null;
+                    try {
+                        imageFile = new File([blob], filename, { type: "image/jpeg" });
+                    } catch (_error) {
+                        imageFile = blob;
+                        imageFile.name = filename;
+                    }
+
+                    closeCameraOverlay();
+                    await handleSelectedMediaFile(imageFile, "image");
+                } catch (error) {
+                    setMediaStatus(error && error.message ? error.message : "Unable to capture image.", true);
+                } finally {
+                    if (cameraState.captureBtn) {
+                        cameraState.captureBtn.disabled = false;
+                    }
+                }
+            }
+
+            async function openCameraCapture() {
+                if (!supportsCameraApi()) {
+                    cameraInput.click();
+                    return;
+                }
+                setMediaStatus("Opening camera...", false);
+                try {
+                    await startCameraPreview();
+                    setMediaStatus("Camera ready. Capture your photo.", false);
+                } catch (error) {
+                    closeCameraOverlay();
+                    setMediaStatus(error && error.message ? error.message : "Unable to open camera.", true);
+                    cameraInput.click();
+                }
+            }
 
             function setVoiceButtonIdleState() {
                 voiceBtn.innerHTML = "<span aria-hidden=\"true\">&#127908;</span>";
@@ -600,7 +850,7 @@
 
             cameraBtn.addEventListener("click", function () {
                 setMediaStatus("", false);
-                cameraInput.click();
+                void openCameraCapture();
             });
 
             mediaBtn.addEventListener("click", function () {
@@ -757,6 +1007,13 @@
                 }
                 void startVoiceRecording();
             });
+
+            if (!form.dataset.ecodriveCameraCleanupBound) {
+                form.dataset.ecodriveCameraCleanupBound = "1";
+                global.addEventListener("pagehide", function () {
+                    closeCameraOverlay();
+                });
+            }
         }
 
         decorateChatBodyWithMedia(body);
