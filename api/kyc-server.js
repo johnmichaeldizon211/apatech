@@ -1662,6 +1662,236 @@ function buildChangeLineForEmail(label, beforeValue, afterValue) {
     return `${label}: ${beforeText} -> ${afterText}`;
 }
 
+function isRejectedOrCancelledBookingState(statusValue, fulfillmentValue, reviewDecisionValue) {
+    const reviewDecision = String(reviewDecisionValue || "").trim().toLowerCase();
+    const merged = `${String(statusValue || "")} ${String(fulfillmentValue || "")}`.toLowerCase();
+    return reviewDecision === "rejected"
+        || merged.includes("reject")
+        || merged.includes("cancel");
+}
+
+function getReceiptAddressForEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    const directAddress = normalizeText(
+        booking.shippingAddress
+        || booking.shipping_address
+        || booking.address
+    );
+    if (directAddress) {
+        return directAddress;
+    }
+
+    const installment = booking.installment && typeof booking.installment === "object"
+        ? booking.installment
+        : null;
+    if (installment) {
+        const locationParts = [
+            installment.street,
+            installment.barangay,
+            installment.city,
+            installment.province
+        ]
+            .map((part) => normalizeText(part))
+            .filter(Boolean);
+        if (locationParts.length > 0) {
+            return locationParts.join(", ");
+        }
+    }
+
+    return normalizeText(booking.trackingLocation || booking.tracking_location) || "Not set";
+}
+
+function getInstallmentReceiptSummaryForEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    const installment = booking.installment && typeof booking.installment === "object"
+        ? booking.installment
+        : null;
+    if (!installment) {
+        return null;
+    }
+
+    const monthsRaw = Number(
+        installment.monthsToPay
+        || installment.months
+        || installment.installmentMonths
+        || 0
+    );
+    const monthsToPay = Number.isFinite(monthsRaw) && monthsRaw > 0
+        ? Math.floor(monthsRaw)
+        : 0;
+    if (monthsToPay < 1) {
+        return null;
+    }
+
+    const monthlyAmount = resolveInstallmentMonthlyAmount(installment, booking, monthsToPay);
+    if (!(monthlyAmount > 0)) {
+        return null;
+    }
+
+    const downPayment = parseAmount(
+        installment.planMinDp
+        || installment.minDp
+        || installment.downPayment
+        || installment.dp
+    );
+    const sourceHistory = Array.isArray(installment.paymentHistory)
+        ? installment.paymentHistory
+        : [];
+    const paidMonths = new Set();
+    sourceHistory.forEach((entry) => {
+        if (!entry || typeof entry !== "object") {
+            return;
+        }
+        const monthRaw = Number(entry.month || entry.installmentMonth || 0);
+        const month = Number.isFinite(monthRaw) ? Math.floor(monthRaw) : 0;
+        if (month < 1 || month > monthsToPay) {
+            return;
+        }
+        const status = String(entry.status || "").toLowerCase();
+        if (status.includes("paid")) {
+            paidMonths.add(month);
+        }
+    });
+
+    const paidInstallments = Math.min(monthsToPay, paidMonths.size);
+    const totalInstallmentPayable = parseAmount(monthlyAmount * monthsToPay);
+    let paidAmount = parseAmount(
+        installment.totalPaid
+        || installment.paidAmount
+        || installment.totalPaidAmount
+    );
+    if (!(paidAmount > 0) && paidInstallments > 0) {
+        paidAmount = parseAmount(monthlyAmount * paidInstallments);
+    }
+
+    const outstandingBalance = parseAmount(
+        Math.max(totalInstallmentPayable - paidAmount, 0)
+    );
+    const totalPayableForReceipt = parseAmount(totalInstallmentPayable + downPayment);
+
+    return {
+        monthsToPay: monthsToPay,
+        paidInstallments: paidInstallments,
+        progressLabel: `${paidInstallments}/${monthsToPay}`,
+        monthlyAmount: monthlyAmount,
+        downPayment: downPayment,
+        totalInstallmentPayable: totalInstallmentPayable,
+        paidAmount: paidAmount,
+        outstandingBalance: outstandingBalance,
+        totalPayableForReceipt: totalPayableForReceipt
+    };
+}
+
+function canIncludeReceiptInEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    if (isRejectedOrCancelledBookingState(booking.status, booking.fulfillmentStatus, booking.reviewDecision)) {
+        return false;
+    }
+
+    const merged = `${String(booking.status || "")} ${String(booking.fulfillmentStatus || "")}`.toLowerCase();
+    const reviewDecision = String(booking.reviewDecision || "").trim().toLowerCase();
+    if (reviewDecision === "approved") {
+        return true;
+    }
+    return (
+        merged.includes("approve")
+        || merged.includes("complete")
+        || merged.includes("deliver")
+        || merged.includes("picked up")
+        || merged.includes("released")
+    );
+}
+
+function buildReceiptSnapshotForEmail(record) {
+    const booking = record && typeof record === "object" ? record : {};
+    if (!canIncludeReceiptInEmail(booking)) {
+        return {
+            enabled: false,
+            lines: [],
+            html: "",
+            fileName: ""
+        };
+    }
+
+    const orderId = normalizeOrderId(booking.orderId || booking.order_id, false) || "N/A";
+    const receiptNumber = normalizeText(booking.receiptNumber || booking.receipt_number).slice(0, 40)
+        || buildReceiptNumber(orderId, new Date());
+    const issuedAtRaw = booking.receiptIssuedAt || booking.receipt_issued_at || booking.reviewedAt || booking.reviewed_at || booking.createdAt || booking.created_at;
+    const issuedAtDate = new Date(issuedAtRaw || "");
+    const issuedAtLabel = Number.isNaN(issuedAtDate.getTime())
+        ? "Not specified"
+        : issuedAtDate.toLocaleString("en-PH", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true
+        });
+    const statusText = normalizeText(booking.status) || "Approved";
+    const fulfillmentText = normalizeText(booking.fulfillmentStatus) || "Preparing";
+    const modelText = normalizeText(booking.model || booking.productName || booking.itemName) || "Ecodrive E-Bike";
+    const colorText = normalizeText(booking.bikeColor || booking.color) || "Not set";
+    const serviceText = normalizeText(booking.service || booking.service_type) || "Delivery";
+    const paymentText = normalizeText(booking.payment || booking.payment_method) || "Not set";
+    const scheduleLabel = buildBookingScheduleLabelForEmail(booking);
+    const locationText = normalizeText(booking.trackingLocation || booking.tracking_location) || "Not set";
+    const addressText = getReceiptAddressForEmail(booking);
+    const installmentSummary = getInstallmentReceiptSummaryForEmail(booking);
+    const statusLabel = installmentSummary
+        ? `${statusText} (Hulog: ${installmentSummary.progressLabel})`
+        : statusText;
+    const totalAmount = installmentSummary
+        ? installmentSummary.totalPayableForReceipt
+        : parseAmount(booking.total || 0);
+
+    const lines = [
+        `Receipt No: ${receiptNumber}`,
+        `Issued At: ${issuedAtLabel}`,
+        `Order ID: ${orderId}`,
+        `Customer: ${normalizeText(booking.fullName || booking.name) || "Customer"}`,
+        `Email: ${normalizeEmail(booking.email || booking.userEmail) || "Not specified"}`,
+        `Model: ${modelText}`,
+        `Color: ${colorText}`,
+        `Service: ${serviceText}`,
+        `Payment: ${paymentText}`,
+        `Schedule: ${scheduleLabel}`,
+        `Address: ${addressText}`,
+        `Status: ${statusLabel}`,
+        `Progress: ${fulfillmentText}`,
+        `Location: ${locationText}`,
+        `Total: ${formatAmountForEmail(totalAmount)}`
+    ];
+
+    if (installmentSummary) {
+        lines.push(
+            `Monthly Payment: ${formatAmountForEmail(installmentSummary.monthlyAmount)}`,
+            `Paid Installment: ${installmentSummary.progressLabel}`,
+            `Total Paid: ${formatAmountForEmail(installmentSummary.paidAmount)} / ${formatAmountForEmail(installmentSummary.totalInstallmentPayable)}`,
+            `Outstanding: ${formatAmountForEmail(installmentSummary.outstandingBalance)}`
+        );
+    }
+
+    const htmlRows = lines
+        .map((line) => {
+            const separatorIndex = line.indexOf(":");
+            if (separatorIndex < 0) {
+                return `<li>${htmlEscape(line)}</li>`;
+            }
+            const label = line.slice(0, separatorIndex);
+            const value = line.slice(separatorIndex + 1).trim();
+            return `<li><strong>${htmlEscape(label)}:</strong> ${htmlEscape(value)}</li>`;
+        })
+        .join("");
+
+    return {
+        enabled: true,
+        lines: lines,
+        html: `<p><strong>Receipt copy:</strong></p><ul>${htmlRows}</ul>`,
+        fileName: `Ecodrive-Receipt-${normalizeOrderId(orderId, false) || "booking"}.txt`
+    };
+}
+
 async function sendBookingGeneralUpdateEmail(record, options) {
     const booking = record && typeof record === "object" ? record : {};
     const opts = options && typeof options === "object" ? options : {};
@@ -1690,6 +1920,10 @@ async function sendBookingGeneralUpdateEmail(record, options) {
             .map((line) => String(line || "").trim())
             .filter(Boolean)
         : [];
+    const includeReceipt = opts.includeReceipt !== false;
+    const receiptSnapshot = includeReceipt
+        ? buildReceiptSnapshotForEmail(booking)
+        : { enabled: false, lines: [], html: "", fileName: "" };
 
     const textLines = [
         `Hi ${fullName},`,
@@ -1706,6 +1940,12 @@ async function sendBookingGeneralUpdateEmail(record, options) {
             textLines.push(`- ${line}`);
         });
     }
+    if (receiptSnapshot.enabled && receiptSnapshot.lines.length > 0) {
+        textLines.push("", "Receipt copy:");
+        receiptSnapshot.lines.forEach((line) => {
+            textLines.push(`- ${line}`);
+        });
+    }
     textLines.push("", outro, "", "Ecodrive Team");
 
     const updatesHtml = updateLines.length > 0
@@ -1716,9 +1956,12 @@ async function sendBookingGeneralUpdateEmail(record, options) {
             "</ul>"
         ].join("")
         : "";
+    const receiptHtml = receiptSnapshot.enabled
+        ? receiptSnapshot.html
+        : "";
 
     try {
-        await transport.sendMail({
+        const mailPayload = {
             from: SMTP_FROM,
             to: recipientEmail,
             subject: subject,
@@ -1733,10 +1976,21 @@ async function sendBookingGeneralUpdateEmail(record, options) {
                 `<li><strong>Schedule:</strong> ${htmlEscape(scheduleLabel)}</li>`,
                 "</ul>",
                 updatesHtml,
+                receiptHtml,
                 `<p>${htmlEscape(outro)}</p>`,
                 "<p>Ecodrive Team</p>"
             ].join("")
-        });
+        };
+        if (receiptSnapshot.enabled && receiptSnapshot.lines.length > 0) {
+            mailPayload.attachments = [
+                {
+                    filename: receiptSnapshot.fileName,
+                    content: receiptSnapshot.lines.join("\n"),
+                    contentType: "text/plain; charset=utf-8"
+                }
+            ];
+        }
+        await transport.sendMail(mailPayload);
         return { sent: true, provider: "smtp" };
     } catch (error) {
         return { sent: false, reason: error.message || "SMTP send failed." };
@@ -5511,12 +5765,7 @@ async function handleCancelBooking(req, res, orderId) {
             return;
         }
 
-        const body = await readBody(req);
-        let email = normalizeEmail(body.email || body.userEmail);
         const sessionEmail = normalizeEmail(authSession.email);
-        if (authSession.role !== "admin") {
-            email = sessionEmail;
-        }
         const normalizedOrderId = normalizeOrderId(orderId, false);
         if (!normalizedOrderId) {
             sendJson(res, 400, { success: false, message: "Invalid booking order id." });
@@ -5524,42 +5773,94 @@ async function handleCancelBooking(req, res, orderId) {
         }
         const pool = await getDbPool();
 
-        let result = null;
-        if (isValidEmail(email)) {
-            [result] = await pool.execute(
-                `UPDATE bookings
-                 SET status = 'Cancelled',
-                     fulfillment_status = 'Cancelled',
-                     review_decision = 'rejected',
-                     reviewed_at = NOW(),
-                     updated_at = NOW()
-                 WHERE order_id = ?
-                   AND (email = ? OR user_email = ?)`,
-                [normalizedOrderId, email, email]
-            );
-        } else {
-            if (authSession.role !== "admin") {
-                sendJson(res, 400, { success: false, message: "A valid account email is required." });
-                return;
-            }
-            [result] = await pool.execute(
-                `UPDATE bookings
-                 SET status = 'Cancelled',
-                     fulfillment_status = 'Cancelled',
-                     review_decision = 'rejected',
-                     reviewed_at = NOW(),
-                     updated_at = NOW()
-                 WHERE order_id = ?`,
-                [normalizedOrderId]
-            );
-        }
-
-        if (!result || Number(result.affectedRows || 0) < 1) {
+        const [beforeRows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
             sendJson(res, 404, { success: false, message: "Booking not found." });
             return;
         }
 
-        sendJson(res, 200, { success: true, message: "Booking cancelled successfully." });
+        const beforeRow = beforeRows[0];
+        if (authSession.role !== "admin") {
+            const bookingEmail = normalizeEmail(beforeRow.email || "");
+            const bookingUserEmail = normalizeEmail(beforeRow.user_email || "");
+            if (!sessionEmail || (sessionEmail !== bookingEmail && sessionEmail !== bookingUserEmail)) {
+                sendJson(res, 403, { success: false, message: "You can only cancel your own booking." });
+                return;
+            }
+        }
+
+        await pool.execute(
+            `UPDATE bookings
+             SET status = 'Cancelled',
+                 fulfillment_status = 'Cancelled',
+                 review_decision = 'rejected',
+                 reviewed_at = NOW(),
+                 updated_at = NOW()
+             WHERE order_id = ?`,
+            [normalizedOrderId]
+        );
+
+        const [rows] = await pool.execute(
+            `SELECT *
+             FROM bookings
+             WHERE order_id = ?
+             LIMIT 1`,
+            [normalizedOrderId]
+        );
+        if (!Array.isArray(rows) || rows.length < 1) {
+            sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const booking = mapBookingRow(rows[0]);
+        const wasAlreadyCancelled = isRejectedOrCancelledBookingState(
+            beforeRow.status,
+            beforeRow.fulfillment_status,
+            beforeRow.review_decision
+        );
+        if (!wasAlreadyCancelled) {
+            const updateLines = [];
+            const beforeStatus = normalizeText(beforeRow.status);
+            const afterStatus = normalizeText(booking.status);
+            if (beforeStatus !== afterStatus) {
+                updateLines.push(buildChangeLineForEmail("Booking status", beforeStatus, afterStatus));
+            }
+            const beforeFulfillment = normalizeText(beforeRow.fulfillment_status);
+            const afterFulfillment = normalizeText(booking.fulfillmentStatus);
+            if (beforeFulfillment !== afterFulfillment) {
+                updateLines.push(buildChangeLineForEmail("Fulfillment status", beforeFulfillment, afterFulfillment));
+            }
+            updateLines.push(`Cancelled by: ${authSession.role === "admin" ? "Admin" : "Customer"}`);
+            const notifyResult = await sendBookingGeneralUpdateEmail(booking, {
+                subject: "Ecodrive booking cancelled",
+                intro: authSession.role === "admin"
+                    ? "Your booking has been cancelled by Ecodrive admin."
+                    : "Your booking cancellation request was completed.",
+                updateLines: updateLines,
+                outro: "You may submit a new booking request anytime.",
+                includeReceipt: false
+            });
+            if (!notifyResult.sent) {
+                console.warn(
+                    "[booking-cancel-email] Unable to notify customer:",
+                    notifyResult.reason || "Unknown reason",
+                    "| orderId:",
+                    normalizedOrderId
+                );
+            }
+        }
+
+        sendJson(res, 200, {
+            success: true,
+            message: "Booking cancelled successfully.",
+            booking: booking
+        });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to cancel booking." });
     }
@@ -6073,8 +6374,8 @@ async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
         }
 
         const beforeRow = beforeRows[0];
-        const mergedBeforeStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
-        if (mergedBeforeStatus.includes("reject") || mergedBeforeStatus.includes("cancel")) {
+        const reviewDecision = String(beforeRow.review_decision || "").trim().toLowerCase();
+        if (isRejectedOrCancelledBookingState(beforeRow.status, beforeRow.fulfillment_status, reviewDecision)) {
             sendJson(res, 409, { success: false, message: "Rejected or cancelled bookings cannot be updated." });
             return;
         }

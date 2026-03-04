@@ -337,6 +337,11 @@ body {
     color: #1d4ed8;
 }
 
+.readonly-chip.locked {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
 .inst-mark-paid-btn {
     min-width: 92px;
     border: 1px solid #93afea;

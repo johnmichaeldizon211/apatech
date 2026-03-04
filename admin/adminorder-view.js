@@ -218,6 +218,25 @@ document.addEventListener("DOMContentLoaded", function () {
         return "cash";
     }
 
+    function isRejectedOrCancelledBooking(record) {
+        const reviewDecision = String(record && record.reviewDecision || "").toLowerCase();
+        const mergedStatus = (
+            String(record && record.status || "")
+            + " "
+            + String(record && record.fulfillmentStatus || "")
+        ).toLowerCase();
+        return reviewDecision === "rejected"
+            || mergedStatus.includes("reject")
+            || mergedStatus.includes("cancel");
+    }
+
+    function isInstallmentPaymentLocked(record) {
+        if (getBookingMode(record) !== "installment") {
+            return false;
+        }
+        return isRejectedOrCancelledBooking(record);
+    }
+
     function setTextContent(target, value, fallback) {
         if (!target) {
             return;
@@ -601,6 +620,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const paidCount = Number(metrics && metrics.paidCount) || 0;
         const monthlyAmount = toCurrencyNumber(metrics && metrics.monthlyAmount);
+        const actionsLocked = isInstallmentPaymentLocked(record);
 
         for (let monthIndex = 0; monthIndex < totalMonths; monthIndex += 1) {
             const dueDate = addMonthsSafe(baseDate, monthIndex);
@@ -610,8 +630,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 dueDate: formatShortDate(dueDate),
                 amount: monthlyAmount,
                 status: isPaid ? "Paid" : "Pending",
-                action: isPaid ? "Paid" : "Mark as paid",
-                isPaid: isPaid
+                action: isPaid ? "Paid" : (actionsLocked ? "Not allowed" : "Mark as paid"),
+                isPaid: isPaid,
+                isActionLocked: !isPaid && actionsLocked
             });
         }
 
@@ -639,9 +660,13 @@ document.addEventListener("DOMContentLoaded", function () {
             const monthValue = Number(item.month || 0);
             const actionHtml = item.isPaid
                 ? "<span class=\"readonly-chip\">" + escapeHtml(String(item.action || "Paid")) + "</span>"
-                : "<button type=\"button\" class=\"inst-mark-paid-btn\" data-month=\""
-                    + escapeHtml(String(monthValue))
-                    + "\">Mark as paid</button>";
+                : (
+                    item.isActionLocked
+                        ? "<span class=\"readonly-chip locked\">" + escapeHtml(String(item.action || "Not allowed")) + "</span>"
+                        : "<button type=\"button\" class=\"inst-mark-paid-btn\" data-month=\""
+                            + escapeHtml(String(monthValue))
+                            + "\">Mark as paid</button>"
+                );
 
             tr.innerHTML = ""
                 + "<td>" + escapeHtml(String(item.month || "-")) + "</td>"
@@ -1862,6 +1887,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 if (!currentBooking || getBookingMode(currentBooking) !== "installment") {
+                    return;
+                }
+                if (isInstallmentPaymentLocked(currentBooking)) {
+                    window.alert("Cancelled installment bookings cannot be marked as paid.");
                     return;
                 }
 
