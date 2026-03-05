@@ -107,12 +107,18 @@ const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNA
 let dbPool = null;
 let dbSchemaReadyPromise = null;
 
-const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
+const SMTP_HOST = String(process.env.SMTP_HOST || "").trim().toLowerCase();
 const SMTP_PORT = Number(process.env.SMTP_PORT || "587");
 const SMTP_USER = String(process.env.SMTP_USER || "").trim();
-const SMTP_PASS = String(process.env.SMTP_PASS || "").trim();
+const RAW_SMTP_PASS = String(process.env.SMTP_PASS || "");
+const SMTP_PASS = /(^|\.)gmail\.com$/i.test(SMTP_HOST)
+    ? RAW_SMTP_PASS.replace(/\s+/g, "").trim()
+    : RAW_SMTP_PASS.trim();
 const SMTP_FROM = String(process.env.SMTP_FROM || "").trim();
-const SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase() === "true";
+const RAW_SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase();
+const SMTP_SECURE = RAW_SMTP_SECURE
+    ? RAW_SMTP_SECURE === "true"
+    : SMTP_PORT === 465;
 
 const SMS_WEBHOOK_URL = String(process.env.SMS_WEBHOOK_URL || "").trim();
 const SMS_WEBHOOK_TOKEN = String(process.env.SMS_WEBHOOK_TOKEN || "").trim();
@@ -221,6 +227,28 @@ const MAX_CHAT_MEDIA_BYTES = Number.POSITIVE_INFINITY;
 const MAX_REQUEST_BODY_BYTES = Number.POSITIVE_INFINITY;
 const DEFAULT_CHAT_MESSAGE_LIMIT = 180;
 const MAX_CHAT_MESSAGE_LIMIT = 300;
+const STATIC_ROOT_DIR = path.resolve(__dirname, "..");
+const STATIC_INDEX_FILES = ["frontpage.html", "index.html"];
+const STATIC_CONTENT_TYPES = Object.freeze({
+    ".css": "text/css; charset=utf-8",
+    ".gif": "image/gif",
+    ".htm": "text/html; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".ico": "image/x-icon",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".mp3": "audio/mpeg",
+    ".mp4": "video/mp4",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain; charset=utf-8",
+    ".webp": "image/webp",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2"
+});
 
 function sendJson(res, statusCode, payload, extraHeaders) {
     const responseHeaders = {
@@ -239,6 +267,155 @@ function sendJson(res, statusCode, payload, extraHeaders) {
     }
     res.writeHead(statusCode, responseHeaders);
     res.end(JSON.stringify(payload));
+}
+
+function getStaticContentType(filePathInput) {
+    const ext = String(path.extname(String(filePathInput || "")) || "").trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(STATIC_CONTENT_TYPES, ext)) {
+        return STATIC_CONTENT_TYPES[ext];
+    }
+    return "application/octet-stream";
+}
+
+function isPathWithinRoot(rootPathInput, filePathInput) {
+    const rootPath = path.resolve(String(rootPathInput || ""));
+    const filePath = path.resolve(String(filePathInput || ""));
+    const relative = path.relative(rootPath, filePath);
+    if (!relative) {
+        return true;
+    }
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function safeDecodeURIComponent(valueInput) {
+    const value = String(valueInput || "");
+    if (!value) {
+        return "";
+    }
+    try {
+        return decodeURIComponent(value);
+    } catch (_error) {
+        return value;
+    }
+}
+
+function tryResolveStaticFile(filePathInput) {
+    const filePath = path.resolve(String(filePathInput || ""));
+    try {
+        const stats = fs.statSync(filePath);
+        if (stats && stats.isFile()) {
+            return {
+                path: filePath,
+                size: Number(stats.size || 0)
+            };
+        }
+    } catch (_error) {
+        return null;
+    }
+    return null;
+}
+
+function writeStaticNotFound(res) {
+    if (!res || res.writableEnded) {
+        return;
+    }
+    if (!res.headersSent) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    res.end("Not found");
+}
+
+function writeStaticReadError(res) {
+    if (!res || res.writableEnded) {
+        return;
+    }
+    if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    res.end("Unable to read requested file.");
+}
+
+function streamStaticFileToResponse(res, absoluteFilePath) {
+    return new Promise((resolve) => {
+        const fileStream = fs.createReadStream(absoluteFilePath);
+        fileStream.on("error", () => {
+            writeStaticReadError(res);
+            resolve(false);
+        });
+        fileStream.on("end", () => {
+            resolve(true);
+        });
+        fileStream.pipe(res);
+    });
+}
+
+async function tryServeStaticRequest(req, res, parsedUrl) {
+    const method = String((req && req.method) || "").trim().toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+        return false;
+    }
+
+    const rawPathname = String((parsedUrl && parsedUrl.pathname) || "/").trim();
+    if (!rawPathname || rawPathname === "/api" || rawPathname.startsWith("/api/")) {
+        return false;
+    }
+
+    let pathname = safeDecodeURIComponent(rawPathname).replace(/\\/g, "/");
+    if (!pathname.startsWith("/")) {
+        pathname = `/${pathname}`;
+    }
+    if (pathname.includes("\0")) {
+        return false;
+    }
+
+    const isRootRequest = pathname === "/";
+    const relativePath = isRootRequest ? "" : pathname.replace(/^\/+/, "");
+    const absoluteRequestedPath = path.resolve(STATIC_ROOT_DIR, relativePath);
+    if (!isPathWithinRoot(STATIC_ROOT_DIR, absoluteRequestedPath)) {
+        writeStaticNotFound(res);
+        return true;
+    }
+
+    let selectedFile = tryResolveStaticFile(absoluteRequestedPath);
+    if (!selectedFile) {
+        if (isRootRequest) {
+            for (const indexFileName of STATIC_INDEX_FILES) {
+                selectedFile = tryResolveStaticFile(path.join(STATIC_ROOT_DIR, indexFileName));
+                if (selectedFile) {
+                    break;
+                }
+            }
+        } else {
+            const directoryIndex = tryResolveStaticFile(path.join(absoluteRequestedPath, "index.html"));
+            if (directoryIndex) {
+                selectedFile = directoryIndex;
+            }
+        }
+    }
+
+    if (!selectedFile) {
+        writeStaticNotFound(res);
+        return true;
+    }
+
+    if (!isPathWithinRoot(STATIC_ROOT_DIR, selectedFile.path)) {
+        writeStaticNotFound(res);
+        return true;
+    }
+
+    res.writeHead(200, {
+        "Content-Type": getStaticContentType(selectedFile.path),
+        "Content-Length": String(selectedFile.size),
+        "Cache-Control": "public, max-age=0, must-revalidate"
+    });
+
+    if (method === "HEAD") {
+        res.end();
+        return true;
+    }
+
+    await streamStaticFileToResponse(res, selectedFile.path);
+    return true;
 }
 
 function parsePositiveInt(rawValue, fallbackValue) {
@@ -7676,6 +7853,7 @@ function bootstrapRuntime(triggerLabelInput) {
     const runtimeType = IS_SERVERLESS_RUNTIME ? "serverless" : "server";
     const triggerLabel = String(triggerLabelInput || "startup").trim().toLowerCase() || "startup";
     const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
+    const staticRootLabel = STATIC_ROOT_DIR;
 
     if (ALLOW_DEMO_OTP && IS_PRODUCTION) {
         console.warn("[security] ALLOW_DEMO_OTP is enabled but ignored in production mode.");
@@ -7684,7 +7862,7 @@ function bootstrapRuntime(triggerLabelInput) {
         console.warn("[admin-auth] Missing admin credentials. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or provide api/admin-credentials.json.");
     }
     console.log(
-        `API runtime ready at ${apiUrl} (Type: ${runtimeType}, Trigger: ${triggerLabel}, DB: ${dbStatus}, SMTP: ${smtpStatus}, InstallmentReminder: ${installmentReminderStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
+        `API runtime ready at ${apiUrl} (Type: ${runtimeType}, Trigger: ${triggerLabel}, StaticRoot: ${staticRootLabel}, DB: ${dbStatus}, SMTP: ${smtpStatus}, InstallmentReminder: ${installmentReminderStatus}, SMS: ${smsStatus}, Semaphore: ${semaphoreStatus}, OTP: ${otpMode}, CORS: ${corsStatus}, AdminAuth: ${adminStatus}, SessionTTLms: ${SESSION_TTL_MS})`
     );
 }
 
@@ -8595,6 +8773,10 @@ async function requestListener(req, res) {
 
     if (req.method === "POST" && pathname === "/api/kyc/verify-face") {
         await handleKycVerifyFace(req, res);
+        return;
+    }
+
+    if (await tryServeStaticRequest(req, res, parsedUrl)) {
         return;
     }
 
