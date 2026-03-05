@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ecodrive - Installment Employment Information</title>
+    <title>Ecodrive - Installment Requirements Upload</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="installment.css?v=20260302b">
+    <link rel="stylesheet" href="installment.css?v=20260305a">
     <link rel="stylesheet" href="../nav-responsive.css?v=20260304a">
     <script src="../../session.js" defer></script>
-    <script src="installment.js?v=20260304c" defer></script>
+    <script src="installment.js?v=20260305a" defer></script>
 </head>
 <body data-step="3">
     <div class="bg-shape bg-left"></div>
@@ -46,7 +46,7 @@
         <header class="page-head">
             <div>
                 <h1>Installment Application</h1>
-                <p>Employment Information</p>
+                <p>Requirements Upload</p>
             </div>
 
             <ol class="stepper" aria-label="Installment steps">
@@ -60,39 +60,66 @@
                 </li>
                 <li class="active">
                     <span class="dot">3</span>
-                    <span class="step-copy">Employment Information</span>
+                    <span class="step-copy">Requirements Upload</span>
                 </li>
             </ol>
         </header>
 
         <section class="installment-card">
             <form id="installmentStep3Form" novalidate>
-                <div class="form-grid employment-grid">
-                    <label>
-                        <span>Current Employer</span>
-                        <input id="currentEmployer" type="text" required>
-                    </label>
-
-                    <label>
-                        <span>Company Address</span>
-                        <input id="companyAddress" type="text" required>
-                    </label>
-
-                    <label>
-                        <span>Nature of Work</span>
-                        <input id="natureOfWork" type="text" required>
-                    </label>
-
-                    <label>
-                        <span>Monthly Income</span>
-                        <input id="monthlyIncome" type="number" min="1" required>
-                    </label>
-
+                <div class="form-grid requirements-upload-grid">
                     <label class="field-span-2">
-                        <span>Position / Job Title</span>
-                        <input id="position" type="text" required>
+                        <span>Are you a Business Owner?</span>
+                        <select id="employmentType" required>
+                            <option value="">Select</option>
+                            <option value="Employed">No (Employed)</option>
+                            <option value="Business Owner">Yes (Business Owner)</option>
+                        </select>
+                    </label>
+
+                    <label class="upload-field">
+                        <span>Valid ID #1</span>
+                        <input id="validId1" type="file" accept="image/*,application/pdf" required>
+                        <small id="validId1Name" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label class="upload-field">
+                        <span>Valid ID #2</span>
+                        <input id="validId2" type="file" accept="image/*,application/pdf" required>
+                        <small id="validId2Name" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label class="upload-field">
+                        <span>Proof of Income</span>
+                        <input id="proofOfIncome" type="file" accept="image/*,application/pdf" required>
+                        <small id="proofOfIncomeName" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label id="payslipOrCoeWrap" class="upload-field">
+                        <span>Payslip / COE (if Employed)</span>
+                        <input id="payslipOrCoe" type="file" accept="image/*,application/pdf">
+                        <small id="payslipOrCoeName" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label id="businessPermitWrap" class="upload-field" hidden>
+                        <span>Business Permit (if Business Owner)</span>
+                        <input id="businessPermit" type="file" accept="image/*,application/pdf">
+                        <small id="businessPermitName" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label class="upload-field">
+                        <span>Proof of Billing (Meralco / Water / Internet)</span>
+                        <input id="proofOfBilling" type="file" accept="image/*,application/pdf" required>
+                        <small id="proofOfBillingName" class="upload-file-name">No file selected</small>
+                    </label>
+
+                    <label class="upload-field">
+                        <span>Barangay Certificate</span>
+                        <input id="brgyCertificate" type="file" accept="image/*,application/pdf" required>
+                        <small id="brgyCertificateName" class="upload-file-name">No file selected</small>
                     </label>
                 </div>
+                <p class="upload-help">Accepted file types: image and PDF.</p>
 
                 <div class="action-row between">
                     <a href="installment-step2.html" class="action-btn secondary">Back</a>

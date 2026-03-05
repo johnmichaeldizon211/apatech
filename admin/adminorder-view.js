@@ -32,6 +32,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const instTotalPrice = document.getElementById("instTotalPrice");
     const instPaymentMethod = document.getElementById("instPaymentMethod");
     const instInstallmentPlan = document.getElementById("instInstallmentPlan");
+    const instRequirementsCard = document.getElementById("instRequirementsCard");
+    const instEmploymentTypeBadge = document.getElementById("instEmploymentTypeBadge");
+    const instRequirementsList = document.getElementById("instRequirementsList");
     const instBreakdownTableBody = document.getElementById("instBreakdownTableBody");
     const instBreakdownFallback = document.getElementById("instBreakdownFallback");
     const instCustomerName = document.getElementById("instCustomerName");
@@ -73,10 +76,20 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminGenerateReceiptBtn = document.getElementById("adminGenerateReceiptBtn");
     let currentBooking = null;
     let receiptPdfLibPromise = null;
+    const requirementAttachmentCache = new Map();
 
     const RECEIPT_PDF_SCRIPT_SOURCES = [
         "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
         "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"
+    ];
+    const INSTALLMENT_REQUIREMENT_FIELDS = [
+        { key: "validId1", label: "Valid ID #1", required: true },
+        { key: "validId2", label: "Valid ID #2", required: true },
+        { key: "proofOfIncome", label: "Proof of Income", required: true },
+        { key: "payslipOrCoe", label: "Payslip / COE", requiredWhen: "Employed" },
+        { key: "businessPermit", label: "Business Permit", requiredWhen: "Business Owner" },
+        { key: "proofOfBilling", label: "Proof of Billing", required: true },
+        { key: "brgyCertificate", label: "Barangay Certificate", required: true }
     ];
 
     if (!window.EcodriveSession || typeof window.EcodriveSession.requireRole !== "function" || !window.EcodriveSession.requireRole("admin")) {
@@ -262,6 +275,168 @@ document.addEventListener("DOMContentLoaded", function () {
         return record.installment && typeof record.installment === "object"
             ? record.installment
             : null;
+    }
+
+    function normalizeEmploymentTypeLabel(value) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (!raw) {
+            return "";
+        }
+        if (raw === "business owner" || raw === "business_owner" || raw === "businessowner") {
+            return "Business Owner";
+        }
+        if (raw === "employed" || raw === "employee") {
+            return "Employed";
+        }
+        return "";
+    }
+
+    function isRequirementApplicable(definition, employmentType) {
+        return !definition.requiredWhen || definition.requiredWhen === employmentType;
+    }
+
+    function isRequirementRequired(definition, employmentType) {
+        if (definition.required) {
+            return true;
+        }
+        return Boolean(definition.requiredWhen) && definition.requiredWhen === employmentType;
+    }
+
+    function toRequirementAttachment(entryInput) {
+        const entry = entryInput && typeof entryInput === "object" ? entryInput : null;
+        if (!entry) {
+            return null;
+        }
+        const fileName = String(entry.fileName || entry.name || "").trim();
+        const mime = String(entry.mime || "").trim();
+        const dataUrl = String(entry.dataUrl || entry.dataURL || "").trim();
+        const sizeBytes = Number(entry.sizeBytes || entry.size || 0);
+        const uploadedAt = String(entry.uploadedAt || entry.uploaded_at || "").trim();
+        if (!fileName && !mime && !dataUrl && !sizeBytes && !uploadedAt) {
+            return null;
+        }
+        return {
+            fileName: fileName || "attachment",
+            mime: mime || "application/octet-stream",
+            sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+            uploadedAt: uploadedAt || "",
+            dataUrl: dataUrl
+        };
+    }
+
+    function buildRequirementCacheToken() {
+        return "req_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+    }
+
+    function openRequirementAttachment(dataUrl) {
+        const popup = window.open(dataUrl, "_blank", "noopener");
+        if (!popup) {
+            window.alert("Please allow pop-ups to view this document.");
+        }
+    }
+
+    function downloadRequirementAttachment(dataUrl, fileName) {
+        const anchor = document.createElement("a");
+        anchor.href = dataUrl;
+        anchor.download = String(fileName || "attachment").trim() || "attachment";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+    }
+
+    function renderInstallmentRequirements(record) {
+        if (!instRequirementsCard || !instRequirementsList || !instEmploymentTypeBadge) {
+            return;
+        }
+        requirementAttachmentCache.clear();
+        const installment = getInstallmentPayload(record);
+        if (!installment) {
+            instRequirementsCard.hidden = true;
+            instRequirementsList.innerHTML = "";
+            instEmploymentTypeBadge.textContent = "-";
+            return;
+        }
+
+        const employmentType = normalizeEmploymentTypeLabel(
+            installment.employmentType || installment.employment_type
+        ) || "Not set";
+        instEmploymentTypeBadge.textContent = employmentType;
+        instRequirementsList.innerHTML = "";
+
+        const uploads = installment.requirementsUploads && typeof installment.requirementsUploads === "object"
+            ? installment.requirementsUploads
+            : (installment.requirements_uploads && typeof installment.requirements_uploads === "object"
+                ? installment.requirements_uploads
+                : {});
+
+        const fragment = document.createDocumentFragment();
+        INSTALLMENT_REQUIREMENT_FIELDS.forEach(function (definition) {
+            const isApplicable = isRequirementApplicable(definition, employmentType);
+            const isRequired = isRequirementRequired(definition, employmentType);
+            const attachment = isApplicable
+                ? toRequirementAttachment(uploads[definition.key])
+                : null;
+
+            const row = document.createElement("article");
+            row.className = "requirement-item";
+
+            const title = document.createElement("span");
+            title.className = "requirement-title";
+            title.textContent = definition.label;
+            row.appendChild(title);
+
+            const status = document.createElement("span");
+            status.className = "requirement-status";
+            if (!isApplicable) {
+                status.textContent = "Not required";
+                status.classList.add("optional");
+            } else if (attachment) {
+                status.textContent = "Uploaded";
+                status.classList.add("uploaded");
+            } else {
+                status.textContent = isRequired ? "Missing" : "Not uploaded";
+                status.classList.add(isRequired ? "missing" : "optional");
+            }
+            row.appendChild(status);
+
+            const actions = document.createElement("div");
+            actions.className = "requirement-actions";
+            if (attachment && attachment.dataUrl) {
+                const token = buildRequirementCacheToken();
+                requirementAttachmentCache.set(token, attachment);
+
+                const viewBtn = document.createElement("button");
+                viewBtn.type = "button";
+                viewBtn.className = "requirement-btn";
+                viewBtn.textContent = "View";
+                viewBtn.setAttribute("data-requirement-action", "view");
+                viewBtn.setAttribute("data-requirement-token", token);
+                actions.appendChild(viewBtn);
+
+                const downloadBtn = document.createElement("button");
+                downloadBtn.type = "button";
+                downloadBtn.className = "requirement-btn";
+                downloadBtn.textContent = "Download";
+                downloadBtn.setAttribute("data-requirement-action", "download");
+                downloadBtn.setAttribute("data-requirement-token", token);
+                actions.appendChild(downloadBtn);
+            } else if (attachment && !attachment.dataUrl) {
+                const note = document.createElement("span");
+                note.className = "requirement-note";
+                note.textContent = "Preview unavailable";
+                actions.appendChild(note);
+            } else {
+                const note = document.createElement("span");
+                note.className = "requirement-note";
+                note.textContent = "-";
+                actions.appendChild(note);
+            }
+            row.appendChild(actions);
+            fragment.appendChild(row);
+        });
+
+        instRequirementsList.appendChild(fragment);
+        instRequirementsCard.hidden = false;
     }
 
     function getCustomerLocation(record) {
@@ -811,6 +986,7 @@ document.addEventListener("DOMContentLoaded", function () {
             metrics.monthsToPay > 0 ? (metrics.monthsToPay + " months") : "Not set",
             "Not set"
         );
+        renderInstallmentRequirements(record);
 
         setTextContent(instCustomerName, buildNameFromRecord(record), "-");
         setTextContent(instCustomerPhone, String(record && record.phone || "-"), "-");
@@ -835,6 +1011,10 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderCashMode(record) {
         const cashBreakdown = resolveCashPaymentBreakdown(record);
         const orderStatusText = getStatusLabel(record);
+        if (instRequirementsCard) {
+            instRequirementsCard.hidden = true;
+        }
+        requirementAttachmentCache.clear();
 
         setTextContent(cashOrderDate, formatDateTime(getRecordCreatedAt(record)), "N/A");
         applyStatusPill(cashOrderStatus, orderStatusText);
@@ -1798,6 +1978,15 @@ document.addEventListener("DOMContentLoaded", function () {
         detailsContent.hidden = show;
         approveBtn.disabled = show;
         rejectBtn.disabled = show;
+        if (show) {
+            requirementAttachmentCache.clear();
+            if (instRequirementsList) {
+                instRequirementsList.innerHTML = "";
+            }
+            if (instRequirementsCard) {
+                instRequirementsCard.hidden = true;
+            }
+        }
         if (show && fulfillmentStatusInput && fulfillmentLocationInput && fulfillmentEtaInput) {
             fulfillmentStatusInput.value = "";
             fulfillmentLocationInput.value = "";
@@ -1936,6 +2125,31 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 openReceiptView(currentBooking);
+            });
+        }
+
+        if (instRequirementsList) {
+            instRequirementsList.addEventListener("click", function (event) {
+                const trigger = event.target && event.target.closest
+                    ? event.target.closest("[data-requirement-action]")
+                    : null;
+                if (!trigger) {
+                    return;
+                }
+                const action = String(trigger.getAttribute("data-requirement-action") || "").trim();
+                const token = String(trigger.getAttribute("data-requirement-token") || "").trim();
+                const attachment = requirementAttachmentCache.get(token);
+                if (!attachment || !attachment.dataUrl) {
+                    window.alert("Attachment is unavailable for this record.");
+                    return;
+                }
+                if (action === "view") {
+                    openRequirementAttachment(attachment.dataUrl);
+                    return;
+                }
+                if (action === "download") {
+                    downloadRequirementAttachment(attachment.dataUrl, attachment.fileName);
+                }
             });
         }
 

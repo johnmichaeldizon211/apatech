@@ -104,15 +104,26 @@
                 </div>
                 <div class="ship-address-field">
                     <label for="ship-barangay">Barangay</label>
-                    <input class="ship-input" id="ship-barangay" type="text" placeholder="Barangay">
+                    <select class="ship-input" id="ship-barangay">
+                        <option value="">Select barangay</option>
+                    </select>
                 </div>
                 <div class="ship-address-field">
                     <label for="ship-city">City / Municipality</label>
-                    <input class="ship-input" id="ship-city" type="text" placeholder="City or municipality">
+                    <select class="ship-input" id="ship-city">
+                        <option value="">Select city / municipality</option>
+                        <option value="City of Baliwag">City of Baliwag</option>
+                        <option value="San Ildefonso">San Ildefonso</option>
+                        <option value="San Rafael">San Rafael</option>
+                        <option value="Pulilan">Pulilan</option>
+                        <option value="Bustos">Bustos</option>
+                    </select>
                 </div>
                 <div class="ship-address-field">
                     <label for="ship-province">Province</label>
-                    <input class="ship-input" id="ship-province" type="text" placeholder="Province">
+                    <select class="ship-input" id="ship-province">
+                        <option value="Bulacan">Bulacan</option>
+                    </select>
                 </div>
             </section>
             <label class="ship-label ship-preview-label" for="ship-address-display">Full Address</label>
@@ -143,7 +154,7 @@
         </aside>
     </main>
     <script src="../../session.js"></script>
-    <script src="booking.js?v=20260305d"></script>
+    <script src="booking.js?v=20260305e"></script>
 </body>
 </html>
 

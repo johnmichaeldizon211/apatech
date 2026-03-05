@@ -177,6 +177,31 @@ const DEFAULT_PRODUCT_CATALOG = [
 ];
 const MAX_PRODUCT_IMAGE_DATA_URL_LENGTH = 3 * 1024 * 1024;
 const MAX_BOOKINGS_PER_DAY = 5;
+const BOOKING_ALLOWED_PROVINCE = "Bulacan";
+const BOOKING_ALLOWED_CITY_CONFIG = [
+    { canonical: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
+    { canonical: "San Ildefonso", aliases: [] },
+    { canonical: "San Rafael", aliases: [] },
+    { canonical: "Pulilan", aliases: ["Pullilan"] },
+    { canonical: "Bustos", aliases: [] }
+];
+const BOOKING_ALLOWED_CITY_ALIAS_MAP = BOOKING_ALLOWED_CITY_CONFIG.reduce((map, entry) => {
+    const canonical = String(entry.canonical || "").trim();
+    if (!canonical) {
+        return map;
+    }
+    const aliases = [canonical].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+    aliases.forEach((alias) => {
+        const normalized = String(alias || "").trim().toLowerCase();
+        if (normalized) {
+            map.set(normalized, canonical);
+        }
+    });
+    return map;
+}, new Map());
+const INSTALLMENT_DOC_ALLOWED_MIME_REGEX = /^(image\/(?:png|jpeg|jpg|webp|gif|bmp|heic|heif)|application\/pdf)$/i;
+const INSTALLMENT_DOC_DATA_URL_MAX_LENGTH = Number.POSITIVE_INFINITY;
+const INSTALLMENT_DOC_BYTES_MAX = Number.POSITIVE_INFINITY;
 const ALLOWED_PAYMENT_STATUSES = new Set([
     "awaiting_payment_confirmation",
     "pending_cod",
@@ -2339,15 +2364,36 @@ function getTodayDateOnlyValue() {
     return formatDateOnlyValue(new Date());
 }
 
-function isDateOnlyTomorrowOrLater(value) {
+function getBookingWindowStartDateOnly() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() + 1);
+    return start;
+}
+
+function getBookingWindowEndDateOnly() {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    end.setDate(end.getDate() + 3);
+    return end;
+}
+
+function isDateOnlyWithinBookingWindow(value) {
     const parsed = parseDateOnlyValue(value);
     if (!parsed) {
         return false;
     }
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return parsed.getTime() >= tomorrow.getTime();
+    const start = getBookingWindowStartDateOnly();
+    const end = getBookingWindowEndDateOnly();
+    return parsed.getTime() >= start.getTime() && parsed.getTime() <= end.getTime();
+}
+
+function isDateOnlyTomorrowOrLater(value) {
+    return isDateOnlyWithinBookingWindow(value);
+}
+
+function getBookingWindowValidationMessage() {
+    return "Booking date must be within tomorrow and the next 2 days.";
 }
 
 function formatDateOnlyForEmail(value) {
@@ -2854,6 +2900,271 @@ function getDuplicateField(errorMessage) {
 
 function normalizeText(value) {
     return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function resolveAllowedBookingCityName(value) {
+    const cleaned = normalizeText(value).toLowerCase();
+    if (!cleaned) {
+        return "";
+    }
+    return BOOKING_ALLOWED_CITY_ALIAS_MAP.get(cleaned) || "";
+}
+
+function normalizeBookingProvinceName(value) {
+    const cleaned = normalizeText(value);
+    if (!cleaned) {
+        return "";
+    }
+    return cleaned.toLowerCase() === BOOKING_ALLOWED_PROVINCE.toLowerCase()
+        ? BOOKING_ALLOWED_PROVINCE
+        : "";
+}
+
+function parseAddressPartsFromShippingAddress(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) {
+        return { street: "", barangay: "", city: "", province: "" };
+    }
+    const segments = normalized
+        .split(",")
+        .map((segment) => normalizeText(segment))
+        .filter(Boolean);
+    if (segments.length >= 4) {
+        return {
+            street: normalizeText(segments.slice(0, segments.length - 3).join(", ")),
+            barangay: normalizeText(segments[segments.length - 3]),
+            city: normalizeText(segments[segments.length - 2]),
+            province: normalizeText(segments[segments.length - 1])
+        };
+    }
+    if (segments.length === 3) {
+        return {
+            street: normalizeText(segments[0]),
+            barangay: normalizeText(segments[1]),
+            city: normalizeText(segments[2]),
+            province: ""
+        };
+    }
+    if (segments.length === 2) {
+        return {
+            street: normalizeText(segments[0]),
+            barangay: normalizeText(segments[1]),
+            city: "",
+            province: ""
+        };
+    }
+    return {
+        street: normalized,
+        barangay: "",
+        city: "",
+        province: ""
+    };
+}
+
+function normalizeShippingAddressPartsInput(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+        street: normalizeText(source.street),
+        barangay: normalizeText(source.barangay),
+        city: normalizeText(source.city),
+        province: normalizeText(source.province)
+    };
+}
+
+function validateDeliveryServiceArea(shippingAddressPartsInput, shippingAddressInput) {
+    const explicitParts = normalizeShippingAddressPartsInput(shippingAddressPartsInput);
+    const parsedParts = parseAddressPartsFromShippingAddress(shippingAddressInput);
+    const merged = {
+        street: explicitParts.street || parsedParts.street,
+        barangay: explicitParts.barangay || parsedParts.barangay,
+        city: explicitParts.city || parsedParts.city,
+        province: explicitParts.province || parsedParts.province
+    };
+    const canonicalProvince = normalizeBookingProvinceName(merged.province);
+    if (canonicalProvince !== BOOKING_ALLOWED_PROVINCE) {
+        throw createHttpError(400, "Delivery province is restricted to Bulacan.");
+    }
+    const canonicalCity = resolveAllowedBookingCityName(merged.city);
+    if (!canonicalCity) {
+        throw createHttpError(
+            400,
+            "Delivery city must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos."
+        );
+    }
+    return {
+        street: merged.street,
+        barangay: merged.barangay,
+        city: canonicalCity,
+        province: canonicalProvince
+    };
+}
+
+function normalizeInstallmentEmploymentType(value) {
+    const cleaned = normalizeText(value).toLowerCase();
+    if (!cleaned) {
+        return "";
+    }
+    if (cleaned === "business owner" || cleaned === "business_owner" || cleaned === "businessowner") {
+        return "Business Owner";
+    }
+    if (cleaned === "employed" || cleaned === "employee") {
+        return "Employed";
+    }
+    return "";
+}
+
+const INSTALLMENT_REQUIREMENT_FIELDS = [
+    { key: "validId1", label: "Valid ID #1", required: true },
+    { key: "validId2", label: "Valid ID #2", required: true },
+    { key: "proofOfIncome", label: "Proof of Income", required: true },
+    { key: "payslipOrCoe", label: "Payslip / COE", requiredWhen: "Employed" },
+    { key: "businessPermit", label: "Business Permit", requiredWhen: "Business Owner" },
+    { key: "proofOfBilling", label: "Proof of Billing", required: true },
+    { key: "brgyCertificate", label: "Barangay Certificate", required: true }
+];
+
+function normalizeInstallmentAttachmentDataUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+        return null;
+    }
+    if (raw.length > INSTALLMENT_DOC_DATA_URL_MAX_LENGTH) {
+        throw createHttpError(400, "One of the installment documents is too large.");
+    }
+    const match = raw.match(/^data:([^;]+);base64,([a-z0-9+/=\s]+)$/i);
+    if (!match) {
+        throw createHttpError(400, "Installment document format is invalid. Use image or PDF files.");
+    }
+    const mime = String(match[1] || "").trim().toLowerCase();
+    if (!INSTALLMENT_DOC_ALLOWED_MIME_REGEX.test(mime)) {
+        throw createHttpError(400, "Installment documents must be image or PDF files.");
+    }
+    const base64Payload = String(match[2] || "").replace(/\s+/g, "");
+    if (!base64Payload || !/^[a-z0-9+/=]+$/i.test(base64Payload)) {
+        throw createHttpError(400, "Installment document payload is invalid.");
+    }
+    let sizeBytes = 0;
+    try {
+        sizeBytes = Buffer.from(base64Payload, "base64").length;
+    } catch (_error) {
+        throw createHttpError(400, "Installment document payload is invalid.");
+    }
+    if (sizeBytes <= 0 || sizeBytes > INSTALLMENT_DOC_BYTES_MAX) {
+        throw createHttpError(400, "One of the installment documents is too large.");
+    }
+    return {
+        dataUrl: `data:${mime};base64,${base64Payload}`,
+        mime: mime,
+        sizeBytes: sizeBytes
+    };
+}
+
+function normalizeInstallmentRequirementsUploads(input, employmentType, options) {
+    const source = input && typeof input === "object" ? input : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const requireComplete = opts.requireComplete === true;
+    const normalized = {};
+
+    INSTALLMENT_REQUIREMENT_FIELDS.forEach((field) => {
+        const isApplicable = !field.requiredWhen || field.requiredWhen === employmentType;
+        if (!isApplicable) {
+            return;
+        }
+        const rawEntry = source[field.key];
+        if (!rawEntry) {
+            if (requireComplete && (field.required || field.requiredWhen)) {
+                throw createHttpError(400, `${field.label} is required.`);
+            }
+            return;
+        }
+
+        const entry = typeof rawEntry === "string"
+            ? { dataUrl: rawEntry }
+            : (rawEntry && typeof rawEntry === "object" ? rawEntry : {});
+        const normalizedData = normalizeInstallmentAttachmentDataUrl(
+            entry.dataUrl || entry.dataURL || entry.attachment || entry.fileDataUrl || ""
+        );
+        if (!normalizedData) {
+            if (requireComplete && (field.required || field.requiredWhen)) {
+                throw createHttpError(400, `${field.label} is required.`);
+            }
+            return;
+        }
+
+        const fileName = normalizeText(entry.fileName || entry.name || field.key).slice(0, 180) || field.key;
+        const uploadedAt = normalizeText(entry.uploadedAt || entry.uploaded_at) || new Date().toISOString();
+        normalized[field.key] = {
+            fileName: fileName,
+            mime: normalizedData.mime,
+            sizeBytes: Number(entry.sizeBytes || entry.size || normalizedData.sizeBytes) || normalizedData.sizeBytes,
+            uploadedAt: uploadedAt,
+            dataUrl: normalizedData.dataUrl
+        };
+    });
+
+    return normalized;
+}
+
+function sanitizeInstallmentPayloadForStorage(input, options) {
+    const source = input && typeof input === "object" ? input : {};
+    const opts = options && typeof options === "object" ? options : {};
+    const normalized = Object.assign({}, source);
+
+    const employmentType = normalizeInstallmentEmploymentType(
+        normalized.employmentType || normalized.employment_type || normalized.workType || normalized.ownerType
+    );
+    if (!employmentType) {
+        throw createHttpError(400, "Employment type is required for installment requirements.");
+    }
+    normalized.employmentType = employmentType;
+    normalized.employment_type = employmentType;
+
+    normalized.requirementsUploads = normalizeInstallmentRequirementsUploads(
+        normalized.requirementsUploads || normalized.requirements_uploads || normalized.documents || normalized.requirements,
+        employmentType,
+        { requireComplete: opts.requireComplete !== false }
+    );
+    normalized.requirements_uploads = normalized.requirementsUploads;
+    return normalized;
+}
+
+function sanitizeInstallmentPayloadForResponse(input, options) {
+    const source = input && typeof input === "object" ? input : null;
+    if (!source) {
+        return null;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    const includeAttachmentData = opts.includeAttachmentData === true;
+    const normalized = Object.assign({}, source);
+
+    const requirements = normalized.requirementsUploads && typeof normalized.requirementsUploads === "object"
+        ? normalized.requirementsUploads
+        : (normalized.requirements_uploads && typeof normalized.requirements_uploads === "object"
+            ? normalized.requirements_uploads
+            : {});
+
+    const nextRequirements = {};
+    Object.keys(requirements).forEach((key) => {
+        const entry = requirements[key] && typeof requirements[key] === "object"
+            ? requirements[key]
+            : null;
+        if (!entry) {
+            return;
+        }
+        const nextEntry = {
+            fileName: normalizeText(entry.fileName || entry.name || key).slice(0, 180) || key,
+            mime: normalizeText(entry.mime || "").toLowerCase().slice(0, 120),
+            sizeBytes: Number(entry.sizeBytes || entry.size || 0) || 0,
+            uploadedAt: normalizeText(entry.uploadedAt || entry.uploaded_at)
+        };
+        if (includeAttachmentData) {
+            nextEntry.dataUrl = String(entry.dataUrl || entry.dataURL || "").trim();
+        }
+        nextRequirements[key] = nextEntry;
+    });
+    normalized.requirementsUploads = nextRequirements;
+    normalized.requirements_uploads = nextRequirements;
+    return normalized;
 }
 
 function normalizeChatMode(value) {
@@ -3600,7 +3911,8 @@ async function reconcileProductCategories(pool) {
     }
 }
 
-function mapBookingRow(row) {
+function mapBookingRow(row, options) {
+    const opts = options && typeof options === "object" ? options : {};
     let installment = null;
     if (row && row.installment_payload) {
         try {
@@ -3609,6 +3921,9 @@ function mapBookingRow(row) {
             installment = null;
         }
     }
+    installment = sanitizeInstallmentPayloadForResponse(installment, {
+        includeAttachmentData: opts.includeInstallmentAttachmentData === true
+    });
     const explicitInstallmentAccountStatus = normalizeText(
         installment && (installment.accountStatus || installment.account_status)
     ).slice(0, 80);
@@ -5773,7 +6088,10 @@ async function prepareBookingForInsert(bodyInput, options) {
         body.paymentStatus,
         getDefaultPaymentStatus(paymentMethod, serviceType)
     );
-    const shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
+    const shippingAddressPartsInput = body.shippingAddressParts && typeof body.shippingAddressParts === "object"
+        ? body.shippingAddressParts
+        : null;
+    let shippingAddress = normalizeText(body.shippingAddress).slice(0, 255);
     const shippingMapEmbedUrl = String(body.shippingMapEmbedUrl || "").trim().slice(0, 3000);
     const repairDetails = normalizeText(body.repairDetails || body.details).slice(0, 4000);
     const shippingCoordinates = body.shippingCoordinates && typeof body.shippingCoordinates === "object"
@@ -5786,8 +6104,28 @@ async function prepareBookingForInsert(bodyInput, options) {
     const total = parseAmount(body.total || (subtotal + shippingFee));
     let installmentPayload = null;
     if (body.installment && typeof body.installment === "object") {
-        const nextInstallment = Object.assign({}, body.installment);
+        let nextInstallment = Object.assign({}, body.installment);
         if (serviceType === "Installment") {
+            nextInstallment = sanitizeInstallmentPayloadForStorage(nextInstallment, {
+                requireComplete: true
+            });
+            const canonicalInstallmentProvince = normalizeBookingProvinceName(
+                nextInstallment.province || nextInstallment.addressProvince || nextInstallment.provinceName
+            );
+            if (canonicalInstallmentProvince !== BOOKING_ALLOWED_PROVINCE) {
+                throw createHttpError(400, "Installment service area is limited to Bulacan.");
+            }
+            const canonicalInstallmentCity = resolveAllowedBookingCityName(
+                nextInstallment.city || nextInstallment.cityMunicipality || nextInstallment.municipality
+            );
+            if (!canonicalInstallmentCity) {
+                throw createHttpError(
+                    400,
+                    "Installment city must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos."
+                );
+            }
+            nextInstallment.province = canonicalInstallmentProvince;
+            nextInstallment.city = canonicalInstallmentCity;
             const nowIso = new Date().toISOString();
             nextInstallment.paymentHistory = [];
             nextInstallment.paidInstallments = 0;
@@ -5830,6 +6168,9 @@ async function prepareBookingForInsert(bodyInput, options) {
         }
         installmentPayload = JSON.stringify(nextInstallment);
     }
+    if (serviceType === "Installment" && !installmentPayload) {
+        throw createHttpError(400, "Installment details and requirements are required.");
+    }
 
     const forceCustomerDefaults = opts.forceCustomerDefaults !== false
         && (!isAdminRequest || Boolean(opts.forceCustomerDefaults));
@@ -5858,6 +6199,18 @@ async function prepareBookingForInsert(bodyInput, options) {
         paymentStatus = normalizePaymentStatus(forcedPaymentStatus, paymentStatus);
     }
 
+    if (serviceType === "Delivery") {
+        const normalizedParts = validateDeliveryServiceArea(shippingAddressPartsInput, shippingAddress);
+        if (!shippingAddress) {
+            shippingAddress = [
+                normalizedParts.street,
+                normalizedParts.barangay,
+                normalizedParts.city,
+                normalizedParts.province
+            ].filter(Boolean).join(", ").slice(0, 255);
+        }
+    }
+
     const reviewDecision = getReviewDecisionFromStatus(status, fulfillmentStatus);
     const reviewedAt = reviewDecision === "none" ? null : new Date();
     if (reviewDecision === "approved") {
@@ -5876,15 +6229,15 @@ async function prepareBookingForInsert(bodyInput, options) {
     if (!isValidMobile(phone)) {
         throw createHttpError(400, "Use 09XXXXXXXXX or +639XXXXXXXXX.");
     }
-    const requiresScheduleTime = serviceType === "Pick Up";
-    if (requiresScheduleTime && (scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
+    const requiresScheduleDateTime = serviceType === "Pick Up" || serviceType === "Delivery";
+    if (requiresScheduleDateTime && (!scheduleDate || !scheduleTime)) {
         throw createHttpError(400, "Provide a valid schedule date and time.");
     }
-    if (!requiresScheduleTime && scheduleDateInput && !scheduleDate) {
+    if (!requiresScheduleDateTime && scheduleDateInput && !scheduleDate) {
         throw createHttpError(400, "Provide a valid schedule date.");
     }
-    if (scheduleDate && !isDateOnlyTomorrowOrLater(scheduleDate)) {
-        throw createHttpError(400, "Booking date must be tomorrow or later.");
+    if (scheduleDate && !isDateOnlyWithinBookingWindow(scheduleDate)) {
+        throw createHttpError(400, getBookingWindowValidationMessage());
     }
 
     if (!opts.skipScheduleCapacity && scheduleDate) {
@@ -6090,14 +6443,14 @@ async function handleBookingDateAvailability(req, res, parsedUrl) {
             sendJson(res, 400, { success: false, message: "A valid date query parameter is required." });
             return;
         }
-        if (!isDateOnlyTomorrowOrLater(scheduleDate)) {
+        if (!isDateOnlyWithinBookingWindow(scheduleDate)) {
             sendJson(res, 200, {
                 success: true,
                 date: scheduleDate,
                 maxBookingsPerDay: MAX_BOOKINGS_PER_DAY,
                 currentBookings: 0,
                 available: false,
-                message: "Booking date must be tomorrow or later."
+                message: getBookingWindowValidationMessage()
             });
             return;
         }
@@ -6317,7 +6670,10 @@ async function handleAdminBookingDetails(_req, res, orderId) {
             return;
         }
 
-        sendJson(res, 200, { success: true, booking: mapBookingRow(rows[0]) });
+        sendJson(res, 200, {
+            success: true,
+            booking: mapBookingRow(rows[0], { includeInstallmentAttachmentData: true })
+        });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to load booking details." });
     }

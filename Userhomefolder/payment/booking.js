@@ -109,6 +109,44 @@
     const PICKUP_SHOP_ADDRESS = "Poblacion Baliuag beside Southstar Drugs and Xaviery near St. Marys College";
     const PICKUP_SHOP_FALLBACK_COORDS = { lat: 14.9547, lng: 120.9009 };
     const MAX_BOOKINGS_PER_DAY = 5;
+    const ALLOWED_PROVINCE = "Bulacan";
+    const ALLOWED_CITY_CONFIG = [
+        { label: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
+        { label: "San Ildefonso", aliases: [] },
+        { label: "San Rafael", aliases: [] },
+        { label: "Pulilan", aliases: ["Pullilan"] },
+        { label: "Bustos", aliases: [] }
+    ];
+    const BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
+    const PSGC_API_BASE = "https://psgc.cloud/api/v2";
+    const PSGC_TIMEOUT_MS = 15000;
+    const FALLBACK_BARANGAYS_BY_CITY = {
+        "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],
+        "San Ildefonso": ["Akle", "Anyatam", "Bubulong Munti", "Garlang", "Malipampang", "Sapang Putik", "Umpucan"],
+        "San Rafael": ["Banca-banca", "Caingin", "Lico", "Maasim", "Poblacion", "Talacsan", "Tukod"],
+        "Pulilan": ["Balatong A", "Balatong B", "Cutcot", "Lumbac", "Longos", "Poblacion", "Santa Peregrina"],
+        "Bustos": ["Bonga Mayor", "Buisan", "Camachile", "Cambaog", "Poblacion", "Tibagan", "Talampas"]
+    };
+    const ALLOWED_CITY_LABELS = ALLOWED_CITY_CONFIG.map(function (item) {
+        return String(item.label || "").trim();
+    }).filter(Boolean);
+    const CITY_ALIAS_TO_CANONICAL = (function buildCityAliasMap() {
+        const map = new Map();
+        ALLOWED_CITY_CONFIG.forEach(function (item) {
+            const canonical = String(item.label || "").trim();
+            if (!canonical) {
+                return;
+            }
+            const tokens = [canonical].concat(Array.isArray(item.aliases) ? item.aliases : []);
+            tokens.forEach(function (token) {
+                const normalized = String(token || "").trim().toLowerCase();
+                if (normalized) {
+                    map.set(normalized, canonical);
+                }
+            });
+        });
+        return map;
+    })();
 
     let selectedService = "Delivery";
     let selectedPayment = "CASH ON DELIVERY";
@@ -126,6 +164,8 @@
     let pickupLookupPromise = null;
     let scheduleDateAvailabilityRequestId = 0;
     let bookingSubmitInFlight = false;
+    let psgcCityRowsByCanonical = {};
+    let barangayCacheByCity = {};
     const confirmBtnDefaultLabel = confirmBtn.textContent;
     const deliveryAddressInputs = [
         shipStreetInput,
@@ -246,19 +286,34 @@
         return parsed;
     }
 
-    function getTomorrowDateStart() {
-        const tomorrow = new Date();
-        tomorrow.setHours(0, 0, 0, 0);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        return tomorrow;
+    function getDateStartOffset(offsetDays) {
+        const value = new Date();
+        value.setHours(0, 0, 0, 0);
+        value.setDate(value.getDate() + Number(offsetDays || 0));
+        return value;
     }
 
-    function isScheduleDateTomorrowOrLater(dateValue) {
+    function getTomorrowDateStart() {
+        return getDateStartOffset(1);
+    }
+
+    function getBookingWindowMaxDateStart() {
+        return getDateStartOffset(3);
+    }
+
+    function isScheduleDateWithinWindow(dateValue) {
         const selectedDate = parseLocalDateOnlyInput(dateValue);
         if (!selectedDate) {
             return false;
         }
-        return selectedDate.getTime() >= getTomorrowDateStart().getTime();
+        const min = getTomorrowDateStart().getTime();
+        const max = getBookingWindowMaxDateStart().getTime();
+        const selected = selectedDate.getTime();
+        return selected >= min && selected <= max;
+    }
+
+    function getScheduleWindowValidationMessage() {
+        return "Booking date must be within tomorrow and the next 2 days.";
     }
 
     function parseScheduleDateTime(dateValue, timeValue) {
@@ -312,33 +367,37 @@
 
     function initializeScheduleInputs() {
         const minimumDate = getTomorrowDateStart();
+        const maximumDate = getBookingWindowMaxDateStart();
         const minimumDateValue = formatLocalDateInputValue(minimumDate);
+        const maximumDateValue = formatLocalDateInputValue(maximumDate);
         scheduleDateInput.min = minimumDateValue;
+        scheduleDateInput.max = maximumDateValue;
 
-        if (!scheduleDateInput.value || !isScheduleDateTomorrowOrLater(scheduleDateInput.value)) {
+        if (!scheduleDateInput.value || !isScheduleDateWithinWindow(scheduleDateInput.value)) {
             scheduleDateInput.value = minimumDateValue;
         }
 
-        if (selectedService === "Pick Up" && !scheduleTimeInput.value) {
+        if (!scheduleTimeInput.value) {
             scheduleTimeInput.value = "09:00";
         }
     }
 
     function getEstimatedDeliveryLabelForSelection() {
+        const scheduleWindowNote = "Booking window: tomorrow to next 2 days.";
         if (selectedService === "Pick Up") {
-            return "";
+            return scheduleWindowNote;
         }
         if (selectedPayment === "INSTALLMENT") {
-            return "Estimated delivery: 3-7 days after approval";
+            return scheduleWindowNote + " Estimated delivery: 3-7 days after approval";
         }
         if (selectedService === "Delivery") {
-            return "Estimated delivery: 1-2 days";
+            return scheduleWindowNote + " Estimated delivery: 1-2 days";
         }
-        return "";
+        return scheduleWindowNote;
     }
 
     function syncScheduleInputsByService() {
-        const requiresSchedule = selectedService === "Pick Up";
+        const requiresSchedule = selectedService === "Pick Up" || selectedService === "Delivery";
         const requiresTime = requiresSchedule;
 
         if (scheduleDateField) {
@@ -354,7 +413,7 @@
         scheduleTimeInput.disabled = !requiresTime;
         scheduleTimeInput.required = requiresTime;
         if (requiresSchedule) {
-            if (!scheduleDateInput.value || !isScheduleDateTomorrowOrLater(scheduleDateInput.value)) {
+            if (!scheduleDateInput.value || !isScheduleDateWithinWindow(scheduleDateInput.value)) {
                 scheduleDateInput.value = scheduleDateInput.min || formatLocalDateInputValue(getTomorrowDateStart());
             }
         } else {
@@ -474,12 +533,12 @@
         if (!dateValue) {
             return true;
         }
-        if (!isScheduleDateTomorrowOrLater(dateValue)) {
+        if (!isScheduleDateWithinWindow(dateValue)) {
             if (settings.resetDateOnLimit) {
                 scheduleDateInput.value = "";
             }
             if (settings.showErrors) {
-                showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+                showError(scheduleDateInput, getScheduleWindowValidationMessage());
             }
             if (settings.focusInput) {
                 scheduleDateInput.focus();
@@ -603,15 +662,20 @@
             phoneInput.value = profile.phone;
         }
         if (profile.address) {
+            const parsedAddress = parseAddressIntoParts(profile.address);
+            const canonicalCity = resolveAllowedCityName(parsedAddress.city);
             rememberedDeliveryAddress = profile.address;
             rememberedDeliveryAddressParts = {
-                street: profile.address,
-                barangay: "",
-                city: "",
-                province: ""
+                street: parsedAddress.street || profile.address,
+                barangay: parsedAddress.barangay || "",
+                city: canonicalCity || "",
+                province: ALLOWED_PROVINCE
             };
             if (!shipStreetInput.value) {
-                shipStreetInput.value = profile.address;
+                shipStreetInput.value = rememberedDeliveryAddressParts.street;
+            }
+            if (canonicalCity) {
+                shipCityInput.value = canonicalCity;
             }
             updateDeliveryAddressPreview();
         }
@@ -767,6 +831,254 @@
         return String(value || "").trim().replace(/\s+/g, " ");
     }
 
+    function sortUniqueTextList(listInput) {
+        const values = Array.isArray(listInput) ? listInput : [];
+        const unique = Array.from(new Set(values.map(function (item) {
+            return normalizeAddressPart(item);
+        }).filter(Boolean)));
+        return unique.sort(function (a, b) {
+            return String(a).localeCompare(String(b), "en", { sensitivity: "base" });
+        });
+    }
+
+    function resolveAllowedCityName(value) {
+        const cleaned = normalizeAddressPart(value);
+        if (!cleaned) {
+            return "";
+        }
+        return CITY_ALIAS_TO_CANONICAL.get(cleaned.toLowerCase()) || "";
+    }
+
+    function normalizeProvinceName(value) {
+        const cleaned = normalizeAddressPart(value);
+        return cleaned.toLowerCase() === ALLOWED_PROVINCE.toLowerCase()
+            ? ALLOWED_PROVINCE
+            : "";
+    }
+
+    function parseLocationApiRows(payload) {
+        const list = Array.isArray(payload)
+            ? payload
+            : (payload && Array.isArray(payload.data) ? payload.data : []);
+        return list
+            .map(function (row) {
+                if (!row || typeof row !== "object") {
+                    return null;
+                }
+                const name = normalizeAddressPart(row.name || row.city || row.municipality || row.barangay);
+                const code = normalizeAddressPart(row.code || row.psgc_code || row.id || name);
+                if (!name) {
+                    return null;
+                }
+                return { name: name, code: code || name };
+            })
+            .filter(Boolean);
+    }
+
+    async function fetchPsgcRows(url) {
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = controller ? setTimeout(function () {
+            controller.abort();
+        }, PSGC_TIMEOUT_MS) : null;
+        try {
+            const response = await fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                signal: controller ? controller.signal : undefined
+            });
+            if (!response.ok) {
+                return [];
+            }
+            const payload = await response.json().catch(function () {
+                return [];
+            });
+            return parseLocationApiRows(payload);
+        } catch (_error) {
+            return [];
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    function readBarangayCache() {
+        const raw = safeParse(localStorage.getItem(BARANGAY_CACHE_KEY));
+        if (!raw || typeof raw !== "object") {
+            return {};
+        }
+        const next = {};
+        Object.keys(raw).forEach(function (cityName) {
+            const canonical = resolveAllowedCityName(cityName);
+            if (!canonical) {
+                return;
+            }
+            const list = sortUniqueTextList(raw[cityName]);
+            if (list.length) {
+                next[canonical] = list;
+            }
+        });
+        return next;
+    }
+
+    function saveBarangayCache(cacheInput) {
+        const cache = cacheInput && typeof cacheInput === "object" ? cacheInput : {};
+        const payload = {};
+        Object.keys(cache).forEach(function (cityName) {
+            const canonical = resolveAllowedCityName(cityName);
+            if (!canonical) {
+                return;
+            }
+            const values = sortUniqueTextList(cache[cityName]);
+            if (values.length) {
+                payload[canonical] = values;
+            }
+        });
+        localStorage.setItem(BARANGAY_CACHE_KEY, JSON.stringify(payload));
+    }
+
+    function renderSelectValues(selectEl, placeholder, values, selectedValue, opts) {
+        if (!(selectEl instanceof HTMLSelectElement)) {
+            return "";
+        }
+        const options = opts && typeof opts === "object" ? opts : {};
+        const allowBlank = options.allowBlank !== false;
+        const selected = normalizeAddressPart(selectedValue);
+        const sortedValues = sortUniqueTextList(values);
+        selectEl.innerHTML = "";
+
+        if (allowBlank) {
+            const placeholderOption = document.createElement("option");
+            placeholderOption.value = "";
+            placeholderOption.textContent = placeholder;
+            selectEl.appendChild(placeholderOption);
+        }
+
+        sortedValues.forEach(function (value) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            selectEl.appendChild(option);
+        });
+
+        if (selected && sortedValues.includes(selected)) {
+            selectEl.value = selected;
+            return selected;
+        }
+        selectEl.value = allowBlank ? "" : (sortedValues[0] || "");
+        return selectEl.value;
+    }
+
+    async function preloadAllowedBulacanCities() {
+        if (Object.keys(psgcCityRowsByCanonical).length) {
+            return psgcCityRowsByCanonical;
+        }
+
+        const provinces = await fetchPsgcRows(PSGC_API_BASE + "/provinces");
+        const bulacan = provinces.find(function (row) {
+            return normalizeAddressPart(row.name).toLowerCase() === ALLOWED_PROVINCE.toLowerCase();
+        });
+        if (!bulacan) {
+            return psgcCityRowsByCanonical;
+        }
+
+        const cityRows = await fetchPsgcRows(
+            PSGC_API_BASE + "/provinces/" + encodeURIComponent(bulacan.code) + "/cities-municipalities"
+        );
+        cityRows.forEach(function (row) {
+            const canonical = resolveAllowedCityName(row.name);
+            if (canonical && !psgcCityRowsByCanonical[canonical]) {
+                psgcCityRowsByCanonical[canonical] = row;
+            }
+        });
+        return psgcCityRowsByCanonical;
+    }
+
+    async function fetchBarangaysForAllowedCity(cityName) {
+        const canonicalCity = resolveAllowedCityName(cityName);
+        if (!canonicalCity) {
+            return [];
+        }
+
+        if (Array.isArray(barangayCacheByCity[canonicalCity]) && barangayCacheByCity[canonicalCity].length) {
+            return barangayCacheByCity[canonicalCity];
+        }
+
+        await preloadAllowedBulacanCities();
+        const cityRow = psgcCityRowsByCanonical[canonicalCity];
+        let rows = [];
+        if (cityRow && cityRow.code) {
+            rows = await fetchPsgcRows(
+                PSGC_API_BASE + "/cities-municipalities/" + encodeURIComponent(cityRow.code) + "/barangays"
+            );
+        }
+
+        const names = sortUniqueTextList(rows.map(function (row) {
+            return row.name;
+        }));
+        if (names.length) {
+            barangayCacheByCity[canonicalCity] = names;
+            saveBarangayCache(barangayCacheByCity);
+            return names;
+        }
+
+        const fallback = sortUniqueTextList(FALLBACK_BARANGAYS_BY_CITY[canonicalCity] || []);
+        if (fallback.length) {
+            barangayCacheByCity[canonicalCity] = fallback;
+            return fallback;
+        }
+
+        return [];
+    }
+
+    async function syncBarangayOptionsByCity(cityValue, preferredBarangay) {
+        const canonicalCity = resolveAllowedCityName(cityValue);
+        if (!canonicalCity) {
+            renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
+            shipBarangayInput.disabled = true;
+            return "";
+        }
+        shipCityInput.value = canonicalCity;
+        shipBarangayInput.disabled = true;
+        renderSelectValues(shipBarangayInput, "Loading barangays...", [], "", { allowBlank: true });
+        const rows = await fetchBarangaysForAllowedCity(canonicalCity);
+        const selected = renderSelectValues(
+            shipBarangayInput,
+            rows.length ? "Select barangay" : "No barangays available",
+            rows,
+            preferredBarangay,
+            { allowBlank: true }
+        );
+        shipBarangayInput.disabled = rows.length < 1;
+        return selected;
+    }
+
+    async function initializeLocationSelectors() {
+        barangayCacheByCity = readBarangayCache();
+        renderSelectValues(
+            shipCityInput,
+            "Select city / municipality",
+            ALLOWED_CITY_LABELS,
+            shipCityInput.value,
+            { allowBlank: true }
+        );
+        shipProvinceInput.innerHTML = "";
+        const provinceOption = document.createElement("option");
+        provinceOption.value = ALLOWED_PROVINCE;
+        provinceOption.textContent = ALLOWED_PROVINCE;
+        shipProvinceInput.appendChild(provinceOption);
+        shipProvinceInput.value = ALLOWED_PROVINCE;
+        shipProvinceInput.disabled = true;
+
+        const seededCity = resolveAllowedCityName(shipCityInput.value);
+        if (seededCity) {
+            await syncBarangayOptionsByCity(seededCity, shipBarangayInput.value);
+        } else {
+            renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
+            shipBarangayInput.disabled = true;
+        }
+    }
+
     function parseAddressIntoParts(address) {
         const normalizedAddress = normalizeAddressPart(address);
         if (!normalizedAddress) {
@@ -821,11 +1133,13 @@
     }
 
     function getDeliveryAddressParts() {
+        const canonicalCity = resolveAllowedCityName(shipCityInput.value);
+        const canonicalProvince = normalizeProvinceName(shipProvinceInput.value) || ALLOWED_PROVINCE;
         return {
             street: normalizeAddressPart(shipStreetInput.value),
             barangay: normalizeAddressPart(shipBarangayInput.value),
-            city: normalizeAddressPart(shipCityInput.value),
-            province: normalizeAddressPart(shipProvinceInput.value)
+            city: canonicalCity,
+            province: canonicalProvince
         };
     }
 
@@ -856,9 +1170,9 @@
     function setDeliveryAddressParts(partsInput) {
         const parts = partsInput && typeof partsInput === "object" ? partsInput : {};
         shipStreetInput.value = normalizeAddressPart(parts.street);
+        shipCityInput.value = resolveAllowedCityName(parts.city);
+        shipProvinceInput.value = ALLOWED_PROVINCE;
         shipBarangayInput.value = normalizeAddressPart(parts.barangay);
-        shipCityInput.value = normalizeAddressPart(parts.city);
-        shipProvinceInput.value = normalizeAddressPart(parts.province);
     }
 
     function updateDeliveryAddressPreview() {
@@ -879,6 +1193,11 @@
 
     function setDeliveryAddressFieldsEnabled(enabled) {
         deliveryAddressInputs.forEach(function (input) {
+            if (input === shipProvinceInput) {
+                input.disabled = true;
+                input.readOnly = true;
+                return;
+            }
             input.disabled = !enabled;
             input.readOnly = !enabled;
         });
@@ -1174,6 +1493,7 @@
             setAddressSectionLabel("Delivery Address");
             setDeliveryAddressFieldsVisible(true);
             setDeliveryAddressFieldsEnabled(true);
+            shipProvinceInput.value = ALLOWED_PROVINCE;
             shipAddressDisplayInput.readOnly = true;
             shipAddressDisplayInput.placeholder = "Complete address will appear here";
             setMapEnabled(true);
@@ -1184,18 +1504,19 @@
                 if (rememberedDeliveryAddressParts && hasCompleteDeliveryAddressParts(rememberedDeliveryAddressParts)) {
                     setDeliveryAddressParts(rememberedDeliveryAddressParts);
                 } else if (rememberedDeliveryAddress) {
+                    const parsedRememberedAddress = parseAddressIntoParts(rememberedDeliveryAddress);
                     setDeliveryAddressParts({
-                        street: rememberedDeliveryAddress,
-                        barangay: "",
-                        city: "",
-                        province: ""
+                        street: parsedRememberedAddress.street || rememberedDeliveryAddress,
+                        barangay: parsedRememberedAddress.barangay || "",
+                        city: resolveAllowedCityName(parsedRememberedAddress.city) || "",
+                        province: ALLOWED_PROVINCE
                     });
                 } else {
                     setDeliveryAddressParts({
                         street: "",
                         barangay: "",
                         city: "",
-                        province: ""
+                        province: ALLOWED_PROVINCE
                     });
                 }
                 shippingCoords = rememberedDeliveryCoords
@@ -1214,7 +1535,13 @@
             ) {
                 setDeliveryAddressParts(rememberedDeliveryAddressParts);
             } else if (!normalizeAddressPart(shipStreetInput.value) && rememberedDeliveryAddress) {
-                shipStreetInput.value = rememberedDeliveryAddress;
+                const parsedRememberedAddress = parseAddressIntoParts(rememberedDeliveryAddress);
+                setDeliveryAddressParts({
+                    street: parsedRememberedAddress.street || rememberedDeliveryAddress,
+                    barangay: parsedRememberedAddress.barangay || "",
+                    city: resolveAllowedCityName(parsedRememberedAddress.city) || "",
+                    province: ALLOWED_PROVINCE
+                });
             }
             const composedAddress = updateDeliveryAddressPreview();
 
@@ -1479,7 +1806,7 @@
         const shippingFee = selectedService === "Delivery" ? 250 : 0;
         const orderId = "EC-" + Date.now();
         const isInstallmentPayment = selectedPayment === "INSTALLMENT";
-        const requiresScheduleDate = selectedService === "Pick Up";
+        const requiresScheduleDate = selectedService === "Pick Up" || selectedService === "Delivery";
         const requiresScheduleTime = requiresScheduleDate;
         const scheduleDate = requiresScheduleDate ? (scheduleDateInput.value || "").trim() : "";
         const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
@@ -1498,8 +1825,11 @@
             && Number.isFinite(shippingCoords.lat)
             && Number.isFinite(shippingCoords.lng);
         const hasShippingCoordinates = hasDeliveryCoordinates || hasPickupCoordinates;
+        const shippingAddressParts = selectedService === "Delivery"
+            ? getDeliveryAddressParts()
+            : null;
         const shippingAddress = selectedService === "Delivery"
-            ? composeDeliveryAddress()
+            ? composeDeliveryAddress(shippingAddressParts)
             : (selectedService === "Pick Up" ? PICKUP_SHOP_ADDRESS : "");
 
         return {
@@ -1530,6 +1860,12 @@
             scheduleLabel: formatScheduleLabel(scheduleDate, scheduleTime, { includeTime: requiresScheduleTime }),
             trackingEta: initialEstimatedDelivery,
             shippingAddress: shippingAddress,
+            shippingAddressParts: shippingAddressParts ? {
+                street: shippingAddressParts.street,
+                barangay: shippingAddressParts.barangay,
+                city: shippingAddressParts.city,
+                province: shippingAddressParts.province
+            } : null,
             shippingCoordinates: hasShippingCoordinates ? { lat: shippingCoords.lat, lng: shippingCoords.lng } : null,
             shippingMapEmbedUrl: hasShippingCoordinates ? getMapEmbedUrl(shippingCoords.lat, shippingCoords.lng) : "",
             userEmail: getCurrentUserEmail(),
@@ -1543,7 +1879,7 @@
         const name = (fullNameInput.value || "").trim();
         const email = (emailInput.value || "").trim();
         const phone = normalizePhoneValue(phoneInput.value || "");
-        const requiresScheduleDate = selectedService === "Pick Up";
+        const requiresScheduleDate = selectedService === "Pick Up" || selectedService === "Delivery";
         const scheduleDate = requiresScheduleDate ? (scheduleDateInput.value || "").trim() : "";
         const requiresScheduleTime = requiresScheduleDate;
         const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
@@ -1569,8 +1905,8 @@
                 showError(scheduleDateInput, "Please select your preferred booking date.");
                 return false;
             }
-            if (!isScheduleDateTomorrowOrLater(scheduleDate)) {
-                showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+            if (!isScheduleDateWithinWindow(scheduleDate)) {
+                showError(scheduleDateInput, getScheduleWindowValidationMessage());
                 return false;
             }
         }
@@ -1605,8 +1941,22 @@
                 showError(shipCityInput, "City / Municipality is required for delivery.");
                 return false;
             }
-            if (!normalizeAddressPart(addressParts.province)) {
-                showError(shipProvinceInput, "Province is required for delivery.");
+            if (!resolveAllowedCityName(addressParts.city)) {
+                showError(shipCityInput, "Delivery city must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.");
+                return false;
+            }
+            if (!normalizeAddressPart(addressParts.province) || normalizeProvinceName(addressParts.province) !== ALLOWED_PROVINCE) {
+                showError(shipProvinceInput, "Delivery province is restricted to Bulacan.");
+                return false;
+            }
+            const selectedBarangay = normalizeAddressPart(addressParts.barangay);
+            const barangayValues = Array.from(shipBarangayInput.options || [])
+                .map(function (option) {
+                    return normalizeAddressPart(option.value);
+                })
+                .filter(Boolean);
+            if (!selectedBarangay || !barangayValues.includes(selectedBarangay)) {
+                showError(shipBarangayInput, "Please select a valid barangay for the selected city.");
                 return false;
             }
             updateDeliveryAddressPreview();
@@ -1646,9 +1996,9 @@
         if (!selectedDate) {
             return;
         }
-        if (!isScheduleDateTomorrowOrLater(selectedDate)) {
+        if (!isScheduleDateWithinWindow(selectedDate)) {
             scheduleDateInput.value = "";
-            showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+            showError(scheduleDateInput, getScheduleWindowValidationMessage());
             return;
         }
         await ensureScheduleDateAvailable({
@@ -1679,6 +2029,44 @@
             }
             geocodeAddress(address, { silent: true });
         });
+    });
+
+    shipCityInput.addEventListener("change", function () {
+        if (selectedService !== "Delivery") {
+            return;
+        }
+        const canonicalCity = resolveAllowedCityName(shipCityInput.value);
+        if (!canonicalCity) {
+            shipCityInput.value = "";
+            shipBarangayInput.disabled = true;
+            renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
+            updateDeliveryAddressPreview();
+            markAddressAsChanged();
+            return;
+        }
+        shipCityInput.value = canonicalCity;
+        shipProvinceInput.value = ALLOWED_PROVINCE;
+        void syncBarangayOptionsByCity(canonicalCity, "").then(function () {
+            updateDeliveryAddressPreview();
+            markAddressAsChanged();
+        });
+    });
+
+    shipBarangayInput.addEventListener("change", function () {
+        if (selectedService !== "Delivery") {
+            return;
+        }
+        updateDeliveryAddressPreview();
+        markAddressAsChanged();
+    });
+
+    shipProvinceInput.addEventListener("change", function () {
+        if (selectedService !== "Delivery") {
+            return;
+        }
+        shipProvinceInput.value = ALLOWED_PROVINCE;
+        updateDeliveryAddressPreview();
+        markAddressAsChanged();
     });
 
     findAddressBtn.addEventListener("click", async function () {
@@ -1713,8 +2101,13 @@
             shipCityInput.focus();
             return;
         }
-        if (!normalizeAddressPart(addressParts.province)) {
-            setMapStatus("Enter your Province first.", true);
+        if (!resolveAllowedCityName(addressParts.city)) {
+            setMapStatus("City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.", true);
+            shipCityInput.focus();
+            return;
+        }
+        if (normalizeProvinceName(addressParts.province) !== ALLOWED_PROVINCE) {
+            setMapStatus("Province is restricted to Bulacan.", true);
             shipProvinceInput.focus();
             return;
         }
@@ -1744,23 +2137,39 @@
                 try {
                     const resolvedAddress = await reverseGeocode(lat, lng);
                     if (resolvedAddress && typeof resolvedAddress === "object") {
+                        const fallbackParts = parseAddressIntoParts(resolvedAddress.displayName || "");
                         const nextParts = {
                             street: resolvedAddress.street,
                             barangay: resolvedAddress.barangay,
                             city: resolvedAddress.city,
                             province: resolvedAddress.province
                         };
-                        const completeFromReverse = hasCompleteDeliveryAddressParts(nextParts);
-                        if (completeFromReverse) {
-                            setDeliveryAddressParts(nextParts);
-                        } else {
-                            const fallbackParts = parseAddressIntoParts(resolvedAddress.displayName || "");
-                            setDeliveryAddressParts({
-                                street: nextParts.street || fallbackParts.street,
-                                barangay: nextParts.barangay || fallbackParts.barangay,
-                                city: nextParts.city || fallbackParts.city,
-                                province: nextParts.province || fallbackParts.province
-                            });
+
+                        const streetValue = normalizeAddressPart(nextParts.street || fallbackParts.street || "");
+                        const canonicalCity = resolveAllowedCityName(nextParts.city || fallbackParts.city || "");
+                        const candidateBarangay = normalizeAddressPart(nextParts.barangay || fallbackParts.barangay || "");
+                        shipStreetInput.value = streetValue;
+                        shipProvinceInput.value = ALLOWED_PROVINCE;
+
+                        if (!canonicalCity) {
+                            shipCityInput.value = "";
+                            renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
+                            shipBarangayInput.disabled = true;
+                            updateDeliveryAddressPreview();
+                            setMapStatus(
+                                "Location pinned. Service area is limited to selected Bulacan cities. Please choose city and barangay manually.",
+                                true
+                            );
+                            return;
+                        }
+
+                        shipCityInput.value = canonicalCity;
+                        const selectedBarangay = await syncBarangayOptionsByCity(canonicalCity, candidateBarangay);
+                        if (!selectedBarangay) {
+                            setMapStatus(
+                                "Location pinned. Please select the exact barangay within " + canonicalCity + ".",
+                                false
+                            );
                         }
 
                         const composedAddress = updateDeliveryAddressPreview();
@@ -1845,13 +2254,23 @@
         }
     });
 
-    seedCustomerInfo();
-    initializeScheduleInputs();
-    renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
-    updateDeliveryAddressPreview();
-    if (hasCompleteDeliveryAddressParts()) {
-        geocodeAddress(composeDeliveryAddress(), { silent: true });
-    }
-    updateSummary();
+    (async function bootstrapBookingPage() {
+        initializeScheduleInputs();
+        await initializeLocationSelectors();
+        seedCustomerInfo();
+
+        const seededCity = resolveAllowedCityName(shipCityInput.value);
+        if (seededCity) {
+            await syncBarangayOptionsByCity(seededCity, shipBarangayInput.value);
+        }
+        shipProvinceInput.value = ALLOWED_PROVINCE;
+
+        renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
+        updateDeliveryAddressPreview();
+        if (hasCompleteDeliveryAddressParts()) {
+            void geocodeAddress(composeDeliveryAddress(), { silent: true });
+        }
+        updateSummary();
+    })();
 })();
 

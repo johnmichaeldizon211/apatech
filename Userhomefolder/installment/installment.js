@@ -138,6 +138,52 @@
         ["BLITZ 200 R", "BLITZ 200R"],
         ["BLITZ200R", "BLITZ 200R"]
     ];
+    const ALLOWED_INSTALLMENT_PROVINCE = "Bulacan";
+    const ALLOWED_INSTALLMENT_CITY_CONFIG = [
+        { canonical: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
+        { canonical: "San Ildefonso", aliases: [] },
+        { canonical: "San Rafael", aliases: [] },
+        { canonical: "Pulilan", aliases: ["Pullilan"] },
+        { canonical: "Bustos", aliases: [] }
+    ];
+    const ALLOWED_INSTALLMENT_CITIES = ALLOWED_INSTALLMENT_CITY_CONFIG
+        .map(function (entry) {
+            return String(entry.canonical || "").trim();
+        })
+        .filter(Boolean)
+        .sort(function (a, b) {
+            return a.localeCompare(b, "en", { sensitivity: "base" });
+        });
+    const INSTALLMENT_CITY_ALIAS_MAP = ALLOWED_INSTALLMENT_CITY_CONFIG.reduce(function (map, entry) {
+        const canonical = String(entry.canonical || "").trim();
+        if (!canonical) {
+            return map;
+        }
+        const aliases = [canonical].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+        aliases.forEach(function (alias) {
+            const normalized = normalizeLocationText(alias).toLowerCase();
+            if (normalized) {
+                map.set(normalized, canonical);
+            }
+        });
+        return map;
+    }, new Map());
+    const INSTALLMENT_FALLBACK_BARANGAYS_BY_CITY = {
+        "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],
+        "San Ildefonso": ["Akle", "Anyatam", "Bubulong Munti", "Garlang", "Malipampang", "Sapang Putik", "Umpucan"],
+        "San Rafael": ["Banca-banca", "Caingin", "Lico", "Maasim", "Poblacion", "Talacsan", "Tukod"],
+        "Pulilan": ["Balatong A", "Balatong B", "Cutcot", "Lumbac", "Longos", "Poblacion", "Santa Peregrina"],
+        "Bustos": ["Bonga Mayor", "Buisan", "Camachile", "Cambaog", "Poblacion", "Tibagan", "Talampas"]
+    };
+    const STEP3_REQUIREMENT_DEFINITIONS = [
+        { key: "validId1", label: "Valid ID #1", required: true },
+        { key: "validId2", label: "Valid ID #2", required: true },
+        { key: "proofOfIncome", label: "Proof of Income", required: true },
+        { key: "payslipOrCoe", label: "Payslip / COE", requiredWhen: "Employed" },
+        { key: "businessPermit", label: "Business Permit", requiredWhen: "Business Owner" },
+        { key: "proofOfBilling", label: "Proof of Billing", required: true },
+        { key: "brgyCertificate", label: "Barangay Certificate", required: true }
+    ];
 
     const profileBtn = document.querySelector(".profile-menu .profile-btn");
     const dropdown = document.querySelector(".profile-menu .dropdown");
@@ -329,6 +375,24 @@
         return "";
     }
 
+    function resolveInstallmentCityName(value) {
+        const normalized = normalizeLookupValue(value);
+        if (!normalized) {
+            return "";
+        }
+        return INSTALLMENT_CITY_ALIAS_MAP.get(normalized) || "";
+    }
+
+    function normalizeInstallmentProvinceName(value) {
+        const normalized = normalizeLookupValue(value);
+        if (!normalized) {
+            return "";
+        }
+        return normalized === normalizeLookupValue(ALLOWED_INSTALLMENT_PROVINCE)
+            ? ALLOWED_INSTALLMENT_PROVINCE
+            : "";
+    }
+
     function toLocationArray(payload) {
         if (Array.isArray(payload)) {
             return payload;
@@ -437,6 +501,28 @@
             next.personalEmail = String(draft.email).trim();
         }
 
+        const shippingAddressParts = draft.shippingAddressParts && typeof draft.shippingAddressParts === "object"
+            ? draft.shippingAddressParts
+            : null;
+        if (shippingAddressParts) {
+            if (!next.street && shippingAddressParts.street) {
+                next.street = normalizeLocationText(shippingAddressParts.street);
+            }
+            const canonicalCity = resolveInstallmentCityName(shippingAddressParts.city);
+            if (!next.city && canonicalCity) {
+                next.city = canonicalCity;
+            }
+            if (!next.province) {
+                const province = normalizeInstallmentProvinceName(shippingAddressParts.province);
+                if (province) {
+                    next.province = province;
+                }
+            }
+            if (!next.barangay && shippingAddressParts.barangay) {
+                next.barangay = normalizeLocationText(shippingAddressParts.barangay);
+            }
+        }
+
         const shippingAddress = String(draft.shippingAddress || "").trim();
         const serviceText = String(draft.service || "").trim().toLowerCase();
         const commaCount = shippingAddress ? shippingAddress.split(",").length : 0;
@@ -455,10 +541,16 @@
             next.street = parsedAddress.street;
         }
         if (!next.province && parsedAddress.province) {
-            next.province = parsedAddress.province;
+            const canonicalProvince = normalizeInstallmentProvinceName(parsedAddress.province);
+            if (canonicalProvince) {
+                next.province = canonicalProvince;
+            }
         }
         if (!next.city && parsedAddress.city) {
-            next.city = parsedAddress.city;
+            const canonicalCity = resolveInstallmentCityName(parsedAddress.city);
+            if (canonicalCity) {
+                next.city = canonicalCity;
+            }
         }
         if (!next.barangay && parsedAddress.barangay) {
             next.barangay = parsedAddress.barangay;
@@ -607,200 +699,130 @@
         const provinceSelect = document.getElementById("province");
         const citySelect = document.getElementById("city");
         const barangaySelect = document.getElementById("barangay");
-        const cityCacheByProvinceCode = new Map();
-        const barangayCacheByCityCode = new Map();
-        let provinceRows = [];
-        let cityRows = [];
+        const barangayCacheByCity = new Map();
+        const psgcCityCodeByCanonical = new Map();
 
         if (!provinceSelect || !citySelect || !barangaySelect) {
             return;
         }
 
-        function buildNameCodeMap(rows) {
-            const map = {};
-            rows.forEach(function (row) {
-                map[row.name] = row.code;
-            });
-            return map;
-        }
-
-        function getMatchedProvinceName() {
-            return findInsensitiveMatch(
-                provinceRows.map(function (row) {
-                    return row.name;
-                }),
-                provinceSelect.value
-            );
-        }
-
-        function getMatchedCityName() {
-            return findInsensitiveMatch(
-                cityRows.map(function (row) {
-                    return row.name;
-                }),
-                citySelect.value
-            );
-        }
-
-        async function loadProvinces(selectedProvince) {
-            setSelectLoadingState(provinceSelect, "Loading provinces...");
-            setSelectLoadingState(citySelect, "Select city / municipality");
-            setSelectLoadingState(barangaySelect, "Select barangay");
-
-            let rows = [];
-            try {
-                rows = await fetchLocationRows(PSGC_API_BASE + "/provinces");
-            } catch (_error) {
-                rows = [];
-            }
-
-            if (!rows.length) {
-                rows = buildFallbackProvinceRows();
-            }
-
-            provinceRows = rows;
-            const provinceNames = rows.map(function (row) {
-                return row.name;
-            });
-
+        function applyLockedProvince() {
             renderSelectOptions(
                 provinceSelect,
-                provinceNames,
+                [ALLOWED_INSTALLMENT_PROVINCE],
                 "Select province",
-                selectedProvince
+                ALLOWED_INSTALLMENT_PROVINCE
             );
-            provinceSelect.disabled = false;
+            provinceSelect.value = ALLOWED_INSTALLMENT_PROVINCE;
+            provinceSelect.disabled = true;
         }
 
-        async function loadCities(provinceName, selectedCity, selectedBarangay) {
-            const matchedProvinceName = findInsensitiveMatch(
-                provinceRows.map(function (row) {
-                    return row.name;
-                }),
-                provinceName
-            );
-
-            if (!matchedProvinceName) {
-                cityRows = [];
-                renderSelectOptions(citySelect, [], "Select city / municipality", "");
-                renderSelectOptions(barangaySelect, [], "Select barangay", "");
-                citySelect.disabled = true;
-                barangaySelect.disabled = true;
+        async function preloadAllowedPsgcCities() {
+            if (psgcCityCodeByCanonical.size) {
                 return;
             }
 
-            const provinceCodeMap = buildNameCodeMap(provinceRows);
-            const provinceCode = provinceCodeMap[matchedProvinceName];
-            const cacheKey = provinceCode || matchedProvinceName;
-
-            setSelectLoadingState(citySelect, "Loading cities / municipalities...");
-            setSelectLoadingState(barangaySelect, "Select barangay");
-
-            let rows = cityCacheByProvinceCode.get(cacheKey) || [];
-            if (!rows.length) {
-                if (String(cacheKey).startsWith("fallback:")) {
-                    rows = buildFallbackCityRows(matchedProvinceName);
-                } else {
-                    try {
-                        rows = await fetchLocationRows(
-                            PSGC_API_BASE + "/provinces/" + encodeURIComponent(cacheKey) + "/cities-municipalities"
-                        );
-                    } catch (_error) {
-                        rows = [];
-                    }
-                }
-
-                if (!rows.length) {
-                    rows = buildFallbackCityRows(matchedProvinceName);
-                }
-                cityCacheByProvinceCode.set(cacheKey, rows);
+            let provinceRows = [];
+            try {
+                provinceRows = await fetchLocationRows(PSGC_API_BASE + "/provinces");
+            } catch (_error) {
+                provinceRows = [];
             }
-
-            cityRows = rows;
-            const cityNames = rows.map(function (row) {
-                return row.name;
+            const bulacanRow = provinceRows.find(function (row) {
+                return normalizeLookupValue(row && row.name) === normalizeLookupValue(ALLOWED_INSTALLMENT_PROVINCE);
             });
-            const chosenCity = renderSelectOptions(
-                citySelect,
-                cityNames,
-                "Select city / municipality",
-                selectedCity
-            );
-            citySelect.disabled = false;
+            if (!bulacanRow || !bulacanRow.code) {
+                return;
+            }
 
-            await loadBarangays(matchedProvinceName, chosenCity, selectedBarangay);
+            let cityRows = [];
+            try {
+                cityRows = await fetchLocationRows(
+                    PSGC_API_BASE + "/provinces/" + encodeURIComponent(bulacanRow.code) + "/cities-municipalities"
+                );
+            } catch (_error) {
+                cityRows = [];
+            }
+
+            cityRows.forEach(function (row) {
+                const canonical = resolveInstallmentCityName(row && row.name);
+                if (canonical && !psgcCityCodeByCanonical.has(canonical)) {
+                    psgcCityCodeByCanonical.set(canonical, String(row.code || ""));
+                }
+            });
         }
 
-        async function loadBarangays(provinceName, cityName, selectedBarangay) {
-            const matchedCityName = findInsensitiveMatch(
-                cityRows.map(function (row) {
-                    return row.name;
-                }),
-                cityName
-            );
-
-            if (!matchedCityName) {
+        async function loadBarangaysForCity(cityName, selectedBarangay) {
+            const canonicalCity = resolveInstallmentCityName(cityName);
+            if (!canonicalCity) {
                 renderSelectOptions(barangaySelect, [], "Select barangay", "");
                 barangaySelect.disabled = true;
                 return;
             }
-
-            const cityCodeMap = buildNameCodeMap(cityRows);
-            const cityCode = cityCodeMap[matchedCityName];
-            const cacheKey = cityCode || matchedCityName;
-
+            citySelect.value = canonicalCity;
             setSelectLoadingState(barangaySelect, "Loading barangays...");
 
-            let rows = barangayCacheByCityCode.get(cacheKey) || [];
-            if (!rows.length) {
-                if (String(cacheKey).startsWith("fallback:")) {
-                    rows = buildFallbackBarangayRows(provinceName, matchedCityName);
-                } else {
+            let barangayNames = barangayCacheByCity.get(canonicalCity) || [];
+            if (!barangayNames.length) {
+                await preloadAllowedPsgcCities();
+                const cityCode = psgcCityCodeByCanonical.get(canonicalCity) || "";
+                let rows = [];
+                if (cityCode) {
                     try {
                         rows = await fetchLocationRows(
-                            PSGC_API_BASE + "/cities-municipalities/" + encodeURIComponent(cacheKey) + "/barangays"
+                            PSGC_API_BASE + "/cities-municipalities/" + encodeURIComponent(cityCode) + "/barangays"
                         );
                     } catch (_error) {
                         rows = [];
                     }
                 }
 
-                if (!rows.length) {
-                    rows = buildFallbackBarangayRows(provinceName, matchedCityName);
+                barangayNames = rows.map(function (row) {
+                    return row.name;
+                });
+                if (!barangayNames.length) {
+                    barangayNames = INSTALLMENT_FALLBACK_BARANGAYS_BY_CITY[canonicalCity] || [];
                 }
-                barangayCacheByCityCode.set(cacheKey, rows);
+                const normalizedBarangays = Array.from(new Set(
+                    barangayNames
+                        .map(function (item) {
+                            return normalizeLocationText(item);
+                        })
+                        .filter(Boolean)
+                )).sort(function (a, b) {
+                    return String(a).localeCompare(String(b), "en", { sensitivity: "base" });
+                });
+                barangayCacheByCity.set(canonicalCity, normalizedBarangays);
+                barangayNames = normalizedBarangays;
             }
 
-            const barangayNames = rows.map(function (row) {
-                return row.name;
-            });
             renderSelectOptions(
                 barangaySelect,
                 barangayNames,
                 "Select barangay",
                 selectedBarangay
             );
-            barangaySelect.disabled = false;
+            barangaySelect.disabled = !barangayNames.length;
         }
 
         provinceSelect.addEventListener("change", function () {
-            void loadCities(provinceSelect.value, "", "");
+            provinceSelect.value = ALLOWED_INSTALLMENT_PROVINCE;
         });
 
         citySelect.addEventListener("change", function () {
-            const matchedProvinceName = getMatchedProvinceName() || provinceSelect.value;
-            const matchedCityName = getMatchedCityName() || citySelect.value;
-            void loadBarangays(matchedProvinceName, matchedCityName, "");
+            void loadBarangaysForCity(citySelect.value, "");
         });
 
-        void (async function initializeSelectors() {
-            await loadProvinces(seedData && seedData.province);
-            await loadCities(
-                provinceSelect.value,
-                seedData && seedData.city,
-                seedData && seedData.barangay
-            );
-        })();
+        applyLockedProvince();
+        const seededCity = resolveInstallmentCityName(seedData && seedData.city);
+        renderSelectOptions(
+            citySelect,
+            ALLOWED_INSTALLMENT_CITIES,
+            "Select city / municipality",
+            seededCity || ""
+        );
+        citySelect.disabled = false;
+        void loadBarangaysForCity(seededCity || citySelect.value, seedData && seedData.barangay);
     }
 
     async function saveBookingToApi(record) {
@@ -1009,13 +1031,27 @@
 
     function seedStep3() {
         const data = getInstallmentFormData();
-        const fields = ["currentEmployer", "companyAddress", "natureOfWork", "monthlyIncome", "position"];
-
-        fields.forEach(function (fieldId) {
-            const input = document.getElementById(fieldId);
-            if (input && data[fieldId]) {
-                input.value = data[fieldId];
+        const employmentTypeInput = document.getElementById("employmentType");
+        if (employmentTypeInput) {
+            const employmentType = String(data.employmentType || "").trim();
+            if (employmentType === "Employed" || employmentType === "Business Owner") {
+                employmentTypeInput.value = employmentType;
             }
+        }
+
+        const uploads = data.requirementsUploads && typeof data.requirementsUploads === "object"
+            ? data.requirementsUploads
+            : {};
+        STEP3_REQUIREMENT_DEFINITIONS.forEach(function (definition) {
+            const nameNode = document.getElementById(definition.key + "Name");
+            if (!nameNode) {
+                return;
+            }
+            const meta = uploads[definition.key] && typeof uploads[definition.key] === "object"
+                ? uploads[definition.key]
+                : null;
+            const fileName = String(meta && meta.fileName || "").trim();
+            nameNode.textContent = fileName || "No file selected";
         });
     }
 
@@ -1267,11 +1303,11 @@
                 gender: (document.getElementById("gender").value || "").trim(),
                 age: (document.getElementById("age").value || "").trim(),
                 personalEmail: (document.getElementById("personalEmail").value || "").trim(),
-                province: (document.getElementById("province").value || "").trim(),
+                province: normalizeInstallmentProvinceName(document.getElementById("province").value || ""),
                 cellphone: (document.getElementById("cellphone").value || "").trim(),
                 zipCode: (document.getElementById("zipCode").value || "").trim(),
                 street: (document.getElementById("street").value || "").trim(),
-                city: (document.getElementById("city").value || "").trim(),
+                city: resolveInstallmentCityName(document.getElementById("city").value || ""),
                 barangay: (document.getElementById("barangay").value || "").trim(),
                 civilStatus: (document.getElementById("civilStatus").value || "").trim(),
                 dob: (document.getElementById("dob").value || "").trim(),
@@ -1285,6 +1321,33 @@
                 }
                 return;
             }
+
+            if (data.province !== ALLOWED_INSTALLMENT_PROVINCE) {
+                if (error) {
+                    error.textContent = "Installment service area is limited to Bulacan.";
+                }
+                return;
+            }
+            if (!ALLOWED_INSTALLMENT_CITIES.includes(data.city)) {
+                if (error) {
+                    error.textContent = "City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.";
+                }
+                return;
+            }
+            const barangaySelect = document.getElementById("barangay");
+            const selectedBarangay = normalizeLocationText(data.barangay);
+            const availableBarangays = barangaySelect instanceof HTMLSelectElement
+                ? Array.from(barangaySelect.options).map(function (option) {
+                    return normalizeLocationText(option.value);
+                }).filter(Boolean)
+                : [];
+            if (!selectedBarangay || !availableBarangays.includes(selectedBarangay)) {
+                if (error) {
+                    error.textContent = "Please select a valid barangay for the selected city.";
+                }
+                return;
+            }
+            data.barangay = selectedBarangay;
 
             const ageValue = Number(data.age);
             if (!Number.isFinite(ageValue) || ageValue < 18) {
@@ -1320,12 +1383,28 @@
 
         const form = document.getElementById("installmentStep3Form");
         const error = document.getElementById("step3Error");
+        const employmentTypeInput = document.getElementById("employmentType");
+        const payslipWrap = document.getElementById("payslipOrCoeWrap");
+        const businessPermitWrap = document.getElementById("businessPermitWrap");
         if (!form) {
+            return;
+        }
+        if (!employmentTypeInput) {
             return;
         }
         const submitButton = form.querySelector('button[type="submit"]');
         const submitButtonDefaultLabel = submitButton ? submitButton.textContent : "";
         let submitInFlight = false;
+        const requirementNodes = STEP3_REQUIREMENT_DEFINITIONS.map(function (definition) {
+            return {
+                key: definition.key,
+                label: definition.label,
+                required: Boolean(definition.required),
+                requiredWhen: definition.requiredWhen || "",
+                input: document.getElementById(definition.key),
+                fileName: document.getElementById(definition.key + "Name")
+            };
+        });
 
         function setSubmitState(inFlight) {
             submitInFlight = Boolean(inFlight);
@@ -1338,7 +1417,102 @@
                 : submitButtonDefaultLabel;
         }
 
+        function normalizeEmploymentType(value) {
+            const raw = String(value || "").trim();
+            if (raw === "Employed" || raw === "Business Owner") {
+                return raw;
+            }
+            return "";
+        }
+
+        function isRequirementApplicable(definition, employmentType) {
+            if (!definition || !definition.requiredWhen) {
+                return true;
+            }
+            return definition.requiredWhen === employmentType;
+        }
+
+        function isRequirementRequired(definition, employmentType) {
+            if (!definition) {
+                return false;
+            }
+            if (definition.required) {
+                return true;
+            }
+            return Boolean(definition.requiredWhen) && definition.requiredWhen === employmentType;
+        }
+
+        function setFileNameLabel(definition) {
+            if (!definition || !definition.fileName || !definition.input) {
+                return;
+            }
+            const file = definition.input.files && definition.input.files[0] ? definition.input.files[0] : null;
+            definition.fileName.textContent = file ? String(file.name || "").trim() : "No file selected";
+        }
+
+        function syncConditionalRequirementFields() {
+            const employmentType = normalizeEmploymentType(employmentTypeInput.value);
+            const isEmployed = employmentType === "Employed";
+            const isBusinessOwner = employmentType === "Business Owner";
+
+            if (payslipWrap) {
+                payslipWrap.hidden = !isEmployed;
+            }
+            if (businessPermitWrap) {
+                businessPermitWrap.hidden = !isBusinessOwner;
+            }
+
+            requirementNodes.forEach(function (definition) {
+                if (!definition || !definition.input) {
+                    return;
+                }
+                definition.input.required = isRequirementRequired(definition, employmentType);
+                if (!isRequirementApplicable(definition, employmentType) && definition.input.value) {
+                    definition.input.value = "";
+                    if (definition.fileName) {
+                        definition.fileName.textContent = "No file selected";
+                    }
+                }
+            });
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise(function (resolve, reject) {
+                if (!file) {
+                    resolve("");
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function () {
+                    resolve(String(reader.result || ""));
+                };
+                reader.onerror = function () {
+                    reject(new Error("Unable to read attachment: " + String(file.name || "file")));
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         seedStep3();
+        requirementNodes.forEach(function (definition) {
+            if (!definition || !definition.input) {
+                return;
+            }
+            setFileNameLabel(definition);
+            definition.input.addEventListener("change", function () {
+                setFileNameLabel(definition);
+                if (error) {
+                    error.textContent = "";
+                }
+            });
+        });
+        employmentTypeInput.addEventListener("change", function () {
+            syncConditionalRequirementFields();
+            if (error) {
+                error.textContent = "";
+            }
+        });
+        syncConditionalRequirementFields();
 
         form.addEventListener("submit", async function (event) {
             event.preventDefault();
@@ -1353,27 +1527,67 @@
                     error.textContent = "";
                 }
 
-                const employment = {
-                    currentEmployer: (document.getElementById("currentEmployer").value || "").trim(),
-                    companyAddress: (document.getElementById("companyAddress").value || "").trim(),
-                    natureOfWork: (document.getElementById("natureOfWork").value || "").trim(),
-                    monthlyIncome: (document.getElementById("monthlyIncome").value || "").trim(),
-                    position: (document.getElementById("position").value || "").trim()
-                };
-
-                if (!employment.currentEmployer || !employment.companyAddress || !employment.natureOfWork || !employment.monthlyIncome || !employment.position) {
+                const employmentType = normalizeEmploymentType(employmentTypeInput.value);
+                if (!employmentType) {
                     if (error) {
-                        error.textContent = "Please complete all required fields.";
+                        error.textContent = "Please select whether you are employed or a business owner.";
                     }
                     return;
                 }
 
-                const merged = {
+                const missing = requirementNodes.find(function (definition) {
+                    if (!definition || !definition.input) {
+                        return false;
+                    }
+                    if (!isRequirementRequired(definition, employmentType)) {
+                        return false;
+                    }
+                    const file = definition.input.files && definition.input.files[0] ? definition.input.files[0] : null;
+                    return !file;
+                });
+                if (missing) {
+                    if (error) {
+                        error.textContent = missing.label + " is required.";
+                    }
+                    return;
+                }
+
+                const uploadsMetadata = {};
+                const uploadsPayload = {};
+                for (const definition of requirementNodes) {
+                    if (!definition || !definition.input) {
+                        continue;
+                    }
+                    if (!isRequirementApplicable(definition, employmentType)) {
+                        continue;
+                    }
+                    const file = definition.input.files && definition.input.files[0] ? definition.input.files[0] : null;
+                    if (!file) {
+                        continue;
+                    }
+
+                    const uploadedAt = new Date().toISOString();
+                    const baseMeta = {
+                        fileName: String(file.name || definition.key).trim(),
+                        mime: String(file.type || "").trim(),
+                        sizeBytes: Number(file.size || 0),
+                        uploadedAt: uploadedAt
+                    };
+                    uploadsMetadata[definition.key] = baseMeta;
+                    uploadsPayload[definition.key] = Object.assign(
+                        {},
+                        baseMeta,
+                        { dataUrl: await readFileAsDataUrl(file) }
+                    );
+                }
+
+                const mergedForStorage = {
                     ...getInstallmentFormData(),
-                    ...employment,
+                    employmentType: employmentType,
+                    requirementsUploads: uploadsMetadata,
                     submittedAt: new Date().toISOString()
                 };
-                setInstallmentFormData(merged);
+                setInstallmentFormData(mergedForStorage);
 
                 const draft = getCheckoutDraft();
                 if (!draft) {
@@ -1404,7 +1618,9 @@
                     status: "Application Review",
                     fulfillmentStatus: "Under Review",
                     createdAt: new Date().toISOString(),
-                    installment: merged
+                    installment: Object.assign({}, mergedForStorage, {
+                        requirementsUploads: uploadsPayload
+                    })
                 };
 
                 const saveResult = await appendBookingRecord(bookingRecord);
