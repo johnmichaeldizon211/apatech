@@ -298,43 +298,147 @@ document.addEventListener("DOMContentLoaded", function () {
         return mode === "installment" ? "Installment Buyer" : "Cash Buyer";
     }
 
+    const DEFAULT_IMAGE_BY_MODEL = {
+        "blitz 2000": "/Userhomefolder/image 1.png",
+        "blitz 1200": "/Userhomefolder/image 2.png",
+        "fun 1500 fi": "/Userhomefolder/image 3.png",
+        "candy 800": "/Userhomefolder/image 4.png",
+        "blitz 200r": "/Userhomefolder/image 5.png",
+        "traveller 1500": "/Userhomefolder/image 6.png",
+        "econo 500 mp": "/Userhomefolder/image 7.png",
+        "econo 350 mini-ii": "/Userhomefolder/image 8.png",
+        "ecargo 100": "/Userhomefolder/image 9.png",
+        "econo 650 mp": "/Userhomefolder/image 10.png",
+        "ecab 100v v2": "/Userhomefolder/image 11.png",
+        "econo 800 mp ii": "/Userhomefolder/image 12.png",
+        "e-cargo 800": "/Userhomefolder/image 13.png",
+        "e-cab max 1500": "/Userhomefolder/image 14.png",
+        "e-cab 1000": "/Userhomefolder/image 15.png",
+        "econo 800 mp": "/Userhomefolder/image 16.png"
+    };
+
+    function getAppBasePath() {
+        const pathname = String(window.location.pathname || "").replace(/\\/g, "/");
+        const adminIndex = pathname.toLowerCase().lastIndexOf("/admin/");
+        if (adminIndex > 0) {
+            return pathname.slice(0, adminIndex);
+        }
+        return "";
+    }
+
+    function safeDecodePath(value) {
+        try {
+            return decodeURIComponent(String(value || ""));
+        } catch (_error) {
+            return String(value || "");
+        }
+    }
+
     function normalizeBikeImagePath(value) {
         const raw = String(value || "").trim().replace(/\\/g, "/");
         if (!raw) {
-            return "../Userhomefolder/image 1.png";
+            return "";
         }
-        if (/^https?:\/\//i.test(raw) || raw.startsWith("data:")) {
+        if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) {
             return raw;
         }
 
-        const cleaned = raw.replace(/^\.\//, "");
-        if (cleaned.startsWith("../Userhomefolder/")) {
-            return cleaned;
+        let cleaned = raw.replace(/^\.\//, "");
+        const decoded = safeDecodePath(cleaned);
+        const decodedLower = decoded.toLowerCase();
+        const userhomeIndex = decodedLower.indexOf("/userhomefolder/");
+        if (userhomeIndex > 0) {
+            cleaned = decoded.slice(userhomeIndex);
+        } else {
+            cleaned = decoded;
         }
-        if (cleaned.startsWith("Userhomefolder/")) {
-            return "../" + cleaned;
-        }
-        if (/^(?:\.\.\/)?image\s+\d+\.(png|jpg|jpeg|webp)$/i.test(cleaned)) {
-            const filename = cleaned.replace(/^\.\.\//, "");
-            return "../Userhomefolder/" + filename;
-        }
+
         if (cleaned.startsWith("../")) {
+            cleaned = "/Userhomefolder/" + cleaned.slice(3);
+        } else if (cleaned.startsWith("Userhomefolder/")) {
+            cleaned = "/" + cleaned;
+        } else if (/^image\s+\d+\.(png|jpg|jpeg|webp)$/i.test(cleaned)) {
+            cleaned = "/Userhomefolder/" + cleaned;
+        }
+
+        if (!cleaned.startsWith("/")) {
+            cleaned = "/" + cleaned.replace(/^\/+/, "");
+        }
+
+        const appBase = getAppBasePath();
+        if (!appBase) {
             return cleaned;
         }
-        if (cleaned.startsWith("/")) {
+        if (cleaned.toLowerCase().startsWith(`${appBase.toLowerCase()}/`)) {
             return cleaned;
         }
-        return "../" + cleaned;
+        return `${appBase}${cleaned}`;
+    }
+
+    function getCatalogImageByModel(modelLabel) {
+        const key = String(modelLabel || "").trim().toLowerCase();
+        if (!key) {
+            return "";
+        }
+        const parsed = safeParse(localStorage.getItem("ecodrive_product_catalog"));
+        if (!Array.isArray(parsed)) {
+            return "";
+        }
+        const match = parsed.find(function (item) {
+            return String(item && item.model || "").trim().toLowerCase() === key;
+        });
+        return String(match && (match.imageUrl || match.image || match.bikeImage) || "").trim();
+    }
+
+    function getDefaultImageByModel(modelLabel) {
+        const key = String(modelLabel || "").trim().toLowerCase();
+        if (!key) {
+            return "/Userhomefolder/image 1.png";
+        }
+        return DEFAULT_IMAGE_BY_MODEL[key] || "/Userhomefolder/image 1.png";
+    }
+
+    function buildBikeImageCandidates(booking) {
+        const modelLabel = getModelLabelFromRecord(booking);
+        const rawImage = booking && (booking.bikeImage || booking.image || booking.img);
+        const candidates = [];
+
+        function pushCandidate(pathValue) {
+            const normalized = normalizeBikeImagePath(pathValue);
+            if (!normalized || candidates.includes(normalized)) {
+                return;
+            }
+            candidates.push(normalized);
+        }
+
+        pushCandidate(rawImage);
+        pushCandidate(getCatalogImageByModel(modelLabel));
+        pushCandidate(getDefaultImageByModel(modelLabel));
+        pushCandidate("/Userhomefolder/image 1.png");
+
+        return candidates;
     }
 
     function setBikeImage(target, booking) {
         if (!target) {
             return;
         }
-        target.src = normalizeBikeImagePath(
-            booking && (booking.bikeImage || booking.image || booking.img)
-        );
         target.alt = getModelLabelFromRecord(booking) + " image";
+        const candidates = buildBikeImageCandidates(booking);
+        if (!candidates.length) {
+            target.src = normalizeBikeImagePath("/Userhomefolder/image 1.png");
+            return;
+        }
+        let index = 0;
+        target.onerror = function () {
+            index += 1;
+            if (index < candidates.length) {
+                target.src = candidates[index];
+                return;
+            }
+            target.onerror = null;
+        };
+        target.src = candidates[index];
     }
 
     function applyStatusPill(target, value) {
