@@ -3004,10 +3004,15 @@ function normalizeInstallmentEmploymentType(value) {
     if (!cleaned) {
         return "";
     }
-    if (cleaned === "business owner" || cleaned === "business_owner" || cleaned === "businessowner") {
+    if (
+        cleaned === "business owner"
+        || cleaned === "business_owner"
+        || cleaned === "businessowner"
+        || cleaned === "yes"
+    ) {
         return "Business Owner";
     }
-    if (cleaned === "employed" || cleaned === "employee") {
+    if (cleaned === "employed" || cleaned === "employee" || cleaned === "no") {
         return "Employed";
     }
     return "";

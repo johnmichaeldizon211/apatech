@@ -1137,25 +1137,7 @@
                     }
 
                     await saveRepairBooking(payload);
-                    form.reset();
-                    const defaultService = form.querySelector('input[name="service"][value="Walk in"]');
-                    if (defaultService) defaultService.checked = true;
-                    setDeliveryAddressParts({
-                        street: '',
-                        barangay: '',
-                        city: '',
-                        province: ''
-                    });
-                    updateDeliveryAddressPreview();
-                    shippingCoords = null;
-                    lastMappedAddressToken = '';
-                    if (shipMapFrame) {
-                        renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
-                    }
-                    applyHomeServiceState(false);
-                    initializeScheduleInputs();
-                    seedUserDefaults();
-                    setMessage('Repair booking submitted successfully.', false);
+                    window.location.href = 'repair-success.html';
                 });
             }
 

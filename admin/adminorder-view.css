@@ -39,21 +39,21 @@ body {
     letter-spacing: 0.4px;
 }
 
-.profile-btn {
-    width: 36px;
+.admin-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
     height: 36px;
-    border-radius: 50%;
+    padding: 0 12px;
+    border-radius: 18px;
     border: 2px solid #103585;
     background: #d5e1e9;
-    display: grid;
-    place-items: center;
-    cursor: pointer;
-}
-
-.profile-btn svg {
-    width: 20px;
-    height: 20px;
-    fill: #0f2f74;
+    color: #0f2f74;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .layout {
@@ -667,3 +667,4 @@ body {
         grid-template-columns: 1fr;
     }
 }
+

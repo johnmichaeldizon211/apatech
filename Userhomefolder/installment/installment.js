@@ -185,6 +185,40 @@
         { key: "brgyCertificate", label: "Barangay Certificate", required: true }
     ];
 
+    function normalizeStep3EmploymentType(value) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (!raw) {
+            return "";
+        }
+        if (
+            raw === "yes"
+            || raw === "business owner"
+            || raw === "business_owner"
+            || raw === "businessowner"
+        ) {
+            return "Business Owner";
+        }
+        if (
+            raw === "no"
+            || raw === "employed"
+            || raw === "employee"
+        ) {
+            return "Employed";
+        }
+        return "";
+    }
+
+    function toBusinessOwnerSelectionValue(value) {
+        const employmentType = normalizeStep3EmploymentType(value);
+        if (employmentType === "Business Owner") {
+            return "Yes";
+        }
+        if (employmentType === "Employed") {
+            return "No";
+        }
+        return "";
+    }
+
     const profileBtn = document.querySelector(".profile-menu .profile-btn");
     const dropdown = document.querySelector(".profile-menu .dropdown");
 
@@ -1033,10 +1067,10 @@
         const data = getInstallmentFormData();
         const employmentTypeInput = document.getElementById("employmentType");
         if (employmentTypeInput) {
-            const employmentType = String(data.employmentType || "").trim();
-            if (employmentType === "Employed" || employmentType === "Business Owner") {
-                employmentTypeInput.value = employmentType;
-            }
+            const selectionValue = toBusinessOwnerSelectionValue(
+                data.employmentType || data.employment_type || data.ownerType || data.workType
+            );
+            employmentTypeInput.value = selectionValue;
         }
 
         const uploads = data.requirementsUploads && typeof data.requirementsUploads === "object"
@@ -1417,14 +1451,6 @@
                 : submitButtonDefaultLabel;
         }
 
-        function normalizeEmploymentType(value) {
-            const raw = String(value || "").trim();
-            if (raw === "Employed" || raw === "Business Owner") {
-                return raw;
-            }
-            return "";
-        }
-
         function isRequirementApplicable(definition, employmentType) {
             if (!definition || !definition.requiredWhen) {
                 return true;
@@ -1451,7 +1477,7 @@
         }
 
         function syncConditionalRequirementFields() {
-            const employmentType = normalizeEmploymentType(employmentTypeInput.value);
+            const employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
             const isEmployed = employmentType === "Employed";
             const isBusinessOwner = employmentType === "Business Owner";
 
@@ -1527,10 +1553,10 @@
                     error.textContent = "";
                 }
 
-                const employmentType = normalizeEmploymentType(employmentTypeInput.value);
+                const employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
                 if (!employmentType) {
                     if (error) {
-                        error.textContent = "Please select whether you are employed or a business owner.";
+                        error.textContent = "Please select Yes or No for business owner.";
                     }
                     return;
                 }

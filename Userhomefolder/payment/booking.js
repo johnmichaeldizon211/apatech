@@ -383,17 +383,7 @@
     }
 
     function getEstimatedDeliveryLabelForSelection() {
-        const scheduleWindowNote = "Booking window: tomorrow to next 2 days.";
-        if (selectedService === "Pick Up") {
-            return scheduleWindowNote;
-        }
-        if (selectedPayment === "INSTALLMENT") {
-            return scheduleWindowNote + " Estimated delivery: 3-7 days after approval";
-        }
-        if (selectedService === "Delivery") {
-            return scheduleWindowNote + " Estimated delivery: 1-2 days";
-        }
-        return scheduleWindowNote;
+        return "Booking window: tomorrow to next 2 days.";
     }
 
     function syncScheduleInputsByService() {
@@ -1813,9 +1803,7 @@
         const scheduleDateTime = requiresScheduleTime
             ? parseScheduleDateTime(scheduleDate, scheduleTime)
             : null;
-        const initialEstimatedDelivery = getEstimatedDeliveryLabelForSelection()
-            .replace(/^Estimated delivery:\s*/i, "")
-            .trim();
+        const initialEstimatedDelivery = "";
         const hasDeliveryCoordinates = selectedService === "Delivery"
             && shippingCoords
             && Number.isFinite(shippingCoords.lat)

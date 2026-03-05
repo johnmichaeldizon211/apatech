@@ -1,5 +1,3 @@
--- Import this file while your target database is already selected
--- (e.g. if0_41209708_ecodrive in InfinityFree phpMyAdmin).
 
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
