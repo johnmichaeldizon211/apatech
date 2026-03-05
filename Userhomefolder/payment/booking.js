@@ -17,6 +17,7 @@
     const phoneInput = document.getElementById("phone");
     const scheduleDateInput = document.getElementById("schedule-date");
     const scheduleTimeInput = document.getElementById("schedule-time");
+    const scheduleDateField = document.getElementById("schedule-date-field");
     const scheduleTimeField = document.getElementById("schedule-time-field");
     const scheduleEstimatedNote = document.getElementById("schedule-estimated-note");
     const shipAddressTitle = document.getElementById("ship-address-title");
@@ -337,14 +338,29 @@
     }
 
     function syncScheduleInputsByService() {
-        const requiresTime = selectedService === "Pick Up";
+        const requiresSchedule = selectedService === "Pick Up";
+        const requiresTime = requiresSchedule;
+
+        if (scheduleDateField) {
+            scheduleDateField.classList.toggle("is-hidden", !requiresSchedule);
+        }
 
         if (scheduleTimeField) {
             scheduleTimeField.classList.toggle("is-hidden", !requiresTime);
         }
 
+        scheduleDateInput.disabled = !requiresSchedule;
+        scheduleDateInput.required = requiresSchedule;
         scheduleTimeInput.disabled = !requiresTime;
         scheduleTimeInput.required = requiresTime;
+        if (requiresSchedule) {
+            if (!scheduleDateInput.value || !isScheduleDateTomorrowOrLater(scheduleDateInput.value)) {
+                scheduleDateInput.value = scheduleDateInput.min || formatLocalDateInputValue(getTomorrowDateStart());
+            }
+        } else {
+            scheduleDateInput.value = "";
+            scheduleDateInput.classList.remove("invalid");
+        }
         if (requiresTime) {
             if (!scheduleTimeInput.value) {
                 scheduleTimeInput.value = "09:00";
@@ -1463,8 +1479,9 @@
         const shippingFee = selectedService === "Delivery" ? 250 : 0;
         const orderId = "EC-" + Date.now();
         const isInstallmentPayment = selectedPayment === "INSTALLMENT";
-        const requiresScheduleTime = selectedService === "Pick Up";
-        const scheduleDate = (scheduleDateInput.value || "").trim();
+        const requiresScheduleDate = selectedService === "Pick Up";
+        const requiresScheduleTime = requiresScheduleDate;
+        const scheduleDate = requiresScheduleDate ? (scheduleDateInput.value || "").trim() : "";
         const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
         const scheduleDateTime = requiresScheduleTime
             ? parseScheduleDateTime(scheduleDate, scheduleTime)
@@ -1526,8 +1543,9 @@
         const name = (fullNameInput.value || "").trim();
         const email = (emailInput.value || "").trim();
         const phone = normalizePhoneValue(phoneInput.value || "");
-        const scheduleDate = (scheduleDateInput.value || "").trim();
-        const requiresScheduleTime = selectedService === "Pick Up";
+        const requiresScheduleDate = selectedService === "Pick Up";
+        const scheduleDate = requiresScheduleDate ? (scheduleDateInput.value || "").trim() : "";
+        const requiresScheduleTime = requiresScheduleDate;
         const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
 
         if (!name) {
@@ -1546,13 +1564,15 @@
             showError(phoneInput, "Please enter a valid mobile number.");
             return false;
         }
-        if (!scheduleDate) {
-            showError(scheduleDateInput, "Please select your preferred booking date.");
-            return false;
-        }
-        if (!isScheduleDateTomorrowOrLater(scheduleDate)) {
-            showError(scheduleDateInput, "Booking date must be tomorrow or later.");
-            return false;
+        if (requiresScheduleDate) {
+            if (!scheduleDate) {
+                showError(scheduleDateInput, "Please select your preferred booking date.");
+                return false;
+            }
+            if (!isScheduleDateTomorrowOrLater(scheduleDate)) {
+                showError(scheduleDateInput, "Booking date must be tomorrow or later.");
+                return false;
+            }
         }
         if (requiresScheduleTime) {
             if (!scheduleTime) {
