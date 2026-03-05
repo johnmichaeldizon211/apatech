@@ -129,3 +129,98 @@ body {
         font-size: 12px;
     }
 }
+
+/* Compact admin navigation for mobile phones */
+@media (max-width: 900px) {
+    .topbar {
+        min-height: 54px;
+        padding: 0 12px !important;
+    }
+
+    .brand {
+        font-size: 22px !important;
+    }
+
+    .admin-badge {
+        min-width: 66px !important;
+        height: 34px !important;
+        padding: 0 10px !important;
+        font-size: 12px !important;
+    }
+
+    .layout {
+        grid-template-columns: 1fr !important;
+    }
+
+    .sidebar {
+        padding: 12px 10px 10px !important;
+        border-bottom: 1px solid #a9bfcb !important;
+    }
+
+    .sidebar-title {
+        font-size: 18px !important;
+        line-height: 1.05 !important;
+        margin-bottom: 8px !important;
+    }
+
+    .sidebar-nav {
+        margin-top: 8px !important;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+        padding-bottom: 2px !important;
+    }
+
+    .sidebar-nav::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    .nav-btn {
+        flex: 0 0 auto !important;
+        min-width: 132px !important;
+        width: auto !important;
+        white-space: nowrap !important;
+        padding: 9px 12px !important;
+        font-size: 13px !important;
+        border-radius: 10px !important;
+    }
+
+    .logout-btn {
+        margin: 8px 0 0 !important;
+        width: auto !important;
+        min-width: 118px !important;
+        padding: 9px 12px !important;
+        font-size: 13px !important;
+        border-radius: 10px !important;
+    }
+
+    .content {
+        padding: 12px !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .brand {
+        font-size: 20px !important;
+    }
+
+    .sidebar-title {
+        font-size: 16px !important;
+    }
+
+    .nav-btn {
+        min-width: 120px !important;
+        font-size: 12.5px !important;
+        padding: 8px 10px !important;
+    }
+
+    .logout-btn {
+        min-width: 108px !important;
+        font-size: 12.5px !important;
+        padding: 8px 10px !important;
+    }
+}
