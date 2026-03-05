@@ -597,18 +597,17 @@ body {
 @media (max-width: 700px) {
     .navbar {
         min-height: auto;
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 10px;
+        align-items: center;
+        gap: 8px;
     }
 
     .nav-right {
         width: 100%;
-        justify-content: space-between;
+        justify-content: flex-end;
     }
 
     .nav-links {
-        gap: 12px;
+        gap: 8px;
         flex-wrap: wrap;
     }
 
@@ -642,5 +641,92 @@ body {
 
     .ship-map-frame {
         height: 150px;
+    }
+}
+
+@media (max-width: 520px) {
+    .checkout-layout {
+        width: min(1220px, 94%);
+        padding-top: 12px;
+        padding-bottom: 18px;
+        gap: 10px;
+    }
+
+    .order-card {
+        padding: 14px 14px 16px;
+        border-radius: 14px;
+    }
+
+    .summary-card {
+        padding: 14px 12px 12px;
+        border-radius: 14px;
+    }
+
+    .order-card h1 {
+        font-size: 21px;
+    }
+
+    .order-form h2 {
+        font-size: 14px;
+        margin-top: 4px;
+    }
+
+    .order-form input {
+        height: 40px;
+        font-size: 13px;
+        padding: 0 12px;
+    }
+
+    .mini-btn,
+    .pay-btn {
+        min-height: 40px;
+        font-size: 12px;
+    }
+
+    .payment-options {
+        grid-template-columns: 1fr;
+        max-width: none;
+    }
+
+    .summary-card h2 {
+        font-size: 24px;
+        line-height: 1.12;
+    }
+
+    .summary-subtitle {
+        font-size: 14px;
+        margin-bottom: 6px;
+    }
+
+    #summary-image {
+        max-width: 124px;
+        height: 96px;
+        margin-bottom: 8px;
+    }
+
+    .ship-label {
+        font-size: 12px;
+    }
+
+    .ship-input {
+        height: 36px;
+        font-size: 12px;
+    }
+
+    .line-item {
+        font-size: 12px;
+    }
+
+    .line-item.total {
+        font-size: 13px;
+    }
+
+    .line-item.total span:last-child {
+        font-size: 21px;
+    }
+
+    .confirm-btn {
+        height: 40px;
+        font-size: 12px;
     }
 }
