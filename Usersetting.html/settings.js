@@ -1801,7 +1801,6 @@
       ? `${String(order.status || "-")} (Hulog: ${installmentMetrics.progressLabel})`
       : String(order.status || "-");
     const fulfillment = escapeHtml(String(order.fulfillmentStatus || "-"));
-    const trackingLocation = escapeHtml(String(order.trackingLocation || "Not set"));
     const shippingAddress = escapeHtml(String(order.shippingAddress || order.trackingLocation || "Not set"));
     const totalAmount = installmentMetrics
       ? installmentMetrics.totalPayableForReceipt
@@ -1887,7 +1886,6 @@
     <div class="row"><span class="label">Address</span><span class="value">${shippingAddress}</span></div>
     <div class="row"><span class="label">Status</span><span class="value">${escapeHtml(statusLabel)}</span></div>
     <div class="row"><span class="label">Progress</span><span class="value">${fulfillment}</span></div>
-    <div class="row"><span class="label">Location</span><span class="value">${trackingLocation}</span></div>
     ${installmentInfoRows}
 
     <div class="hr"></div>
@@ -2045,7 +2043,6 @@
     writeLine(`Address: ${deliveryAddress}`);
     writeLine(`Status: ${statusLabel}`);
     writeLine(`Progress: ${String(order.fulfillmentStatus || "-")}`);
-    writeLine(`Location: ${String(order.trackingLocation || "Not set")}`);
     if (installmentMetrics) {
       writeLine(`Monthly Payment: ${formatPesoText(installmentMetrics.monthlyPayment)}`);
       writeLine(`Paid Installment: ${installmentMetrics.progressLabel}`);

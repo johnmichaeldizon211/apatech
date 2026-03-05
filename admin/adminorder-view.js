@@ -1035,7 +1035,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const payment = escapeHtml(String((booking && booking.payment) || "-"));
         const schedule = escapeHtml(formatScheduleFromRecord(booking));
         const fulfillment = escapeHtml(String((booking && booking.fulfillmentStatus) || "-"));
-        const trackingLocation = escapeHtml(String((booking && booking.trackingLocation) || "Not set"));
         const shippingAddress = escapeHtml(getReceiptAddress(booking));
         const installmentSummary = getInstallmentReceiptSummary(booking);
         const statusLabel = installmentSummary
@@ -1098,7 +1097,6 @@ document.addEventListener("DOMContentLoaded", function () {
             + "<div class=\"row\"><span class=\"label\">Address</span><span class=\"value\">" + shippingAddress + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Status</span><span class=\"value\">" + escapeHtml(statusLabel) + "</span></div>"
             + "<div class=\"row\"><span class=\"label\">Progress</span><span class=\"value\">" + fulfillment + "</span></div>"
-            + "<div class=\"row\"><span class=\"label\">Location</span><span class=\"value\">" + trackingLocation + "</span></div>"
             + installmentInfoRows
             + "<div class=\"hr\"></div>"
             + "<div class=\"items-head strong\"><span class=\"item-name\">Item</span><span class=\"item-qty\">Qty</span><span class=\"item-amount\">Amount</span></div>"
@@ -1251,7 +1249,6 @@ document.addEventListener("DOMContentLoaded", function () {
         writeLine("Address: " + deliveryAddress);
         writeLine("Status: " + statusLabel);
         writeLine("Progress: " + String((booking && booking.fulfillmentStatus) || "-"));
-        writeLine("Location: " + String((booking && booking.trackingLocation) || "Not set"));
         if (installmentSummary) {
             writeLine("Monthly Payment: " + formatReceiptAmountText(installmentSummary.monthlyPayment));
             writeLine("Paid Installment: " + installmentSummary.progressLabel);
