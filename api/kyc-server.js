@@ -109,12 +109,14 @@ let dbSchemaReadyPromise = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim().toLowerCase();
 const SMTP_PORT = Number(process.env.SMTP_PORT || "587");
-const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const RAW_SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const SMTP_USER = extractEmailAddress(RAW_SMTP_USER);
 const RAW_SMTP_PASS = String(process.env.SMTP_PASS || "");
 const SMTP_PASS = /(^|\.)gmail\.com$/i.test(SMTP_HOST)
     ? RAW_SMTP_PASS.replace(/\s+/g, "").trim()
     : RAW_SMTP_PASS.trim();
-const SMTP_FROM = String(process.env.SMTP_FROM || "").trim();
+const RAW_SMTP_FROM = String(process.env.SMTP_FROM || "").trim();
+const SMTP_FROM = RAW_SMTP_FROM || (SMTP_USER ? `Ecodrive <${SMTP_USER}>` : "");
 const RAW_SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase();
 const SMTP_SECURE = RAW_SMTP_SECURE
     ? RAW_SMTP_SECURE === "true"
@@ -438,6 +440,18 @@ function parseBooleanEnv(rawValue, fallbackValue) {
         return false;
     }
     return Boolean(fallbackValue);
+}
+
+function extractEmailAddress(valueInput) {
+    const raw = String(valueInput || "").trim();
+    if (!raw) {
+        return "";
+    }
+    const angleMatch = raw.match(/<([^<>@\s]+@[^<>@\s]+)>/);
+    if (angleMatch && angleMatch[1]) {
+        return String(angleMatch[1]).trim();
+    }
+    return raw;
 }
 
 function parseMySqlConnectionUrl(rawValue) {
@@ -1771,7 +1785,17 @@ async function sendOtpEmail(email, code, options) {
         });
         return { sent: true, provider: "smtp" };
     } catch (error) {
-        return { sent: false, reason: error.message || "SMTP send failed." };
+        const errorMessage = String((error && error.message) || "SMTP send failed.").trim();
+        if (
+            /(^|\.)gmail\.com$/i.test(SMTP_HOST)
+            && /535|username and password not accepted|badcredentials/i.test(errorMessage)
+        ) {
+            return {
+                sent: false,
+                reason: "Gmail SMTP auth failed. Set SMTP_USER to the exact Gmail address and SMTP_PASS to a Gmail App Password."
+            };
+        }
+        return { sent: false, reason: errorMessage || "SMTP send failed." };
     }
 }
 
