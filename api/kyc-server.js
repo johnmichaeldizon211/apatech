@@ -1592,6 +1592,18 @@ function buildBookingScheduleLabelForEmail(record) {
         return "Not specified";
     }
 
+    if (scheduleDate && !scheduleTime) {
+        const dateOnly = buildLocalDateTimeFromParts(scheduleDate, "00:00");
+        if (dateOnly) {
+            return dateOnly.toLocaleDateString("en-PH", {
+                month: "long",
+                day: "numeric",
+                year: "numeric"
+            });
+        }
+        return scheduleDate;
+    }
+
     const localDate = buildLocalDateTimeFromParts(scheduleDate, scheduleTime);
     if (localDate) {
         return localDate.toLocaleString("en-PH", {
@@ -5864,8 +5876,12 @@ async function prepareBookingForInsert(bodyInput, options) {
     if (!isValidMobile(phone)) {
         throw createHttpError(400, "Use 09XXXXXXXXX or +639XXXXXXXXX.");
     }
-    if ((scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
+    const requiresScheduleTime = serviceType === "Pick Up";
+    if (requiresScheduleTime && (scheduleDateInput || scheduleTimeInput) && (!scheduleDate || !scheduleTime)) {
         throw createHttpError(400, "Provide a valid schedule date and time.");
+    }
+    if (!requiresScheduleTime && scheduleDateInput && !scheduleDate) {
+        throw createHttpError(400, "Provide a valid schedule date.");
     }
     if (scheduleDate && !isDateOnlyTomorrowOrLater(scheduleDate)) {
         throw createHttpError(400, "Booking date must be tomorrow or later.");

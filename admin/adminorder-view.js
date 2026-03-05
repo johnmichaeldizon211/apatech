@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const instRepairDescriptionRow = document.getElementById("instRepairDescriptionRow");
     const instRepairDescription = document.getElementById("instRepairDescription");
     const instModelName = document.getElementById("instModelName");
+    const instModelColor = document.getElementById("instModelColor");
     const instModelImage = document.getElementById("instModelImage");
     const instTotalPrice = document.getElementById("instTotalPrice");
     const instPaymentMethod = document.getElementById("instPaymentMethod");
@@ -51,6 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const cashRepairDescriptionRow = document.getElementById("cashRepairDescriptionRow");
     const cashRepairDescription = document.getElementById("cashRepairDescription");
     const cashModelName = document.getElementById("cashModelName");
+    const cashModelColor = document.getElementById("cashModelColor");
     const cashModelImage = document.getElementById("cashModelImage");
     const cashTotalPrice = document.getElementById("cashTotalPrice");
     const cashPaymentMethod = document.getElementById("cashPaymentMethod");
@@ -482,11 +484,12 @@ document.addEventListener("DOMContentLoaded", function () {
             return eta;
         }
         const serviceText = String(record && record.service || "").toLowerCase();
+        const paymentText = String(record && record.payment || "").toLowerCase();
         if (serviceText.includes("pick")) {
             return "Ready once approved";
         }
-        if (serviceText.includes("install")) {
-            return "Based on installment review";
+        if (paymentText.includes("installment") || serviceText.includes("install")) {
+            return "3-7 days after approval";
         }
         return "1-2 days";
     }
@@ -798,6 +801,7 @@ document.addEventListener("DOMContentLoaded", function () {
         renderRepairDescription(instRepairDescriptionRow, instRepairDescription, record);
 
         setTextContent(instModelName, getModelLabelFromRecord(record), "-");
+        setTextContent(instModelColor, getBikeColorLabelFromRecord(record), "-");
         setBikeImage(instModelImage, record);
         const installmentInitialDue = metrics.initialDueAmount || toCurrencyNumber(record && record.total || 0);
         setTextContent(instTotalPrice, formatPeso(installmentInitialDue), "-");
@@ -841,6 +845,7 @@ document.addEventListener("DOMContentLoaded", function () {
         renderRepairDescription(cashRepairDescriptionRow, cashRepairDescription, record);
 
         setTextContent(cashModelName, getModelLabelFromRecord(record), "-");
+        setTextContent(cashModelColor, getBikeColorLabelFromRecord(record), "-");
         setBikeImage(cashModelImage, record);
         setTextContent(cashTotalPrice, formatPeso(cashBreakdown.subtotal), "-");
         setTextContent(cashPaymentMethod, String(record && record.payment || "-"), "-");
@@ -1422,7 +1427,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const scheduleDate = record.scheduleDate || record.bookingDate || "";
         const scheduleTime = record.scheduleTime || record.bookingTime || "";
-        const scheduleFromParts = buildLocalDateTimeFromParts(scheduleDate, scheduleTime);
+        if (scheduleDate && !scheduleTime) {
+            const scheduleDateOnly = buildLocalDateTimeFromParts(scheduleDate, "00:00");
+            if (scheduleDateOnly) {
+                return scheduleDateOnly.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric"
+                });
+            }
+        }
+        const scheduleFromParts = scheduleTime
+            ? buildLocalDateTimeFromParts(scheduleDate, scheduleTime)
+            : null;
         if (scheduleFromParts) {
             return scheduleFromParts.toLocaleString("en-US", {
                 month: "short",
@@ -1776,7 +1793,7 @@ document.addEventListener("DOMContentLoaded", function () {
             fulfillmentUpdateHint.textContent = "Approve booking first before updating progress.";
             return;
         }
-        fulfillmentUpdateHint.textContent = "Changes here update Delivery Status, Location, and ETA in real time.";
+        fulfillmentUpdateHint.textContent = "Changes here update Delivery Status, Location, and Estimated Delivery in real time.";
     }
 
     function setEmptyState(show) {

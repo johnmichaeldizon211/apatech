@@ -529,7 +529,7 @@
                             fulfillmentStatus: fulfillmentStatus,
                             receiptNumber: String(item.receiptNumber || item.receipt_number || ""),
                             receiptIssuedAt: item.receiptIssuedAt || item.receipt_issued_at || "",
-                            trackingEta: String(item.trackingEta || item.eta || ""),
+                            trackingEta: resolveEstimatedDeliveryText(item),
                             trackingLocation: String(item.trackingLocation || item.locationNote || item.location || ""),
                             canCancel: canCancelBookingStatus(status, fulfillmentStatus)
                         };
@@ -602,7 +602,19 @@
 
                 const scheduleDate = item.scheduleDate || item.bookingDate || "";
                 const scheduleTime = item.scheduleTime || item.bookingTime || "";
-                const localSchedule = buildLocalDateFromParts(scheduleDate, scheduleTime);
+                if (scheduleDate && !scheduleTime) {
+                    const localDateOnly = buildLocalDateFromParts(scheduleDate, "00:00");
+                    if (localDateOnly) {
+                        return localDateOnly.toLocaleDateString("en-US", {
+                            month: "long",
+                            day: "numeric",
+                            year: "numeric"
+                        });
+                    }
+                }
+                const localSchedule = scheduleTime
+                    ? buildLocalDateFromParts(scheduleDate, scheduleTime)
+                    : null;
                 if (localSchedule) {
                     return localSchedule.toLocaleString("en-US", {
                         month: "long",
@@ -627,6 +639,25 @@
                 }
 
                 return "-";
+            }
+
+            function resolveEstimatedDeliveryText(record) {
+                const explicit = String(record && (record.trackingEta || record.eta) || "").trim();
+                if (explicit) {
+                    return explicit;
+                }
+                const service = String(record && (record.service || record.deliveryOption) || "").trim().toLowerCase();
+                const payment = String(record && (record.payment || record.paymentMethod) || "").trim().toLowerCase();
+                if (service.includes("pick")) {
+                    return "";
+                }
+                if (payment.includes("installment") || service.includes("installment")) {
+                    return "3-7 days after approval";
+                }
+                if (service.includes("delivery")) {
+                    return "1-2 days";
+                }
+                return "";
             }
 
             function formatPeso(amount) {
@@ -1326,7 +1357,7 @@
                         ? "<div class=\"action-stack\">" + viewReceiptBtnHtml + cancelBtnHtml + "</div>"
                         : "<span class=\"cancelled-note\">N/A</span>";
                     const trackingEtaHtml = item.trackingEta
-                        ? "<small class=\"fulfillment-eta\">ETA: " + escapeHtml(item.trackingEta) + "</small>"
+                        ? "<small class=\"fulfillment-eta\">Estimated Delivery: " + escapeHtml(item.trackingEta) + "</small>"
                         : "";
                     const trackingLocationHtml = item.trackingLocation
                         ? "<small class=\"fulfillment-loc\">Loc: " + escapeHtml(item.trackingLocation) + "</small>"

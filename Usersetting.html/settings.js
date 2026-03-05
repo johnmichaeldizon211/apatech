@@ -591,7 +591,7 @@
         ? `<p class="order-line order-installment-line">Order Status: ${escapeHtml(String(order.status || "-"))} (Hulog: ${escapeHtml(installmentMetrics.progressLabel)})</p>`
         : "";
       const trackingEtaLine = order.trackingEta
-        ? `<p class="order-line order-tracking-meta">ETA: ${escapeHtml(order.trackingEta)}</p>`
+        ? `<p class="order-line order-tracking-meta">Estimated Delivery: ${escapeHtml(order.trackingEta)}</p>`
         : "";
       const trackingLocationLine = order.trackingLocation
         ? `<p class="order-line order-tracking-meta">Current Location: ${escapeHtml(order.trackingLocation)}</p>`
@@ -1392,7 +1392,7 @@
           shippingAddress: String(item.shippingAddress || ""),
           receiptNumber: String(item.receiptNumber || item.receipt_number || ""),
           receiptIssuedAt: item.receiptIssuedAt || item.receipt_issued_at || "",
-          trackingEta: String(item.trackingEta || item.eta || ""),
+          trackingEta: resolveEstimatedDeliveryText(item),
           trackingLocation: String(
             item.trackingLocation
             || item.locationNote
@@ -1460,7 +1460,19 @@
 
     const scheduleDate = record.scheduleDate || record.bookingDate || "";
     const scheduleTime = record.scheduleTime || record.bookingTime || "";
-    const scheduleFromParts = buildLocalDateTimeFromParts(scheduleDate, scheduleTime);
+    if (scheduleDate && !scheduleTime) {
+      const scheduleDateOnly = buildLocalDateTimeFromParts(scheduleDate, "00:00");
+      if (scheduleDateOnly) {
+        return scheduleDateOnly.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        });
+      }
+    }
+    const scheduleFromParts = scheduleTime
+      ? buildLocalDateTimeFromParts(scheduleDate, scheduleTime)
+      : null;
     if (scheduleFromParts) {
       return scheduleFromParts.toLocaleString("en-US", {
         month: "short",
@@ -1639,6 +1651,25 @@
 
   function isDeliveryService(serviceValue) {
     return String(serviceValue || "").trim().toLowerCase().includes("delivery");
+  }
+
+  function resolveEstimatedDeliveryText(order) {
+    const explicit = String(order && (order.trackingEta || order.eta) || "").trim();
+    if (explicit) {
+      return explicit;
+    }
+    const service = String(order && order.service || "").trim().toLowerCase();
+    const payment = String(order && order.payment || "").trim().toLowerCase();
+    if (service.includes("pick")) {
+      return "";
+    }
+    if (payment.includes("installment") || service.includes("installment")) {
+      return "3-7 days after approval";
+    }
+    if (service.includes("delivery")) {
+      return "1-2 days";
+    }
+    return "";
   }
 
   function buildTrackingLabel(order) {

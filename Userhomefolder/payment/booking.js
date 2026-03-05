@@ -17,6 +17,8 @@
     const phoneInput = document.getElementById("phone");
     const scheduleDateInput = document.getElementById("schedule-date");
     const scheduleTimeInput = document.getElementById("schedule-time");
+    const scheduleTimeField = document.getElementById("schedule-time-field");
+    const scheduleEstimatedNote = document.getElementById("schedule-estimated-note");
     const shipAddressTitle = document.getElementById("ship-address-title");
     const shipAddressGrid = document.getElementById("ship-address-grid");
     const shipStreetInput = document.getElementById("ship-street");
@@ -272,10 +274,29 @@
         return scheduleDate;
     }
 
-    function formatScheduleLabel(dateValue, timeValue) {
+    function formatScheduleLabel(dateValue, timeValue, options) {
+        const settings = options && typeof options === "object" ? options : {};
+        const includeTime = settings.includeTime !== false;
+        const dateOnly = parseLocalDateOnlyInput(dateValue);
+        if (!dateOnly) {
+            return "";
+        }
+
+        if (!includeTime) {
+            return dateOnly.toLocaleDateString("en-PH", {
+                month: "long",
+                day: "numeric",
+                year: "numeric"
+            });
+        }
+
         const scheduleDate = parseScheduleDateTime(dateValue, timeValue);
         if (!scheduleDate) {
-            return "";
+            return dateOnly.toLocaleDateString("en-PH", {
+                month: "long",
+                day: "numeric",
+                year: "numeric"
+            });
         }
 
         return scheduleDate.toLocaleString("en-PH", {
@@ -297,8 +318,46 @@
             scheduleDateInput.value = minimumDateValue;
         }
 
-        if (!scheduleTimeInput.value) {
+        if (selectedService === "Pick Up" && !scheduleTimeInput.value) {
             scheduleTimeInput.value = "09:00";
+        }
+    }
+
+    function getEstimatedDeliveryLabelForSelection() {
+        if (selectedService === "Pick Up") {
+            return "";
+        }
+        if (selectedPayment === "INSTALLMENT") {
+            return "Estimated delivery: 3-7 days after approval";
+        }
+        if (selectedService === "Delivery") {
+            return "Estimated delivery: 1-2 days";
+        }
+        return "";
+    }
+
+    function syncScheduleInputsByService() {
+        const requiresTime = selectedService === "Pick Up";
+
+        if (scheduleTimeField) {
+            scheduleTimeField.classList.toggle("is-hidden", !requiresTime);
+        }
+
+        scheduleTimeInput.disabled = !requiresTime;
+        scheduleTimeInput.required = requiresTime;
+        if (requiresTime) {
+            if (!scheduleTimeInput.value) {
+                scheduleTimeInput.value = "09:00";
+            }
+        } else {
+            scheduleTimeInput.value = "";
+            scheduleTimeInput.classList.remove("invalid");
+        }
+
+        if (scheduleEstimatedNote) {
+            const estimatedText = getEstimatedDeliveryLabelForSelection();
+            scheduleEstimatedNote.textContent = estimatedText;
+            scheduleEstimatedNote.classList.toggle("is-hidden", !estimatedText);
         }
     }
 
@@ -1093,6 +1152,7 @@
         shippingEl.innerHTML = formatPeso(shippingFee);
         totalEl.innerHTML = formatPeso(grandTotal);
         syncPaymentAvailability();
+        syncScheduleInputsByService();
 
         if (selectedService === "Delivery") {
             setAddressSectionLabel("Delivery Address");
@@ -1403,9 +1463,15 @@
         const shippingFee = selectedService === "Delivery" ? 250 : 0;
         const orderId = "EC-" + Date.now();
         const isInstallmentPayment = selectedPayment === "INSTALLMENT";
+        const requiresScheduleTime = selectedService === "Pick Up";
         const scheduleDate = (scheduleDateInput.value || "").trim();
-        const scheduleTime = (scheduleTimeInput.value || "").trim();
-        const scheduleDateTime = parseScheduleDateTime(scheduleDate, scheduleTime);
+        const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
+        const scheduleDateTime = requiresScheduleTime
+            ? parseScheduleDateTime(scheduleDate, scheduleTime)
+            : null;
+        const initialEstimatedDelivery = getEstimatedDeliveryLabelForSelection()
+            .replace(/^Estimated delivery:\s*/i, "")
+            .trim();
         const hasDeliveryCoordinates = selectedService === "Delivery"
             && shippingCoords
             && Number.isFinite(shippingCoords.lat)
@@ -1444,7 +1510,8 @@
             date: scheduleDate,
             time: scheduleTime,
             scheduledAt: scheduleDateTime ? scheduleDateTime.toISOString() : "",
-            scheduleLabel: formatScheduleLabel(scheduleDate, scheduleTime),
+            scheduleLabel: formatScheduleLabel(scheduleDate, scheduleTime, { includeTime: requiresScheduleTime }),
+            trackingEta: initialEstimatedDelivery,
             shippingAddress: shippingAddress,
             shippingCoordinates: hasShippingCoordinates ? { lat: shippingCoords.lat, lng: shippingCoords.lng } : null,
             shippingMapEmbedUrl: hasShippingCoordinates ? getMapEmbedUrl(shippingCoords.lat, shippingCoords.lng) : "",
@@ -1460,7 +1527,8 @@
         const email = (emailInput.value || "").trim();
         const phone = normalizePhoneValue(phoneInput.value || "");
         const scheduleDate = (scheduleDateInput.value || "").trim();
-        const scheduleTime = (scheduleTimeInput.value || "").trim();
+        const requiresScheduleTime = selectedService === "Pick Up";
+        const scheduleTime = requiresScheduleTime ? (scheduleTimeInput.value || "").trim() : "";
 
         if (!name) {
             showError(fullNameInput, "Please enter your full name.");
@@ -1486,19 +1554,21 @@
             showError(scheduleDateInput, "Booking date must be tomorrow or later.");
             return false;
         }
-        if (!scheduleTime) {
-            showError(scheduleTimeInput, "Please select your preferred booking time.");
-            return false;
-        }
+        if (requiresScheduleTime) {
+            if (!scheduleTime) {
+                showError(scheduleTimeInput, "Please select your preferred booking time.");
+                return false;
+            }
 
-        const scheduleDateTime = parseScheduleDateTime(scheduleDate, scheduleTime);
-        if (!scheduleDateTime) {
-            showError(scheduleTimeInput, "Please provide a valid booking schedule.");
-            return false;
-        }
-        if (scheduleDateTime.getTime() < Date.now()) {
-            showError(scheduleTimeInput, "Please select a future date and time for your booking.");
-            return false;
+            const scheduleDateTime = parseScheduleDateTime(scheduleDate, scheduleTime);
+            if (!scheduleDateTime) {
+                showError(scheduleTimeInput, "Please provide a valid booking schedule.");
+                return false;
+            }
+            if (scheduleDateTime.getTime() < Date.now()) {
+                showError(scheduleTimeInput, "Please select a future date and time for your booking.");
+                return false;
+            }
         }
 
         if (selectedService === "Delivery") {
@@ -1546,6 +1616,7 @@
             }
             selectedPayment = button.getAttribute("data-payment") || "CASH ON DELIVERY";
             setActiveButton(paymentButtons, button);
+            updateSummary();
             clearError();
         });
     });

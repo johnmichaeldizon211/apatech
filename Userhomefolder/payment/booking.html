@@ -64,15 +64,16 @@
 
                 <h2>Schedule</h2>
                 <div class="schedule-grid" role="group" aria-label="Preferred Schedule">
-                    <div class="schedule-field">
+                    <div class="schedule-field" id="schedule-date-field">
                         <label for="schedule-date">Preferred Date</label>
                         <input id="schedule-date" type="date" name="schedule_date" required>
                     </div>
-                    <div class="schedule-field">
+                    <div class="schedule-field" id="schedule-time-field">
                         <label for="schedule-time">Preferred Time</label>
-                        <input id="schedule-time" type="time" name="schedule_time" step="900" required>
+                        <input id="schedule-time" type="time" name="schedule_time" step="900">
                     </div>
                 </div>
+                <p id="schedule-estimated-note" class="schedule-estimated-note" aria-live="polite"></p>
 
                 <h2>Payment Method</h2>
                 <div class="payment-options" role="group" aria-label="Payment Method">
@@ -142,7 +143,7 @@
         </aside>
     </main>
     <script src="../../session.js"></script>
-    <script src="booking.js?v=20260305b"></script>
+    <script src="booking.js?v=20260305c"></script>
 </body>
 </html>
 
