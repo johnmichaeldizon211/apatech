@@ -88,6 +88,8 @@ document.addEventListener("DOMContentLoaded", function () {
     let colorVariantsByModel = {};
     let modelSpecsByModel = {};
     let productInventoryByKey = {};
+    const pendingProductStockIds = new Set();
+    const pendingColorStockKeys = new Set();
     let editingProductId = null;
     const minAddColorCount = 1;
     const maxAddColorCount = 12;
@@ -1234,6 +1236,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const statusMeta = getColorVariantStatusMeta(variant);
             const row = document.createElement("article");
             row.className = "color-item";
+            row.setAttribute("data-model-key", modelKey);
+            row.setAttribute("data-color-key", variant.key);
 
             const main = document.createElement("div");
             main.className = "color-item-main";
@@ -1494,36 +1498,56 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        const nextVariants = sanitizeColorVariantList(
-            variants.map(function (item) {
-                if (item.key !== colorKey) {
-                    return item;
-                }
-                return Object.assign({}, item, {
-                    stockCount: nextCount
-                });
-            })
-        );
-        const result = await persistColorVariantsForModel(modelKey, nextVariants);
-        if (result.mode === "error") {
-            setColorStatus(result.message || "Unable to update color stock.", "error");
+        const pendingKey = `${modelKey}|${colorKey}`;
+        if (pendingColorStockKeys.has(pendingKey)) {
             return;
         }
+        pendingColorStockKeys.add(pendingKey);
+        updateColorRowUi(modelKey, colorKey, {
+            stockCount: nextCount,
+            isBusy: true,
+            animate: true
+        });
 
-        if (result.mode === "ok") {
-            colorVariantsByModel = sanitizeColorVariantMap(Object.assign({}, colorVariantsByModel, {
-                [modelKey]: result.variants
-            }));
-        } else {
-            colorVariantsByModel[modelKey] = result.variants;
+        try {
+            const nextVariants = sanitizeColorVariantList(
+                variants.map(function (item) {
+                    if (item.key !== colorKey) {
+                        return item;
+                    }
+                    return Object.assign({}, item, {
+                        stockCount: nextCount
+                    });
+                })
+            );
+            const result = await persistColorVariantsForModel(modelKey, nextVariants);
+            if (result.mode === "error") {
+                setColorStatus(result.message || "Unable to update color stock.", "error");
+                return;
+            }
+
+            if (result.mode === "ok") {
+                colorVariantsByModel = sanitizeColorVariantMap(Object.assign({}, colorVariantsByModel, {
+                    [modelKey]: result.variants
+                }));
+            } else {
+                colorVariantsByModel[modelKey] = result.variants;
+            }
+
+            renderStats();
+            updateColorRowUi(modelKey, colorKey, { animate: true });
+            updateProductCardUiByModelKey(modelKey, { animate: true });
+
+            const modelLabel = getModelLabelByKey(modelKey);
+            setColorStatus(
+                `${target.label} stock for ${modelLabel}: ${nextCount} pc(s).`,
+                result.mode === "local" ? "warning" : "success"
+            );
+        } finally {
+            pendingColorStockKeys.delete(pendingKey);
+            updateColorRowUi(modelKey, colorKey);
+            updateProductCardUiByModelKey(modelKey);
         }
-        renderColorVariantList();
-
-        const modelLabel = getModelLabelByKey(modelKey);
-        setColorStatus(
-            `${target.label} stock for ${modelLabel}: ${nextCount} pc(s).`,
-            result.mode === "local" ? "warning" : "success"
-        );
     }
 
     function bindColorManager() {
@@ -1660,6 +1684,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const statusMeta = getProductStatusMeta(product);
         const card = document.createElement("article");
         card.className = "panel stock-card";
+        card.setAttribute("data-product-id", String(product.id));
 
         const model = document.createElement("p");
         model.className = "model";
@@ -1809,6 +1834,158 @@ document.addEventListener("DOMContentLoaded", function () {
             fragment.appendChild(createStockCard(item));
         });
         stockGridEl.appendChild(fragment);
+    }
+
+    function pulseElement(element, className) {
+        if (!element) {
+            return;
+        }
+        const token = String(className || "is-updating").trim() || "is-updating";
+        element.classList.remove(token);
+        void element.offsetWidth;
+        element.classList.add(token);
+        const previousTimer = Number(element.getAttribute("data-pulse-timer") || 0);
+        if (previousTimer) {
+            window.clearTimeout(previousTimer);
+        }
+        const timer = window.setTimeout(function () {
+            element.classList.remove(token);
+            element.removeAttribute("data-pulse-timer");
+        }, 260);
+        element.setAttribute("data-pulse-timer", String(timer));
+    }
+
+    function getProductCardElement(productId) {
+        return stockGridEl.querySelector(`[data-product-id="${String(productId)}"]`);
+    }
+
+    function getColorRowElement(modelKey, colorKey) {
+        return colorListEl.querySelector(
+            `[data-model-key="${String(modelKey)}"][data-color-key="${String(colorKey)}"]`
+        );
+    }
+
+    function applyProductCardState(card, product, options) {
+        const targetCard = card && card.nodeType === 1 ? card : null;
+        const targetProduct = product && typeof product === "object" ? product : null;
+        if (!targetCard || !targetProduct) {
+            return;
+        }
+        const opts = options && typeof options === "object" ? options : {};
+        const stockCount = normalizeStockCount(
+            opts.stockCount !== undefined ? opts.stockCount : getProductStockCount(targetProduct),
+            getProductStockCount(targetProduct)
+        );
+        const statusMeta = getProductStatusMeta(Object.assign({}, targetProduct, {
+            stockCount: stockCount
+        }));
+        const isBusy = Boolean(opts.isBusy);
+
+        const counterValue = targetCard.querySelector(".stock-counter-value");
+        if (counterValue) {
+            counterValue.textContent = `${stockCount} pcs`;
+            if (opts.animate) {
+                pulseElement(counterValue, "is-updating");
+            }
+        }
+
+        const status = targetCard.querySelector(".status");
+        if (status) {
+            status.className = `status ${statusMeta.className}`;
+            status.textContent = statusMeta.label;
+        }
+
+        const minusBtn = targetCard.querySelector('.stock-counter-btn[data-delta="-1"]');
+        if (minusBtn) {
+            minusBtn.disabled = isBusy || !targetProduct.isActive || stockCount <= 0;
+        }
+
+        const plusBtn = targetCard.querySelector('.stock-counter-btn[data-delta="1"]');
+        if (plusBtn) {
+            plusBtn.disabled = isBusy || !targetProduct.isActive;
+        }
+
+        targetCard.classList.toggle("is-busy", isBusy);
+        if (opts.animate) {
+            pulseElement(targetCard, "is-updating");
+        }
+    }
+
+    function applyColorRowState(row, modelKey, variant, options) {
+        const targetRow = row && row.nodeType === 1 ? row : null;
+        const targetVariant = variant && typeof variant === "object" ? variant : null;
+        if (!targetRow || !targetVariant) {
+            return;
+        }
+        const opts = options && typeof options === "object" ? options : {};
+        const stockCount = normalizeStockCount(
+            opts.stockCount !== undefined ? opts.stockCount : targetVariant.stockCount,
+            targetVariant.isActive ? 1 : 0
+        );
+        const statusMeta = getColorVariantStatusMeta(Object.assign({}, targetVariant, {
+            stockCount: stockCount
+        }));
+        const isBusy = Boolean(opts.isBusy);
+
+        const counterValue = targetRow.querySelector(".color-counter-value");
+        if (counterValue) {
+            counterValue.textContent = `${stockCount} pcs`;
+            if (opts.animate) {
+                pulseElement(counterValue, "is-updating");
+            }
+        }
+
+        const status = targetRow.querySelector(".color-item-status");
+        if (status) {
+            status.className = `color-item-status ${statusMeta.className}`;
+            status.textContent = statusMeta.label;
+        }
+
+        const minusBtn = targetRow.querySelector('.color-counter-btn[data-delta="-1"]');
+        if (minusBtn) {
+            minusBtn.disabled = isBusy || !targetVariant.isActive || stockCount <= 0;
+        }
+
+        const plusBtn = targetRow.querySelector('.color-counter-btn[data-delta="1"]');
+        if (plusBtn) {
+            plusBtn.disabled = isBusy || !targetVariant.isActive;
+        }
+
+        targetRow.classList.toggle("is-busy", isBusy);
+        if (opts.animate) {
+            pulseElement(targetRow, "is-updating");
+        }
+    }
+
+    function updateProductCardUi(productId, options) {
+        const target = findProductById(productId);
+        const card = getProductCardElement(productId);
+        if (!target || !card) {
+            renderStockCards();
+            return;
+        }
+        applyProductCardState(card, target, options);
+    }
+
+    function updateColorRowUi(modelKey, colorKey, options) {
+        const variants = Array.isArray(colorVariantsByModel[modelKey]) ? colorVariantsByModel[modelKey] : [];
+        const target = variants.find(function (item) {
+            return item.key === colorKey;
+        });
+        const row = getColorRowElement(modelKey, colorKey);
+        if (!target || !row) {
+            renderColorVariantList();
+            return;
+        }
+        applyColorRowState(row, modelKey, target, options);
+    }
+
+    function updateProductCardUiByModelKey(modelKey, options) {
+        const target = findProductByModelKey(modelKey);
+        if (!target) {
+            return;
+        }
+        updateProductCardUi(target.id, options);
     }
 
     function isDuplicateModel(model, category, ignoredProductId) {
@@ -1997,35 +2174,50 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        if (apiAvailable && Number(target.id) > 0) {
-            const apiResult = await updateProductViaApi(target.id, { stockCount: nextCount });
-            if (apiResult.mode === "ok" && apiResult.product) {
-                replaceProductInState(apiResult.product, normalizeModelKey(target.model));
-                renderStats();
-                renderStockCards();
-                renderColorManager();
-                setStatus(`${target.model} stock updated to ${nextCount} pc(s).`, "success");
-                return;
-            }
-            if (apiResult.mode === "error") {
-                setStatus(apiResult.message || "Unable to update stock count.", "error");
-                return;
-            }
+        const pendingKey = String(productId);
+        if (pendingProductStockIds.has(pendingKey)) {
+            return;
         }
+        pendingProductStockIds.add(pendingKey);
+        updateProductCardUi(productId, {
+            stockCount: nextCount,
+            isBusy: true,
+            animate: true
+        });
 
-        setProductStockCount(target, nextCount);
-        products = sanitizeProducts(
-            products.map(function (item) {
-                if (Number(item.id) !== Number(target.id)) {
-                    return item;
+        try {
+            if (apiAvailable && Number(target.id) > 0) {
+                const apiResult = await updateProductViaApi(target.id, { stockCount: nextCount });
+                if (apiResult.mode === "ok" && apiResult.product) {
+                    replaceProductInState(apiResult.product, normalizeModelKey(target.model));
+                    renderStats();
+                    updateProductCardUi(productId, { animate: true });
+                    setStatus(`${target.model} stock updated to ${nextCount} pc(s).`, "success");
+                    return;
                 }
-                return Object.assign({}, item, { stockCount: nextCount });
-            })
-        );
-        saveProductsToLocal(products);
-        renderStats();
-        renderStockCards();
-        setStatus(`API unavailable. ${target.model} stock updated locally to ${nextCount} pc(s).`, "warning");
+                if (apiResult.mode === "error") {
+                    setStatus(apiResult.message || "Unable to update stock count.", "error");
+                    return;
+                }
+            }
+
+            setProductStockCount(target, nextCount);
+            products = sanitizeProducts(
+                products.map(function (item) {
+                    if (Number(item.id) !== Number(target.id)) {
+                        return item;
+                    }
+                    return Object.assign({}, item, { stockCount: nextCount });
+                })
+            );
+            saveProductsToLocal(products);
+            renderStats();
+            updateProductCardUi(productId, { animate: true });
+            setStatus(`API unavailable. ${target.model} stock updated locally to ${nextCount} pc(s).`, "warning");
+        } finally {
+            pendingProductStockIds.delete(pendingKey);
+            updateProductCardUi(productId);
+        }
     }
 
     function beginEditProduct(productId) {
