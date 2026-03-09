@@ -122,16 +122,27 @@ document.addEventListener("DOMContentLoaded", () => {
         throw (lastError || new Error("Network request failed."));
     }
 
-    function toSameOriginChatPath(pathInput) {
-        return normalizeApiPath(pathInput);
-    }
-
     function shouldUseGenericChatFallback(result) {
         if (!result || result.ok) {
             return false;
         }
         const status = Number(result.status || 0);
-        return status === 404 || status === 405 || status === 501;
+        if (status === 401 || status === 403) {
+            return false;
+        }
+        if (status < 1) {
+            return true;
+        }
+        return status === 400
+            || status === 404
+            || status === 405
+            || status === 408
+            || status === 429
+            || status === 500
+            || status === 501
+            || status === 502
+            || status === 503
+            || status === 504;
     }
 
     function readErrorMessageFromPayload(payloadInput) {
@@ -158,12 +169,34 @@ document.addEventListener("DOMContentLoaded", () => {
             ? setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS)
             : null;
 
+        const normalizedPath = normalizeApiPath(path);
+        const configuredUrl = getApiUrl(normalizedPath);
+        const candidates = [];
+        if (configuredUrl && configuredUrl !== normalizedPath) {
+            candidates.push(configuredUrl);
+        }
+        candidates.push(normalizedPath);
         let response = null;
+        let lastError = null;
         try {
-            response = await fetch(toSameOriginChatPath(path), {
-                ...options,
-                signal: controller ? controller.signal : options.signal
-            });
+            for (let i = 0; i < candidates.length; i += 1) {
+                try {
+                    response = await fetch(candidates[i], {
+                        ...options,
+                        signal: controller ? controller.signal : options.signal
+                    });
+                } catch (error) {
+                    lastError = error;
+                    if (i < candidates.length - 1) {
+                        continue;
+                    }
+                    throw error;
+                }
+
+                if (!shouldRetryNextCandidate(response, i < candidates.length - 1)) {
+                    break;
+                }
+            }
         } catch (error) {
             if (timeoutId) {
                 clearTimeout(timeoutId);
@@ -176,7 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 status: 0,
                 payload: null,
                 networkError: true,
-                errorMessage: error && error.message ? error.message : fallbackMessage
+                errorMessage: error && error.message ? error.message : (lastError && lastError.message ? lastError.message : fallbackMessage)
             };
         }
 

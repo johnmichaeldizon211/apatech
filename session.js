@@ -8,8 +8,12 @@
     var API_BASE_KEY = "ecodrive_api_base";
     var LEGACY_API_BASE_KEY = "ecodrive_kyc_api_base";
     var DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5050";
-    var DEFAULT_RENDER_API_BASE = "https://apatech.onrender.com";
-    var DEFAULT_REMOTE_API_BASE = DEFAULT_RENDER_API_BASE;
+    var DEFAULT_VERCEL_API_BASE = "https://apatech.vercel.app";
+    var DEFAULT_REMOTE_API_BASE = DEFAULT_VERCEL_API_BASE;
+    var EXTERNAL_API_FRONTEND_HOSTS = {
+        "ecodrivebookingplatform.shop": true,
+        "www.ecodrivebookingplatform.shop": true
+    };
     var DEFAULT_API_BASE = detectDefaultApiBase();
     var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304c";
     var PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
@@ -36,6 +40,11 @@
             return "";
         }
         return trimSlashes(global.location.origin);
+    }
+
+    function isExternalApiFrontendHost(hostnameInput) {
+        var host = String(hostnameInput || "").trim().toLowerCase();
+        return EXTERNAL_API_FRONTEND_HOSTS[host] === true;
     }
 
     function getHostFromApiBase(baseInput) {
@@ -92,6 +101,13 @@
             return false;
         }
 
+        if (isExternalApiFrontendHost(currentHost)) {
+            var preferredHost = getHostFromApiBase(DEFAULT_REMOTE_API_BASE);
+            if (preferredHost && storedHost !== preferredHost) {
+                return true;
+            }
+        }
+
         if (isDeprecatedApiBase(storedBase)) {
             return true;
         }
@@ -141,6 +157,12 @@
         }
         if (global.location && isLocalHost(global.location.hostname)) {
             return DEFAULT_LOCAL_API_BASE;
+        }
+        if (
+            global.location
+            && isExternalApiFrontendHost(global.location.hostname)
+        ) {
+            return DEFAULT_REMOTE_API_BASE;
         }
         return getCurrentOrigin() || DEFAULT_REMOTE_API_BASE;
     }
