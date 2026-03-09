@@ -4,19 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ecodrive</title>
-    <link rel="stylesheet" href="userhome.css?v=20260309-chatbot-pos">
+    <link rel="stylesheet" href="userhome.css?v=20260309-home-layout">
     <link rel="stylesheet" href="nav-responsive.css?v=20260306c">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-
 <body>
-
-
-<div class="curve one"></div>
-<div class="curve two"></div>
-<div class="curve three"></div>
-
-
 <nav class="navbar">
     <div class="logo">ECODRIVE</div>
 
@@ -43,64 +35,151 @@
     </div>
 </nav>
 
+<main class="home-shell">
+    <section class="hero-banner">
+        <div class="hero-copy">
+            <p class="hero-kicker">For the Power Seeker in You</p>
+            <h1>Book Your EcoDrive Today!</h1>
+            <p class="hero-subtitle">Daily commute, negosyo runs, and cargo-ready rides all in one streamlined lineup.</p>
 
-<section class="hero">
-    <div class="hero-text">
-        <h3>For the Power Seeker in You</h3>
-       <h1 class="hero-title">
-           <span class="scroll-text">DRIVE ECODRIVE ECODRIVE</span>
-           <span class="scroll-text">DRIVE ECODRIVE ECODRIVE</span>
-       </h1>
+            <div class="hero-sale-pill">
+                <span class="hero-sale-label">NEW ARRIVALS</span>
+                <span>Blitz 1200, Blitz 2000, Fun 350, and E-Cargo 800J are now on the home lineup.</span>
+            </div>
 
-    </div>
+            <form class="quick-book-bar" id="quick-book-form" action="#">
+                <label class="quick-field">
+                    <span>Select Ebike Type</span>
+                    <select id="quick-category" name="category">
+                        <option value="all">All Ebike Models</option>
+                        <option value="2-Wheel">E-Bikes</option>
+                        <option value="3-Wheel">E-Trikes / E-Rickshaws</option>
+                        <option value="4-Wheel">Cargo / 4-Wheel</option>
+                    </select>
+                </label>
 
-    <div class="ebike-circle">
-        <img src="ebike21.png" alt="ebike" class="hero-bike">
-    </div>
-</section>
+                <label class="quick-field">
+                    <span>Pick Date</span>
+                    <input type="date" id="quick-date" name="date">
+                </label>
 
+                <label class="quick-field">
+                    <span>Location</span>
+                    <input type="text" id="quick-location" name="location" placeholder="Baliwag, Bulacan">
+                </label>
 
-<div class="section-title">
-    <h2>Popular <span>Ebikes</span></h2>
-    <a href="userhome2.html" class="show-more">SHOW MORE</a>
+                <button type="submit" class="quick-book-btn">Book Now</button>
+            </form>
+        </div>
 
-</div>
+        <div class="hero-visual">
+            <div class="hero-orb"></div>
+            <div class="hero-photo-shell">
+                <img src="ebike21.png" alt="Ecodrive cargo ebike" class="hero-bike">
+            </div>
+        </div>
+    </section>
 
+    <section class="category-section">
+        <div class="section-head">
+            <div>
+                <p class="section-kicker">Browse Faster</p>
+                <h2>Popular Categories</h2>
+            </div>
+            <a href="userhome2.html" class="section-link">View all</a>
+        </div>
 
+        <div class="category-grid">
+            <a class="category-card" href="userhome2-2wheel.html">
+                <div class="category-icon">
+                    <img src="image 2.png" alt="E-Bikes">
+                </div>
+                <h3>E-Bikes</h3>
+                <p>Agile two-wheelers for city rides and quick daily errands.</p>
+            </a>
 
-<section class="products">
+            <a class="category-card" href="userhome2-3wheel.html">
+                <div class="category-icon">
+                    <img src="image 7.png" alt="E-Trikes">
+                </div>
+                <h3>E-Trikes</h3>
+                <p>Stable passenger and utility builds for negosyo-ready routes.</p>
+            </a>
 
-    <a class="card card-link" href="Ebikes/ebike8.0.html">
-        <img src="image 8.png" alt="">
-        <p class="card-title">ECONO350 MINI-II</p>
-    </a>
+            <a class="category-card" href="userhome2-3wheel.html">
+                <div class="category-icon">
+                    <img src="image 12.png" alt="E-Rickshaws">
+                </div>
+                <h3>E-Rickshaws</h3>
+                <p>Comfort-focused three-wheel options for family and passenger use.</p>
+            </a>
 
-    <a class="card card-link" href="Ebikes/ebike7.0.html">
-        <img src="image 7.png" alt="">
-        <p class="card-title">ECONO 500MP</p>
-    </a>
+            <a class="category-card" href="userhome2-4wheel.html">
+                <div class="category-icon">
+                    <img src="image 13.png" alt="Cargo Ebikes">
+                </div>
+                <h3>Cargo Ebikes</h3>
+                <p>Heavy-duty haulers built for cargo, logistics, and delivery work.</p>
+            </a>
+        </div>
+    </section>
 
-    <a class="card card-link" href="Ebikes/ebike12.0.html">
-        <img src="image 12.png" alt="">
-        <p class="card-title">ECONO 800 MP II</p>
-    </a>
+    <section class="home-feature-panels">
+        <article class="feature-panel">
+            <div class="panel-head">
+                <div>
+                    <div class="panel-chip-row">
+                        <span class="panel-chip active">Best Sellers</span>
+                        <span class="panel-chip">Most Popular</span>
+                    </div>
+                    <h2>Top picks riders choose first</h2>
+                </div>
+                <a href="userhome2.html" class="panel-link">More list</a>
+            </div>
+            <div class="feature-grid feature-grid-wide" id="best-sellers-grid"></div>
+        </article>
 
-    <a class="card card-link" href="Ebikes/ebike11.0.html">
-        <img src="image 11.png" alt="">
-        <p class="card-title">ECAB 1000 V2</p>
-    </a>
+        <article class="feature-panel feature-panel-accent">
+            <div class="panel-head">
+                <div>
+                    <div class="panel-chip-row">
+                        <span class="panel-chip active">New Arrivals</span>
+                    </div>
+                    <h2>Newest additions on the floor</h2>
+                </div>
+                <a href="userhome2.html" class="panel-link">View all</a>
+            </div>
+            <div class="feature-grid feature-grid-compact" id="new-arrivals-grid"></div>
+        </article>
+    </section>
 
-    <a class="card card-link" href="Ebikes/ebike6.0.html">
-        <img src="image 6.png" alt="">
-        <p class="card-title">TRAVELER 1500</p>
-    </a>
+    <section class="deal-section">
+        <div class="section-head">
+            <div>
+                <p class="section-kicker">Deals For You</p>
+                <h2>Fresh picks from the showroom floor</h2>
+            </div>
+            <a href="userhome2.html" class="section-link">View all</a>
+        </div>
 
-    <a class="card card-link" href="Ebikes/ebike1.0.html">
-        <img src="image 1.png" alt="">
-        <p class="card-title">BLITZ 2000 ADV</p>
-    </a>
+        <div class="deal-banner">
+            <div class="deal-banner-top">
+                <div>
+                    <span class="banner-pill">SHOWROOM SPOTLIGHT</span>
+                    <h3>Fresh arrivals, trusted best sellers, and route-ready workhorses.</h3>
+                </div>
+                <a href="userhome2.html" class="banner-link">Explore catalog</a>
+            </div>
 
-</section>
+            <div class="deal-grid" id="deal-grid"></div>
+
+            <div class="deal-banner-footer">
+                <span>Book online first, then confirm the final schedule and availability with Ecodrive.</span>
+                <a href="bookings/bookings.html" class="banner-cta">Go to bookings</a>
+            </div>
+        </div>
+    </section>
+</main>
 
 <button type="button" class="chatbot" id="chatbot-toggle" aria-label="Open chatbot">&#129302;</button>
 
@@ -119,7 +198,6 @@
 </section>
 
 <footer>
-
     <div class="footer-left">
         <h3 class="brand-plain">Ecodrive</h3>
         <p class="muted">Baliwag, Bulacan</p>
@@ -146,16 +224,12 @@
             <p class="info-text">Poblacion, Baliwag Bulacan</p>
         </div>
     </div>
-
 </footer>
+
 <script src="../session.js"></script>
+<script src="product-catalog.js?v=20260309-home-layout"></script>
 <script src="chatbot-brain.js?v=20260304g"></script>
-<script src="userhome.js"></script>
+<script src="userhome.js?v=20260309-home-layout"></script>
 </body>
 </html>
-
-
-
-
-
-
+    
