@@ -91,6 +91,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let editingProductId = null;
     const minAddColorCount = 1;
     const maxAddColorCount = 12;
+    let minColorCountForCurrentForm = minAddColorCount;
     const modelSpecFieldDefs = [
         { key: "power", label: "Power" },
         { key: "battery", label: "Battery" },
@@ -670,10 +671,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function clampAddColorCount(value) {
         const parsed = Number.parseInt(String(value || "").trim(), 10);
+        const minimum = Math.max(minAddColorCount, minColorCountForCurrentForm);
         if (!Number.isFinite(parsed)) {
-            return minAddColorCount;
+            return minimum;
         }
-        return Math.max(minAddColorCount, Math.min(maxAddColorCount, parsed));
+        return Math.max(minimum, Math.min(maxAddColorCount, parsed));
     }
 
     function getAddColorInputValues() {
@@ -710,7 +712,6 @@ document.addEventListener("DOMContentLoaded", function () {
             input.placeholder = index === 0 ? "Black" : `Color ${index + 1}`;
             input.autocomplete = "off";
             input.value = normalizeText(values[index] || "").slice(0, 64);
-            input.disabled = Boolean(editingProductId);
 
             row.appendChild(label);
             row.appendChild(input);
@@ -724,15 +725,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const isEditing = Number.isFinite(editingProductId) && editingProductId > 0;
         addFormTitleEl.textContent = isEditing ? "Edit E-bike Model" : "Add E-bike Model";
         saveBtn.textContent = isEditing ? "Update Model" : "Save Model";
-        colorCountInput.disabled = isEditing;
         colorEditNoteEl.classList.toggle("is-hidden", !isEditing);
-        Array.from(colorInputListEl.querySelectorAll(".stock-color-name-input")).forEach(function (input) {
-            input.disabled = isEditing;
-        });
     }
 
     function clearEditState() {
         editingProductId = null;
+        minColorCountForCurrentForm = minAddColorCount;
+        colorCountInput.min = String(minAddColorCount);
         syncAddFormModeUi();
     }
 
@@ -766,19 +765,28 @@ document.addEventListener("DOMContentLoaded", function () {
         specRangeInput.value = specs.range || "";
         specChargingTimeInput.value = specs.chargingTime || "";
         imageFileInput.value = "";
+        minColorCountForCurrentForm = Math.max(minAddColorCount, colorNames.length);
+        colorCountInput.min = String(minColorCountForCurrentForm);
         colorCountInput.value = String(clampAddColorCount(colorNames.length));
         renderAddColorInputs(colorNames.length, colorNames);
         setAddStatus("", "");
         syncAddFormModeUi();
     }
 
-    function collectAddColorVariants(defaultImageUrl) {
+    function collectAddColorVariants(defaultImageUrl, existingVariantsInput) {
         const count = clampAddColorCount(colorCountInput.value);
         renderAddColorInputs(count);
         const inputs = Array.from(colorInputListEl.querySelectorAll(".stock-color-name-input"));
         const seen = {};
+        const existingVariants = sanitizeColorVariantList(existingVariantsInput);
+        const existingByKey = {};
+        const usedExistingKeys = {};
         const variants = [];
         const imageUrl = resolveAssetPath(String(defaultImageUrl || "").trim() || "/Userhomefolder/image 1.png");
+
+        existingVariants.forEach(function (variant) {
+            existingByKey[variant.key] = variant;
+        });
 
         for (let index = 0; index < inputs.length; index += 1) {
             const label = normalizeText(inputs[index].value).slice(0, 64);
@@ -795,12 +803,24 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             seen[key] = true;
+            let matched = existingByKey[key];
+            if ((!matched || usedExistingKeys[matched.key]) && index < existingVariants.length) {
+                const fallbackMatch = existingVariants[index];
+                if (fallbackMatch && !usedExistingKeys[fallbackMatch.key]) {
+                    matched = fallbackMatch;
+                }
+            }
+            if (matched && matched.key) {
+                usedExistingKeys[matched.key] = true;
+            }
             variants.push({
                 key: key,
                 label: formatColorLabel(label, index),
-                imageUrl: imageUrl,
-                isActive: true,
-                stockCount: 1
+                imageUrl: resolveAssetPath(String(matched && matched.imageUrl || imageUrl).trim() || imageUrl),
+                isActive: matched ? matched.isActive !== false : true,
+                stockCount: matched
+                    ? normalizeStockCount(matched.stockCount, matched.isActive !== false ? 1 : 0)
+                    : 1
             });
         }
 
@@ -1628,6 +1648,7 @@ document.addEventListener("DOMContentLoaded", function () {
         clearEditState();
         categoryInput.value = "2-Wheel";
         imageFileInput.value = "";
+        colorCountInput.min = String(minAddColorCount);
         colorCountInput.value = String(minAddColorCount);
         renderAddColorInputs(minAddColorCount, [""]);
         setAddStatus("", "");
@@ -2136,22 +2157,22 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        let nextColorVariants = [];
-        if (editingTarget) {
-            const existingModelKey = normalizeModelKey(editingTarget.model);
-            nextColorVariants = existingModelKey && Array.isArray(colorVariantsByModel[existingModelKey])
-                ? sanitizeColorVariantList(colorVariantsByModel[existingModelKey])
-                : sanitizeColorVariantList(editingTarget.colorVariants);
-        } else {
-            const colorVariantResult = collectAddColorVariants(imageUrl);
-            if (colorVariantResult.error) {
-                setAddStatus(colorVariantResult.error, "error");
-                return;
-            }
-            nextColorVariants = Array.isArray(colorVariantResult.variants)
-                ? colorVariantResult.variants
-                : [];
+        const existingEditableVariants = editingTarget
+            ? (function () {
+                const existingModelKey = normalizeModelKey(editingTarget.model);
+                return existingModelKey && Array.isArray(colorVariantsByModel[existingModelKey])
+                    ? sanitizeColorVariantList(colorVariantsByModel[existingModelKey])
+                    : sanitizeColorVariantList(editingTarget.colorVariants);
+            })()
+            : [];
+        const colorVariantResult = collectAddColorVariants(imageUrl, existingEditableVariants);
+        if (colorVariantResult.error) {
+            setAddStatus(colorVariantResult.error, "error");
+            return;
         }
+        let nextColorVariants = Array.isArray(colorVariantResult.variants)
+            ? colorVariantResult.variants
+            : [];
 
         const specResult = collectAddModelSpecs();
         if (specResult.error) {
