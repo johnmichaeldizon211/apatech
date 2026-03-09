@@ -38,8 +38,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const specRangeInput = document.getElementById("stock-spec-range-input");
     const specChargingTimeInput = document.getElementById("stock-spec-charging-time-input");
     const imageFileInput = document.getElementById("stock-image-file-input");
-    const imageInput = document.getElementById("stock-image-input");
-    const detailInput = document.getElementById("stock-detail-input");
     const colorCountInput = document.getElementById("stock-color-count-input");
     const colorInputListEl = document.getElementById("stock-color-input-list");
     const colorEditNoteEl = document.getElementById("stock-color-edit-note");
@@ -72,8 +70,6 @@ document.addEventListener("DOMContentLoaded", function () {
         !specRangeInput ||
         !specChargingTimeInput ||
         !imageFileInput ||
-        !imageInput ||
-        !detailInput ||
         !colorCountInput ||
         !colorInputListEl ||
         !colorEditNoteEl ||
@@ -770,8 +766,6 @@ document.addEventListener("DOMContentLoaded", function () {
         specRangeInput.value = specs.range || "";
         specChargingTimeInput.value = specs.chargingTime || "";
         imageFileInput.value = "";
-        imageInput.value = target.imageUrl || "/Userhomefolder/image 1.png";
-        detailInput.value = target.detailUrl || "";
         colorCountInput.value = String(clampAddColorCount(colorNames.length));
         renderAddColorInputs(colorNames.length, colorNames);
         setAddStatus("", "");
@@ -1634,7 +1628,6 @@ document.addEventListener("DOMContentLoaded", function () {
         clearEditState();
         categoryInput.value = "2-Wheel";
         imageFileInput.value = "";
-        imageInput.value = "/Userhomefolder/image 1.png";
         colorCountInput.value = String(minAddColorCount);
         renderAddColorInputs(minAddColorCount, [""]);
         setAddStatus("", "");
@@ -2098,8 +2091,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const price = parsePrice(priceInput.value);
         const info = normalizeText(infoInput.value).slice(0, 255);
         const selectedImageFile = imageFileInput.files && imageFileInput.files[0] ? imageFileInput.files[0] : null;
-        let imageUrl = resolveAssetPath(String(imageInput.value || "").trim() || "/Userhomefolder/image 1.png");
-        const detailUrl = normalizeText(detailInput.value).slice(0, 255);
+        let imageUrl = resolveAssetPath(
+            String(
+                editingTarget && editingTarget.imageUrl
+                    ? editingTarget.imageUrl
+                    : "/Userhomefolder/image 1.png"
+            ).trim() || "/Userhomefolder/image 1.png"
+        );
+        const detailUrl = normalizeText(editingTarget && editingTarget.detailUrl || "").slice(0, 255);
         const category = resolveCategory(selectedCategory, detailUrl);
 
         if (model.length < 2) {
