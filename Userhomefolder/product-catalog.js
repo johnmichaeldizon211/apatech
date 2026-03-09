@@ -143,6 +143,82 @@
         return true;
     }
 
+    function normalizeStockCount(value, fallbackValue) {
+        const numeric = Number.parseInt(String(value === undefined || value === null ? "" : value).trim(), 10);
+        if (Number.isFinite(numeric) && numeric >= 0) {
+            return numeric;
+        }
+        const fallback = Number.parseInt(String(fallbackValue === undefined || fallbackValue === null ? "" : fallbackValue).trim(), 10);
+        if (Number.isFinite(fallback) && fallback >= 0) {
+            return fallback;
+        }
+        return 0;
+    }
+
+    function normalizeColorKey(value) {
+        return String(value || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, " ")
+            .trim()
+            .replace(/\s+/g, "-")
+            .slice(0, 64);
+    }
+
+    function normalizeColorVariants(input) {
+        let rows = input;
+        if (typeof rows === "string") {
+            rows = safeParse(rows);
+        }
+        if (rows && !Array.isArray(rows) && typeof rows === "object" && Array.isArray(rows.variants)) {
+            rows = rows.variants;
+        }
+        if (!Array.isArray(rows)) {
+            return [];
+        }
+
+        const seen = new Set();
+        return rows
+            .map(function (item, index) {
+                const source = item && typeof item === "object" ? item : {};
+                const key = normalizeColorKey(
+                    source.key || source.color || source.name || source.label || ("color " + String(index + 1))
+                );
+                if (!key || seen.has(key)) {
+                    return null;
+                }
+                seen.add(key);
+                const isActive = toIsActive(source.isActive !== undefined ? source.isActive : source.is_active);
+                return {
+                    key: key,
+                    label: normalizeText(source.label || source.name || source.color || source.key || ("Color " + String(index + 1))),
+                    isActive: isActive,
+                    stockCount: normalizeStockCount(
+                        source.stockCount !== undefined ? source.stockCount : source.stock_count,
+                        isActive ? 1 : 0
+                    )
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function hasAvailableColorVariants(variantsInput) {
+        const variants = normalizeColorVariants(variantsInput);
+        return variants.some(function (variant) {
+            return variant.isActive !== false && normalizeStockCount(variant.stockCount, 0) > 0;
+        });
+    }
+
+    function isCatalogProductAvailable(product) {
+        if (!product || product.isActive === false) {
+            return false;
+        }
+        return normalizeStockCount(
+            product.stockCount !== undefined ? product.stockCount : product.stock_count,
+            product.isActive === false || product.is_active === false ? 0 : 1
+        ) > 0
+            || hasAvailableColorVariants(product.colorVariants);
+    }
+
     function normalizeProduct(item, fallbackId) {
         const source = item && typeof item === "object" ? item : {};
         const model = normalizeText(source.model || source.name).slice(0, 180);
@@ -165,7 +241,12 @@
             info: info,
             imageUrl: resolveAssetPath(imageUrl || getDefaultImageForModel(model)),
             detailUrl: normalizedDetailUrl,
-            isActive: toIsActive(source.isActive)
+            stockCount: normalizeStockCount(
+                source.stockCount !== undefined ? source.stockCount : source.stock_count,
+                toIsActive(source.isActive !== undefined ? source.isActive : source.is_active) ? 1 : 0
+            ),
+            colorVariants: normalizeColorVariants(source.colorVariants || source.color_variants || source.color_variants_json),
+            isActive: toIsActive(source.isActive !== undefined ? source.isActive : source.is_active)
         };
     }
 
@@ -192,6 +273,11 @@
         const candidateActive = candidateItem.isActive !== false;
         if (existingActive !== candidateActive) {
             return candidateActive ? candidateItem : existingItem;
+        }
+        const existingAvailable = isCatalogProductAvailable(existingItem);
+        const candidateAvailable = isCatalogProductAvailable(candidateItem);
+        if (existingAvailable !== candidateAvailable) {
+            return candidateAvailable ? candidateItem : existingItem;
         }
         const existingId = Number(existingItem.id) || 0;
         const candidateId = Number(candidateItem.id) || 0;
@@ -455,7 +541,7 @@
         const shouldFilter = Boolean(normalizedCategory);
         const scoped = catalog
             .filter(function (item) {
-                return item.isActive !== false;
+                return isCatalogProductAvailable(item);
             })
             .filter(function (item) {
                 if (!shouldFilter) {

@@ -74,6 +74,89 @@
         return normalizeText(value).replace(/\s+/g, "-");
     }
 
+    function toIsActive(value) {
+        if (value === false || value === 0 || value === "0") {
+            return false;
+        }
+        const normalized = String(value === undefined || value === null ? "1" : value).trim().toLowerCase();
+        if (normalized === "false" || normalized === "no") {
+            return false;
+        }
+        return true;
+    }
+
+    function normalizeStockCount(value, fallbackValue) {
+        const numeric = Number.parseInt(String(value === undefined || value === null ? "" : value).trim(), 10);
+        if (Number.isFinite(numeric) && numeric >= 0) {
+            return numeric;
+        }
+        const fallback = Number.parseInt(String(fallbackValue === undefined || fallbackValue === null ? "" : fallbackValue).trim(), 10);
+        if (Number.isFinite(fallback) && fallback >= 0) {
+            return fallback;
+        }
+        return 0;
+    }
+
+    function normalizeColorVariants(input) {
+        let rows = input;
+        if (typeof rows === "string") {
+            rows = safeParse(rows);
+        }
+        if (rows && !Array.isArray(rows) && typeof rows === "object" && Array.isArray(rows.variants)) {
+            rows = rows.variants;
+        }
+        if (!Array.isArray(rows)) {
+            return [];
+        }
+
+        const seen = new Set();
+        return rows
+            .map(function (item, index) {
+                const source = item && typeof item === "object" ? item : {};
+                const key = normalizeColorKey(
+                    source.key || source.color || source.name || source.label || ("color " + String(index + 1))
+                );
+                if (!key || seen.has(key)) {
+                    return null;
+                }
+                seen.add(key);
+                const isActive = toIsActive(source.isActive !== undefined ? source.isActive : source.is_active);
+                return {
+                    key: key,
+                    label: formatColorLabel(source.label || source.name || source.color || source.key || ("Color " + String(index + 1))),
+                    isActive: isActive,
+                    stockCount: normalizeStockCount(
+                        source.stockCount !== undefined ? source.stockCount : source.stock_count,
+                        isActive ? 1 : 0
+                    )
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function isColorVariantAvailable(variant) {
+        return Boolean(variant) && variant.isActive !== false && normalizeStockCount(variant.stockCount, 0) > 0;
+    }
+
+    function isProductAvailable(productInput) {
+        const product = productInput && typeof productInput === "object" ? productInput : {};
+        const isActive = toIsActive(product.isActive !== undefined ? product.isActive : product.is_active);
+        if (!isActive) {
+            return false;
+        }
+        const stockCount = normalizeStockCount(
+            product.stockCount !== undefined ? product.stockCount : product.stock_count,
+            isActive ? 1 : 0
+        );
+        if (stockCount > 0) {
+            return true;
+        }
+        return normalizeColorVariants(product.colorVariants || product.color_variants || product.color_variants_json)
+            .some(function (variant) {
+                return isColorVariantAvailable(variant);
+            });
+    }
+
     function readColorVariantState() {
         const parsed = safeParse(localStorage.getItem(COLOR_VARIANT_STORAGE_KEY));
         if (!parsed || typeof parsed !== "object") {
@@ -334,18 +417,24 @@
         note.textContent = message;
     }
 
-    function applyColorAvailability() {
+    async function applyColorAvailability() {
         const modelName = getCurrentModelName();
         const modelKey = normalizeModelKey(modelName);
         if (!modelKey) {
             return;
         }
 
+        const product = await resolveProduct(modelName);
+        const productAvailable = isProductAvailable(product);
+        const productVariants = normalizeColorVariants(
+            product && (product.colorVariants || product.color_variants || product.color_variants_json)
+        );
         const state = readColorVariantState();
-        const variants = Array.isArray(state[modelKey]) ? state[modelKey] : [];
+        const localVariants = Array.isArray(state[modelKey]) ? normalizeColorVariants(state[modelKey]) : [];
+        const variants = productVariants.length ? productVariants : localVariants;
         if (!variants.length) {
-            setBookingAvailability(true);
-            setColorAvailabilityMessage("");
+            setBookingAvailability(productAvailable);
+            setColorAvailabilityMessage(productAvailable ? "" : "This model is currently out of stock.");
             return;
         }
 
@@ -355,7 +444,7 @@
             if (!key) {
                 return;
             }
-            availability[key] = !(variant && (variant.isActive === false || variant.isActive === 0 || variant.isActive === "0" || String(variant.isActive).toLowerCase() === "false"));
+            availability[key] = isColorVariantAvailable(variant);
         });
 
         const dots = Array.from(document.querySelectorAll(".dot"));
@@ -393,7 +482,7 @@
         }
 
         setBookingAvailability(false);
-        setColorAvailabilityMessage("This model currently has no available color.");
+        setColorAvailabilityMessage(productAvailable ? "This model currently has no available color." : "This model is currently out of stock.");
     }
 
     async function fetchCatalogFromApi() {
@@ -645,11 +734,11 @@
 
     void hydratePriceDisplay();
     applyBikeImageBorder();
-    applyColorAvailability();
+    void applyColorAvailability();
 
     window.addEventListener("storage", function (event) {
         if (event.key === COLOR_VARIANT_STORAGE_KEY) {
-            applyColorAvailability();
+            void applyColorAvailability();
         }
     });
 })();

@@ -61,6 +61,92 @@
         });
     }
 
+    function toIsActive(value) {
+        if (value === false || value === 0 || value === "0") {
+            return false;
+        }
+        const normalized = String(value === undefined || value === null ? "1" : value).trim().toLowerCase();
+        if (normalized === "false" || normalized === "no") {
+            return false;
+        }
+        return true;
+    }
+
+    function normalizeStockCount(value, fallbackValue) {
+        const numeric = Number.parseInt(String(value === undefined || value === null ? "" : value).trim(), 10);
+        if (Number.isFinite(numeric) && numeric >= 0) {
+            return numeric;
+        }
+        const fallback = Number.parseInt(String(fallbackValue === undefined || fallbackValue === null ? "" : fallbackValue).trim(), 10);
+        if (Number.isFinite(fallback) && fallback >= 0) {
+            return fallback;
+        }
+        return 0;
+    }
+
+    function normalizeColorKey(value) {
+        return String(value || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, " ")
+            .trim()
+            .replace(/\s+/g, "-")
+            .slice(0, 64);
+    }
+
+    function normalizeColorVariants(input) {
+        let rows = input;
+        if (typeof rows === "string") {
+            rows = safeParse(rows);
+        }
+        if (rows && !Array.isArray(rows) && typeof rows === "object" && Array.isArray(rows.variants)) {
+            rows = rows.variants;
+        }
+        if (!Array.isArray(rows)) {
+            return [];
+        }
+
+        const seen = new Set();
+        return rows
+            .map(function (item, index) {
+                const source = item && typeof item === "object" ? item : {};
+                const key = normalizeColorKey(
+                    source.key || source.color || source.name || source.label || ("color " + String(index + 1))
+                );
+                if (!key || seen.has(key)) {
+                    return null;
+                }
+                seen.add(key);
+                const isActive = toIsActive(source.isActive !== undefined ? source.isActive : source.is_active);
+                return {
+                    key: key,
+                    isActive: isActive,
+                    stockCount: normalizeStockCount(
+                        source.stockCount !== undefined ? source.stockCount : source.stock_count,
+                        isActive ? 1 : 0
+                    )
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function isProductAvailable(productInput) {
+        const product = productInput && typeof productInput === "object" ? productInput : {};
+        const isActive = toIsActive(product.isActive !== undefined ? product.isActive : product.is_active);
+        if (!isActive) {
+            return false;
+        }
+        const stockCount = normalizeStockCount(
+            product.stockCount !== undefined ? product.stockCount : product.stock_count,
+            isActive ? 1 : 0
+        );
+        if (stockCount > 0) {
+            return true;
+        }
+        return normalizeColorVariants(product.colorVariants || product.color_variants || product.color_variants_json).some(function (variant) {
+            return variant.isActive !== false && normalizeStockCount(variant.stockCount, 0) > 0;
+        });
+    }
+
     function isInlineDataImage(value) {
         return /^data:image\//i.test(String(value || "").trim());
     }
@@ -200,6 +286,10 @@
 
     function renderProduct(productInput) {
         const product = productInput && typeof productInput === "object" ? productInput : {};
+        if (!isProductAvailable(product)) {
+            renderUnavailable("This model is currently out of stock.");
+            return;
+        }
         currentProduct = product;
         const model = normalizeText(product.model) || "Ecodrive E-Bike";
         const category = normalizeText(product.category) || "E-Bike";

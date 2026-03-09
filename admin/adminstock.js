@@ -651,6 +651,27 @@ document.addEventListener("DOMContentLoaded", function () {
         return output;
     }
 
+    function getProductColorVariants(product) {
+        const modelKey = normalizeModelKey(product && product.model);
+        if (modelKey && Array.isArray(colorVariantsByModel[modelKey])) {
+            return sanitizeColorVariantList(colorVariantsByModel[modelKey]);
+        }
+        return sanitizeColorVariantList(product && (product.colorVariants || product.color_variants));
+    }
+
+    function hasAvailableProductColorStock(product) {
+        return getProductColorVariants(product).some(function (variant) {
+            return variant.isActive !== false && normalizeStockCount(variant.stockCount, 0) > 0;
+        });
+    }
+
+    function isProductCustomerAvailable(product) {
+        if (!product || !product.isActive) {
+            return false;
+        }
+        return getProductStockCount(product) > 0 || hasAvailableProductColorStock(product);
+    }
+
     function clampAddColorCount(value) {
         const parsed = Number.parseInt(String(value || "").trim(), 10);
         if (!Number.isFinite(parsed)) {
@@ -1574,7 +1595,7 @@ document.addEventListener("DOMContentLoaded", function () {
             };
         }
 
-        if (getProductStockCount(product) > 0) {
+        if (isProductCustomerAvailable(product)) {
             return {
                 className: "available",
                 label: "Available"
@@ -1732,10 +1753,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const visibleProducts = getVisibleProducts();
         const totalModels = visibleProducts.length;
         const available = visibleProducts.filter(function (item) {
-            return getProductStockCount(item) > 0;
+            return isProductCustomerAvailable(item);
         }).length;
         const unavailable = visibleProducts.filter(function (item) {
-            return getProductStockCount(item) <= 0;
+            return !isProductCustomerAvailable(item);
         }).length;
 
         const now = new Date();

@@ -4175,6 +4175,173 @@ function mapProductRow(row) {
     };
 }
 
+function isProductColorVariantAvailable(variantInput) {
+    const variant = normalizeProductColorVariant(variantInput, 0);
+    if (!variant || !variant.isActive) {
+        return false;
+    }
+    return normalizeProductStockCount(variant.stockCount, 0) > 0;
+}
+
+function getProductColorVariantsForAvailability(productInput) {
+    const source = productInput && typeof productInput === "object" ? productInput : {};
+    const variantsSource = source.colorVariants !== undefined
+        ? source.colorVariants
+        : source.color_variants_json;
+    return normalizeProductColorVariants(variantsSource);
+}
+
+function hasAvailableProductColorVariants(productInput) {
+    return getProductColorVariantsForAvailability(productInput).some((variant) => isProductColorVariantAvailable(variant));
+}
+
+function isProductAvailableForCustomers(productInput) {
+    const source = productInput && typeof productInput === "object" ? productInput : {};
+    const isActive = source.isActive !== undefined
+        ? normalizeOptionalBoolean(source.isActive, true)
+        : Number(source.is_active || 0) > 0;
+    if (!isActive) {
+        return false;
+    }
+    const stockCount = normalizeProductStockCount(
+        source.stockCount !== undefined ? source.stockCount : source.stock_count,
+        isActive ? 1 : 0
+    );
+    return stockCount > 0 || hasAvailableProductColorVariants(source);
+}
+
+function getBookingColorKey(bookingInput) {
+    const booking = bookingInput && typeof bookingInput === "object" ? bookingInput : {};
+    return normalizeProductColorKey(
+        booking.bikeColor || booking.color || booking.selectedColor || booking.bike_color
+    );
+}
+
+function findBookingColorVariantIndex(variantsInput, bookingInput) {
+    const variants = normalizeProductColorVariants(variantsInput);
+    const requestedColorKey = getBookingColorKey(bookingInput);
+    if (!requestedColorKey || !variants.length) {
+        return -1;
+    }
+
+    return variants.findIndex((variant) => {
+        const variantKey = normalizeProductColorKey(
+            variant && (variant.key || variant.label || variant.name || variant.color)
+        );
+        return variantKey === requestedColorKey;
+    });
+}
+
+async function findInventoryProductRowForBooking(connection, bookingInput) {
+    const booking = bookingInput && typeof bookingInput === "object" ? bookingInput : {};
+    const targetModel = normalizeProductModel(booking.model).toLowerCase();
+    if (!targetModel) {
+        return null;
+    }
+
+    const [rows] = await connection.execute(
+        `SELECT *
+         FROM products
+         WHERE is_active = 1
+         ORDER BY updated_at DESC, id DESC
+         FOR UPDATE`
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    let partialMatch = null;
+    for (const row of list) {
+        const candidateModel = normalizeProductModel(row && row.model).toLowerCase();
+        if (!candidateModel) {
+            continue;
+        }
+        if (candidateModel === targetModel) {
+            return row;
+        }
+        if (!partialMatch && (candidateModel.includes(targetModel) || targetModel.includes(candidateModel))) {
+            partialMatch = row;
+        }
+    }
+    return partialMatch;
+}
+
+async function reserveProductInventoryForApprovedBooking(connection, bookingInput) {
+    const booking = bookingInput && typeof bookingInput === "object" ? bookingInput : {};
+    const productRow = await findInventoryProductRowForBooking(connection, booking);
+    const model = normalizeProductModel(booking.model || "Ecodrive E-Bike");
+    if (!productRow) {
+        return {
+            success: false,
+            blocked: true,
+            message: `Unable to approve booking. Inventory record for ${model} was not found.`
+        };
+    }
+
+    const product = mapProductRow(productRow);
+    const currentStockCount = normalizeProductStockCount(product.stockCount, product.isActive ? 1 : 0);
+    const currentColorVariants = normalizeProductColorVariants(product.colorVariants);
+    const requestedColorIndex = findBookingColorVariantIndex(currentColorVariants, booking);
+    const requestedColorKey = getBookingColorKey(booking);
+
+    if (requestedColorKey && requestedColorIndex >= 0) {
+        const requestedVariant = currentColorVariants[requestedColorIndex];
+        if (!isProductColorVariantAvailable(requestedVariant)) {
+            return {
+                success: false,
+                blocked: true,
+                message: `Unable to approve booking. ${model} (${requestedVariant.label || "Selected color"}) is out of stock.`
+            };
+        }
+    }
+
+    if (!isProductAvailableForCustomers({
+        isActive: product.isActive,
+        stockCount: currentStockCount,
+        colorVariants: currentColorVariants
+    })) {
+        return {
+            success: false,
+            blocked: true,
+            message: `Unable to approve booking. ${model} is out of stock.`
+        };
+    }
+
+    let nextStockCount = currentStockCount;
+    if (nextStockCount > 0) {
+        nextStockCount -= 1;
+    }
+
+    const nextColorVariants = currentColorVariants.map((variant) => Object.assign({}, variant));
+    let decrementColorIndex = requestedColorIndex;
+    if (decrementColorIndex < 0 && nextStockCount < 1) {
+        decrementColorIndex = nextColorVariants.findIndex((variant) => isProductColorVariantAvailable(variant));
+    }
+    if (decrementColorIndex >= 0) {
+        const targetVariant = Object.assign({}, nextColorVariants[decrementColorIndex]);
+        const nextVariantStockCount = normalizeProductStockCount(targetVariant.stockCount, targetVariant.isActive ? 1 : 0);
+        if (nextVariantStockCount > 0) {
+            targetVariant.stockCount = nextVariantStockCount - 1;
+            nextColorVariants[decrementColorIndex] = targetVariant;
+        }
+    }
+
+    await connection.execute(
+        `UPDATE products
+         SET stock_count = ?,
+             color_variants_json = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [
+            nextStockCount,
+            serializeProductColorVariants(nextColorVariants),
+            product.id
+        ]
+    );
+
+    return {
+        success: true,
+        productId: product.id
+    };
+}
+
 async function reconcileProductCategories(pool) {
     try {
         const [rows] = await pool.execute(
@@ -7000,6 +7167,7 @@ async function handleAdminBookingDetails(_req, res, orderId) {
 }
 
 async function handleAdminBookingDecision(_req, res, orderId, action) {
+    let connection = null;
     try {
         const authSession = requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
@@ -7013,7 +7181,17 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
         }
         const normalizedAction = String(action || "").toLowerCase() === "approve" ? "approve" : "reject";
         const pool = await getDbPool();
-        const [beforeRows] = await pool.execute(
+        connection = typeof pool.getConnection === "function"
+            ? await pool.getConnection()
+            : null;
+        const db = connection && typeof connection.execute === "function"
+            ? connection
+            : pool;
+        if (connection && typeof connection.beginTransaction === "function") {
+            await connection.beginTransaction();
+        }
+
+        const [beforeRows] = await db.execute(
             `SELECT *
              FROM bookings
              WHERE order_id = ?
@@ -7021,6 +7199,9 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             [normalizedOrderId]
         );
         if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
+            if (connection && typeof connection.rollback === "function") {
+                await connection.rollback();
+            }
             sendJson(res, 404, { success: false, message: "Booking not found." });
             return;
         }
@@ -7037,9 +7218,26 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             || beforeMergedStatus.includes("released");
         const existingReceiptNumber = normalizeText(beforeRow.receipt_number).slice(0, 40);
         const ensuredReceiptNumber = existingReceiptNumber || buildReceiptNumber(normalizedOrderId, new Date());
+        let inventoryResult = null;
+
+        if (normalizedAction === "approve" && !wasAlreadyApproved) {
+            inventoryResult = await reserveProductInventoryForApprovedBooking(db, beforeRow);
+            if (!inventoryResult || inventoryResult.success !== true) {
+                if (connection && typeof connection.rollback === "function") {
+                    await connection.rollback();
+                }
+                sendJson(res, 409, {
+                    success: false,
+                    message: inventoryResult && inventoryResult.message
+                        ? inventoryResult.message
+                        : "Unable to approve booking. This model is out of stock."
+                });
+                return;
+            }
+        }
 
         if (normalizedAction === "approve") {
-            await pool.execute(
+            await db.execute(
                 `UPDATE bookings
                  SET status = CASE
                         WHEN LOWER(service_type) LIKE '%pick%'
@@ -7074,7 +7272,7 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
                 [ensuredReceiptNumber, normalizedOrderId]
             );
         } else {
-            await pool.execute(
+            await db.execute(
                 `UPDATE bookings
                  SET status = 'Rejected',
                      fulfillment_status = 'Rejected',
@@ -7086,7 +7284,7 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             );
         }
 
-        const [rows] = await pool.execute(
+        const [rows] = await db.execute(
             `SELECT *
              FROM bookings
              WHERE order_id = ?
@@ -7094,8 +7292,15 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             [normalizedOrderId]
         );
         if (!Array.isArray(rows) || rows.length < 1) {
+            if (connection && typeof connection.rollback === "function") {
+                await connection.rollback();
+            }
             sendJson(res, 404, { success: false, message: "Booking not found." });
             return;
+        }
+
+        if (connection && typeof connection.commit === "function") {
+            await connection.commit();
         }
 
         const booking = mapBookingRow(rows[0]);
@@ -7124,7 +7329,18 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
 
         sendJson(res, 200, { success: true, booking: booking });
     } catch (error) {
+        if (connection && typeof connection.rollback === "function") {
+            try {
+                await connection.rollback();
+            } catch (_rollbackError) {
+                // Ignore rollback failures and return the original error.
+            }
+        }
         sendJson(res, 500, { success: false, message: error.message || "Unable to update booking status." });
+    } finally {
+        if (connection && typeof connection.release === "function") {
+            connection.release();
+        }
     }
 }
 
@@ -8048,7 +8264,13 @@ async function handlePublicProductById(_req, res, productId) {
             return;
         }
 
-        sendJson(res, 200, { success: true, product: mapProductRow(rows[0]) });
+        const product = mapProductRow(rows[0]);
+        if (!isProductAvailableForCustomers(product)) {
+            sendJson(res, 404, { success: false, message: "Product is out of stock." });
+            return;
+        }
+
+        sendJson(res, 200, { success: true, product: product });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to load product." });
     }
@@ -8072,7 +8294,11 @@ async function handleListProducts(_req, res, parsedUrl) {
         query += " ORDER BY FIELD(category, '2-Wheel', '3-Wheel', '4-Wheel', 'Other'), model ASC";
 
         const [rows] = await pool.execute(query, params);
-        const products = Array.isArray(rows) ? rows.map(mapProductRow) : [];
+        const products = Array.isArray(rows)
+            ? rows
+                .map(mapProductRow)
+                .filter((product) => isProductAvailableForCustomers(product))
+            : [];
         sendJson(res, 200, { success: true, products: products });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to load products." });
