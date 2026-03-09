@@ -1553,6 +1553,8 @@ async function ensureDbSchema() {
                 product_info VARCHAR(255) NULL,
                 image_url MEDIUMTEXT NULL,
                 detail_url VARCHAR(255) NULL,
+                stock_count INT UNSIGNED NOT NULL DEFAULT 1,
+                color_variants_json LONGTEXT NULL,
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1579,11 +1581,27 @@ async function ensureDbSchema() {
             console.warn("[db-schema] Unable to widen products.image_url automatically:", alterError.message || alterError);
         }
 
+        try {
+            await pool.execute(
+                "ALTER TABLE products ADD COLUMN stock_count INT UNSIGNED NOT NULL DEFAULT 1 AFTER detail_url"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add products.stock_count automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE products ADD COLUMN color_variants_json LONGTEXT NULL AFTER stock_count"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add products.color_variants_json automatically:", alterError.message || alterError);
+        }
+
         if (Array.isArray(DEFAULT_PRODUCT_CATALOG) && DEFAULT_PRODUCT_CATALOG.length > 0) {
             const placeholders = [];
             const values = [];
             DEFAULT_PRODUCT_CATALOG.forEach((item) => {
-                placeholders.push("(?, ?, ?, ?, ?, ?, 1)");
+                placeholders.push("(?, ?, ?, ?, ?, ?, 1, NULL, 1)");
                 values.push(
                     String(item.model || "").slice(0, 180),
                     Number(item.price || 0),
@@ -1602,6 +1620,8 @@ async function ensureDbSchema() {
                     product_info,
                     image_url,
                     detail_url,
+                    stock_count,
+                    color_variants_json,
                     is_active
                 ) VALUES ${placeholders.join(", ")}`,
                 values
@@ -3863,6 +3883,97 @@ function normalizeProductInfo(value) {
     return normalizeText(value).slice(0, 255);
 }
 
+function safeJsonParse(raw) {
+    try {
+        return JSON.parse(raw);
+    } catch (_error) {
+        return null;
+    }
+}
+
+function normalizeProductStockCount(value, fallbackValue) {
+    if (value === undefined || value === null || value === "") {
+        return normalizeProductStockCount(fallbackValue, 0);
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return normalizeProductStockCount(fallbackValue, 0);
+    }
+    return Math.floor(numeric);
+}
+
+function normalizeProductColorKey(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, "-")
+        .slice(0, 64);
+}
+
+function normalizeProductColorLabel(value, fallbackIndex) {
+    const raw = normalizeText(value)
+        .replace(/\bcolor\b/ig, "")
+        .trim()
+        .slice(0, 64);
+    if (raw) {
+        return raw.charAt(0).toUpperCase() + raw.slice(1);
+    }
+    return `Color ${Number(fallbackIndex || 0) + 1}`;
+}
+
+function normalizeProductColorVariant(input, fallbackIndex) {
+    const source = input && typeof input === "object" ? input : {};
+    const key = normalizeProductColorKey(
+        source.key || source.color || source.name || source.label || `color ${Number(fallbackIndex || 0) + 1}`
+    );
+    if (!key) {
+        return null;
+    }
+
+    const isActive = normalizeOptionalBoolean(source.isActive, true);
+    return {
+        key: key,
+        label: normalizeProductColorLabel(source.label || source.name || source.color || source.key, fallbackIndex),
+        imageUrl: normalizeProductImage(source.imageUrl || source.image || ""),
+        isActive: isActive,
+        stockCount: normalizeProductStockCount(
+            source.stockCount !== undefined ? source.stockCount : source.stock_count,
+            isActive ? 1 : 0
+        )
+    };
+}
+
+function normalizeProductColorVariants(input) {
+    let rows = input;
+    if (typeof rows === "string") {
+        rows = safeJsonParse(rows);
+    }
+    if (rows && !Array.isArray(rows) && typeof rows === "object" && Array.isArray(rows.variants)) {
+        rows = rows.variants;
+    }
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+
+    const seen = new Set();
+    const output = [];
+    rows.slice(0, 24).forEach((item, index) => {
+        const normalized = normalizeProductColorVariant(item, index);
+        if (!normalized || seen.has(normalized.key)) {
+            return;
+        }
+        seen.add(normalized.key);
+        output.push(normalized);
+    });
+    return output;
+}
+
+function serializeProductColorVariants(input) {
+    const variants = normalizeProductColorVariants(input);
+    return variants.length > 0 ? JSON.stringify(variants) : null;
+}
+
 function normalizeOptionalBoolean(value, fallback) {
     if (value === undefined || value === null || value === "") {
         return Boolean(fallback);
@@ -4047,6 +4158,7 @@ function hasReachedDailyBookingLimit(count) {
 function mapProductRow(row) {
     const rawDetailUrl = normalizeProductUrl(row.detail_url || "");
     const detailUrl = rawDetailUrl || buildAutoProductDetailUrl(row.id);
+    const isActive = Number(row.is_active || 0) > 0;
     return {
         id: Number(row.id || 0),
         model: String(row.model || "Ecodrive E-Bike"),
@@ -4055,7 +4167,9 @@ function mapProductRow(row) {
         info: String(row.product_info || ""),
         imageUrl: String(row.image_url || ""),
         detailUrl: detailUrl,
-        isActive: Number(row.is_active || 0) > 0,
+        stockCount: normalizeProductStockCount(row.stock_count, isActive ? 1 : 0),
+        colorVariants: normalizeProductColorVariants(row.color_variants_json),
+        isActive: isActive,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
     };
@@ -8015,6 +8129,8 @@ async function handleAdminCreateProduct(req, res) {
         const requestedDetailUrl = normalizeProductUrl(body.detailUrl || body.detailsUrl || body.detail_url);
         const category = normalizeProductCategory(body.category, requestedDetailUrl);
         const isActive = normalizeOptionalBoolean(body.isActive, true) ? 1 : 0;
+        const stockCount = normalizeProductStockCount(body.stockCount, isActive ? 1 : 0);
+        const colorVariantsJson = serializeProductColorVariants(body.colorVariants);
 
         if (model.length < 2) {
             sendJson(res, 400, { success: false, message: "Model name is required." });
@@ -8038,8 +8154,10 @@ async function handleAdminCreateProduct(req, res) {
                 product_info,
                 image_url,
                 detail_url,
+                stock_count,
+                color_variants_json,
                 is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 model,
                 price,
@@ -8047,6 +8165,8 @@ async function handleAdminCreateProduct(req, res) {
                 productInfo || null,
                 imageUrl || null,
                 requestedDetailUrl || null,
+                stockCount,
+                colorVariantsJson,
                 isActive
             ]
         );
@@ -8160,6 +8280,21 @@ async function handleAdminUpdateProduct(req, res, productId) {
         if (Object.prototype.hasOwnProperty.call(body, "isActive")) {
             updates.push("is_active = ?");
             params.push(normalizeOptionalBoolean(body.isActive, true) ? 1 : 0);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, "stockCount")) {
+            updates.push("stock_count = ?");
+            params.push(
+                normalizeProductStockCount(
+                    body.stockCount,
+                    currentProduct && currentProduct.isActive ? 1 : 0
+                )
+            );
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, "colorVariants")) {
+            updates.push("color_variants_json = ?");
+            params.push(serializeProductColorVariants(body.colorVariants));
         }
 
         if (!updates.length) {
