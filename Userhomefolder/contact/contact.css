@@ -211,7 +211,7 @@ body {
 
 .chatbot {
     position: fixed;
-    top: 84px;
+    bottom: 24px;
     right: 18px;
     width: 40px;
     height: 40px;
@@ -231,7 +231,7 @@ body {
 
 .chat-panel {
     position: fixed;
-    top: 134px;
+    bottom: 74px;
     right: 18px;
     width: min(310px, calc(100vw - 24px));
     background: #ffffff;

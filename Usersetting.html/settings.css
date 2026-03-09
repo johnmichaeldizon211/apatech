@@ -516,7 +516,7 @@ body {
 .chatbot {
   position: fixed;
   right: 22px;
-  top: 96px;
+  bottom: 24px;
   width: 46px;
   height: 46px;
   border: 2px solid #2f4fa7;

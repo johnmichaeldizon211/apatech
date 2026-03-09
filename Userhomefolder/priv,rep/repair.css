@@ -441,7 +441,7 @@ textarea {
 
 .chatbot {
     position: fixed;
-    top: 168px;
+    bottom: 24px;
     right: 24px;
     width: 46px;
     height: 46px;
@@ -461,7 +461,7 @@ textarea {
 .chat-panel {
     position: fixed;
     right: 24px;
-    bottom: 24px;
+    bottom: 78px;
     width: min(310px, calc(100vw - 20px));
     background: #ffffff;
     border: 1.5px solid var(--blue);
