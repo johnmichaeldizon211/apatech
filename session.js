@@ -16,6 +16,8 @@
     };
     var DEFAULT_API_BASE = detectDefaultApiBase();
     var USER_CHAT_WIDGET_SRC = "/Userhomefolder/chatbot-widget.js?v=20260304c";
+    var USER_CART_STYLE_HREF = "/Userhomefolder/cart.css?v=20260310d";
+    var USER_CART_SCRIPT_SRC = "/Userhomefolder/cart.js?v=20260310b";
     var PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
     var LEGACY_PROFILE_STORAGE_KEY = "ecodrive_profile_settings";
     var USERS_STORAGE_KEY = "users";
@@ -40,6 +42,48 @@
             return "";
         }
         return trimSlashes(global.location.origin);
+    }
+
+    function getAppBasePath() {
+        if (!global.location) {
+            return "";
+        }
+        var pathname = String(global.location.pathname || "").replace(/\\/g, "/");
+        var lower = pathname.toLowerCase();
+        var userhomeIndex = lower.lastIndexOf("/userhomefolder/");
+        if (userhomeIndex > 0) {
+            return pathname.slice(0, userhomeIndex);
+        }
+        var settingsIndex = lower.lastIndexOf("/usersetting.html/");
+        if (settingsIndex > 0) {
+            return pathname.slice(0, settingsIndex);
+        }
+        return "";
+    }
+
+    function resolveUserAppAssetPath(pathInput) {
+        var raw = String(pathInput || "").trim();
+        if (!raw) {
+            return "";
+        }
+        if (/^(?:https?:)?\/\//i.test(raw) || /^data:/i.test(raw) || /^blob:/i.test(raw)) {
+            return raw;
+        }
+
+        var normalized = raw.replace(/\\/g, "/");
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+
+        var appBase = getAppBasePath();
+        if (!appBase) {
+            return normalized;
+        }
+
+        if (normalized.toLowerCase().indexOf(appBase.toLowerCase() + "/") === 0) {
+            return normalized;
+        }
+        return appBase + normalized;
     }
 
     function isExternalApiFrontendHost(hostnameInput) {
@@ -575,10 +619,37 @@
         }
 
         var script = global.document.createElement("script");
-        script.src = USER_CHAT_WIDGET_SRC;
+        script.src = resolveUserAppAssetPath(USER_CHAT_WIDGET_SRC);
         script.async = true;
         script.setAttribute("data-ecodrive-user-chat-widget", "1");
         global.document.head.appendChild(script);
+    }
+
+    function ensureUserCartAssets() {
+        if (!global.document || !global.location) {
+            return;
+        }
+
+        var path = String(global.location.pathname || "").toLowerCase();
+        if (!isUserAppPage(path) || path.indexOf("/admin/") !== -1) {
+            return;
+        }
+
+        if (!global.document.querySelector("link[data-ecodrive-user-cart-style='1']")) {
+            var link = global.document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = resolveUserAppAssetPath(USER_CART_STYLE_HREF);
+            link.setAttribute("data-ecodrive-user-cart-style", "1");
+            global.document.head.appendChild(link);
+        }
+
+        if (!global.document.querySelector("script[data-ecodrive-user-cart-script='1']")) {
+            var script = global.document.createElement("script");
+            script.src = resolveUserAppAssetPath(USER_CART_SCRIPT_SRC);
+            script.async = false;
+            script.setAttribute("data-ecodrive-user-cart-script", "1");
+            global.document.head.appendChild(script);
+        }
     }
 
     function redirectToLogin() {
@@ -718,6 +789,7 @@
 
     ensureApiBaseConfig();
     ensurePageAccess();
+    ensureUserCartAssets();
     ensureUserChatWidget();
 
     global.EcodriveSession = {

@@ -1,0 +1,175 @@
+:root {
+    --home-bg-top: #f8fbfe;
+    --home-bg-mid: #f4f8fc;
+    --home-bg-bottom: #eef5fb;
+    --home-surface: #ffffff;
+    --home-surface-soft: #f7fbff;
+    --home-line: #c7dceb;
+    --home-line-strong: #8ecce5;
+    --home-nav: #d9ebf3;
+    --home-side: #c7deea;
+    --home-ink: #0d315d;
+    --home-ink-soft: #4e6783;
+    --home-primary: #1d6fd8;
+    --home-primary-deep: #103d89;
+    --home-primary-soft: #20b8eb;
+    --bg: var(--home-bg-mid);
+    --header: var(--home-nav);
+    --nav: var(--home-nav);
+    --nav-bg: var(--home-nav);
+    --line: var(--home-line);
+    --line-strong: var(--home-line-strong);
+    --ink: var(--home-ink);
+    --text: var(--home-ink);
+    --deep-blue: var(--home-primary);
+    --button-blue: var(--home-primary);
+    --brand-blue: var(--home-primary-deep);
+    --page-bg: var(--home-bg-mid);
+    --panel-bg: var(--home-surface);
+    --side-bg: var(--home-side);
+    --brand-fade: #7b91ad;
+    --white: #ffffff;
+}
+
+body {
+    background:
+        radial-gradient(circle at top left, rgba(56, 190, 233, 0.14), transparent 32%),
+        linear-gradient(180deg, var(--home-bg-top) 0%, var(--home-bg-mid) 46%, var(--home-bg-bottom) 100%) !important;
+    color: var(--home-ink) !important;
+}
+
+.navbar,
+.top-nav {
+    background: rgba(217, 235, 243, 0.92) !important;
+    border-bottom: 1px solid rgba(142, 204, 229, 0.75) !important;
+}
+
+.logo,
+.brand-text,
+.top-nav .brand,
+.top-nav .logo,
+.nav-title {
+    color: var(--home-ink) !important;
+}
+
+.nav-links a {
+    color: var(--home-ink) !important;
+    border-radius: 10px !important;
+}
+
+.nav-links a:hover {
+    background: rgba(29, 111, 216, 0.1) !important;
+}
+
+.nav-links a.active {
+    background: rgba(29, 111, 216, 0.14) !important;
+    color: var(--home-primary-deep) !important;
+}
+
+.profile-btn {
+    border-color: var(--home-ink) !important;
+    background: #ffffff !important;
+    color: var(--home-ink) !important;
+}
+
+.profile-btn:hover {
+    background: #d4eaf3 !important;
+}
+
+.dropdown {
+    background: #d8eef5 !important;
+    box-shadow: 0 16px 30px rgba(16, 61, 137, 0.12) !important;
+}
+
+.dropdown a {
+    color: var(--home-ink) !important;
+}
+
+.dropdown a:hover {
+    background: #c6e2eb !important;
+}
+
+.bg-left,
+.bg-right,
+.bg-shape {
+    background-color: #d7e9f3 !important;
+}
+
+:is(.card, .summary-card, .status-card, .feature-panel, .deal-banner, .category-card, .home-product-card, .booking-card, .contact-card, .repair-card, .step-card, .info-card, .detail-card, .panel, .table-wrap, .shell-panel, .side-panel, .main-card, .form-card, .checkout-card, .success-card, .review-card, .tile, .result-card, .data-card, .order-card, .history-card, .account-card, .profile-card, .product-card, .content-card, .content-panel, .repair-summary, .contact-box, .payment-card, .installment-card, .requirement-card, .scan-card, .preview-card) {
+    border-color: rgba(199, 220, 235, 0.95) !important;
+    box-shadow: 0 16px 32px rgba(16, 61, 137, 0.08) !important;
+}
+
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(199, 220, 235, 0.95) !important;
+    color: var(--home-ink) !important;
+}
+
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea):focus {
+    outline: none !important;
+    border-color: rgba(32, 184, 235, 0.8) !important;
+    box-shadow: 0 0 0 3px rgba(32, 184, 235, 0.14) !important;
+}
+
+:is(.btn, .card-action, .order-btn, .primary-btn, .submit-btn, .confirm-btn, .book-btn, .book-now-btn, .action-btn, .save-btn, .next-btn, .checkout-btn, .repair-btn, .pay-btn, .continue-btn, .step-btn, .upload-btn, .primary-action, .secondary-action, .buy-btn, .book-action) {
+    background: linear-gradient(135deg, var(--home-primary), var(--home-primary-soft)) !important;
+    border-color: transparent !important;
+    color: #ffffff !important;
+    box-shadow: 0 14px 24px rgba(29, 111, 216, 0.2) !important;
+}
+
+:is(.btn, .card-action, .order-btn, .primary-btn, .submit-btn, .confirm-btn, .book-btn, .book-now-btn, .action-btn, .save-btn, .next-btn, .checkout-btn, .repair-btn, .pay-btn, .continue-btn, .step-btn, .upload-btn, .primary-action, .secondary-action, .buy-btn, .book-action):hover {
+    background: linear-gradient(135deg, #2b8de2, #2271d3) !important;
+    color: #ffffff !important;
+}
+
+.chatbot {
+    border-color: #2f4fa7 !important;
+    background: #ffffff !important;
+    color: #2f4fa7 !important;
+}
+
+.chat-panel {
+    background: #ffffff !important;
+    border-color: #2f4fa7 !important;
+}
+
+.chat-header {
+    background: #d7e8ef !important;
+    border-bottom-color: #c2d6df !important;
+    color: #123f79 !important;
+}
+
+.chat-close {
+    background: #e9f1f4 !important;
+    color: #2f4fa7 !important;
+}
+
+.chat-body {
+    background: #f4f6fb !important;
+}
+
+.chat-message.bot {
+    background: #e6ecfa !important;
+    color: #143b80 !important;
+}
+
+.chat-message.user {
+    background: #2f4ca5 !important;
+    color: #ffffff !important;
+}
+
+footer {
+    background: rgba(255, 255, 255, 0.7) !important;
+    border-top: 1px solid rgba(199, 220, 235, 0.85) !important;
+}
+
+.footer-left .muted,
+.info-text {
+    color: #6b7684 !important;
+}
+
+.info-heading {
+    color: #2d4aa0 !important;
+}

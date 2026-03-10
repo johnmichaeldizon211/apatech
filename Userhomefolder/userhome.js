@@ -13,15 +13,8 @@ if (profileBtn && dropdown) {
 }
 
 (function () {
-    const QUICK_BOOK_STORAGE_KEY = "ecodrive_home_quick_book_v1";
     const CHAT_STORAGE_KEY = "ecodrive_chat_messages_v1";
     const MAX_MESSAGES = 80;
-    const CATEGORY_ROUTE_MAP = {
-        "all": "userhome2.html",
-        "2-wheel": "userhome2-2wheel.html",
-        "3-wheel": "userhome2-3wheel.html",
-        "4-wheel": "userhome2-4wheel.html"
-    };
     const FALLBACK_CATALOG = [
         { id: 1, model: "BLITZ 2000", category: "2-Wheel", price: 68000, imageUrl: "image 1.png", detailUrl: "Ebikes/ebike1.0.html", stockCount: 1 },
         { id: 2, model: "BLITZ 1200", category: "2-Wheel", price: 45000, imageUrl: "image 2.png", detailUrl: "Ebikes/ebike2.0.html", stockCount: 1 },
@@ -52,6 +45,29 @@ if (profileBtn && dropdown) {
             badge: "Trusted",
             label: "ECONO 800 MP II",
             ratingLabel: "Showroom favorite"
+        }
+    ];
+    const MOST_POPULAR_CONFIG = [
+        {
+            matchers: ["BLITZ 2000"],
+            detailId: 1,
+            badge: "Most Popular",
+            label: "BLITZ 2000",
+            ratingLabel: "Fast commuter"
+        },
+        {
+            matchers: ["ECONO 500 MP"],
+            detailId: 7,
+            badge: "Most Popular",
+            label: "ECONO 500 MP",
+            ratingLabel: "Family favorite"
+        },
+        {
+            matchers: ["E-CARGO 800J", "E-CARGO 800"],
+            detailId: 13,
+            badge: "Most Popular",
+            label: "E-CARGO 800J",
+            ratingLabel: "Cargo demand"
         }
     ];
     const NEW_ARRIVAL_CONFIG = [
@@ -371,73 +387,64 @@ if (profileBtn && dropdown) {
         container.appendChild(fragment);
     }
 
-    function setupQuickBookForm() {
-        const form = document.getElementById("quick-book-form");
-        const categoryInput = document.getElementById("quick-category");
-        const dateInput = document.getElementById("quick-date");
-        const locationInput = document.getElementById("quick-location");
-
-        if (!(form && categoryInput && dateInput && locationInput)) {
-            return;
-        }
-
-        const today = new Date();
-        const isoDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split("T")[0];
-        dateInput.min = isoDate;
-
-        try {
-            const saved = JSON.parse(localStorage.getItem(QUICK_BOOK_STORAGE_KEY) || "null");
-            if (saved && typeof saved === "object") {
-                if (saved.category && CATEGORY_ROUTE_MAP[String(saved.category).toLowerCase()]) {
-                    categoryInput.value = saved.category;
-                }
-                if (saved.date) {
-                    dateInput.value = saved.date;
-                }
-                if (saved.location) {
-                    locationInput.value = saved.location;
-                }
-            }
-        } catch (_error) {
-            // ignore malformed draft
-        }
-
-        form.addEventListener("submit", function (event) {
-            event.preventDefault();
-
-            const draft = {
-                category: String(categoryInput.value || "all"),
-                date: String(dateInput.value || ""),
-                location: normalizeText(locationInput.value || "")
-            };
-            localStorage.setItem(QUICK_BOOK_STORAGE_KEY, JSON.stringify(draft));
-
-            const route = CATEGORY_ROUTE_MAP[String(draft.category).toLowerCase()] || CATEGORY_ROUTE_MAP.all;
-            window.location.href = route;
-        });
-    }
-
     async function renderHomepageSections() {
-        const bestSellerGrid = document.getElementById("best-sellers-grid");
+        const topPicksGrid = document.getElementById("top-picks-grid");
         const newArrivalGrid = document.getElementById("new-arrivals-grid");
         const dealGrid = document.getElementById("deal-grid");
+        const topPickButtons = Array.from(document.querySelectorAll("[data-feature-view]"));
 
-        if (!(bestSellerGrid || newArrivalGrid || dealGrid)) {
+        if (!(topPicksGrid || newArrivalGrid || dealGrid)) {
             return;
         }
 
         const catalog = await getCatalog();
         const bestSellers = pickConfiguredProducts(catalog, BEST_SELLER_CONFIG);
+        const mostPopular = pickConfiguredProducts(catalog, MOST_POPULAR_CONFIG);
         const newArrivals = pickConfiguredProducts(catalog, NEW_ARRIVAL_CONFIG);
         const dealPicks = pickConfiguredProducts(catalog, DEAL_CONFIG);
 
-        renderCardList(bestSellerGrid, bestSellers, {
-            caption: "Best seller",
-            description: "Reliable picks that customers usually check out first.",
-            buttonLabel: "View Model"
+        const topPickViews = {
+            "best-sellers": {
+                products: bestSellers,
+                options: {
+                    caption: "Best seller",
+                    description: "Reliable picks that customers usually check out first.",
+                    buttonLabel: "View Model"
+                }
+            },
+            "most-popular": {
+                products: mostPopular,
+                options: {
+                    caption: "Most popular",
+                    description: "Units that users keep browsing and checking out the most.",
+                    buttonLabel: "View Model"
+                }
+            }
+        };
+
+        function renderTopPickView(view) {
+            const normalizedView = topPickViews[view] ? view : "best-sellers";
+            topPickButtons.forEach(function (button) {
+                const isActive = button.dataset.featureView === normalizedView;
+                button.classList.toggle("active", isActive);
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            });
+
+            renderCardList(
+                topPicksGrid,
+                topPickViews[normalizedView].products,
+                topPickViews[normalizedView].options
+            );
+        }
+
+        topPickButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                renderTopPickView(button.dataset.featureView || "best-sellers");
+            });
         });
+
+        renderTopPickView("best-sellers");
         renderCardList(newArrivalGrid, newArrivals, {
-            compact: true,
             caption: "Just arrived",
             description: "New units now highlighted on the homepage.",
             buttonLabel: "See Details"
@@ -615,7 +622,6 @@ if (profileBtn && dropdown) {
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-        setupQuickBookForm();
         void renderHomepageSections();
         setupChatbot();
     });

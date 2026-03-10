@@ -6,6 +6,7 @@
     <title>Ecodrive</title>
     <link rel="stylesheet" href="userhome.css?v=20260309-home-layout">
     <link rel="stylesheet" href="nav-responsive.css?v=20260306c">
+    <link rel="stylesheet" href="userhome-theme.css?v=20260310a">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -46,30 +47,6 @@
                 <span class="hero-sale-label">NEW ARRIVALS</span>
                 <span>Blitz 1200, Blitz 2000, Fun 350, and E-Cargo 800J are now on the home lineup.</span>
             </div>
-
-            <form class="quick-book-bar" id="quick-book-form" action="#">
-                <label class="quick-field">
-                    <span>Select Ebike Type</span>
-                    <select id="quick-category" name="category">
-                        <option value="all">All Ebike Models</option>
-                        <option value="2-Wheel">E-Bikes</option>
-                        <option value="3-Wheel">E-Trikes / E-Rickshaws</option>
-                        <option value="4-Wheel">Cargo / 4-Wheel</option>
-                    </select>
-                </label>
-
-                <label class="quick-field">
-                    <span>Pick Date</span>
-                    <input type="date" id="quick-date" name="date">
-                </label>
-
-                <label class="quick-field">
-                    <span>Location</span>
-                    <input type="text" id="quick-location" name="location" placeholder="Baliwag, Bulacan">
-                </label>
-
-                <button type="submit" class="quick-book-btn">Book Now</button>
-            </form>
         </div>
 
         <div class="hero-visual">
@@ -129,14 +106,14 @@
             <div class="panel-head">
                 <div>
                     <div class="panel-chip-row">
-                        <span class="panel-chip active">Best Sellers</span>
-                        <span class="panel-chip">Most Popular</span>
+                        <button type="button" class="panel-chip panel-chip-btn active" data-feature-view="best-sellers" aria-pressed="true">Best Sellers</button>
+                        <button type="button" class="panel-chip panel-chip-btn" data-feature-view="most-popular" aria-pressed="false">Most Popular</button>
                     </div>
                     <h2>Top picks riders choose first</h2>
                 </div>
                 <a href="userhome2.html" class="panel-link">More list</a>
             </div>
-            <div class="feature-grid feature-grid-wide" id="best-sellers-grid"></div>
+            <div class="feature-grid feature-grid-wide" id="top-picks-grid"></div>
         </article>
 
         <article class="feature-panel feature-panel-accent">
@@ -149,7 +126,7 @@
                 </div>
                 <a href="userhome2.html" class="panel-link">View all</a>
             </div>
-            <div class="feature-grid feature-grid-compact" id="new-arrivals-grid"></div>
+            <div class="feature-grid feature-grid-new-arrivals" id="new-arrivals-grid"></div>
         </article>
     </section>
 

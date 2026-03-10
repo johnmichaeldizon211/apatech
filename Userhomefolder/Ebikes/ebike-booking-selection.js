@@ -374,6 +374,7 @@
 
     function setBookingAvailability(isAvailable) {
         const bookBtn = document.querySelector(".check-btn");
+        const addToCartBtn = document.querySelector(".add-to-cart-btn-inline");
         if (!bookBtn) {
             return;
         }
@@ -386,6 +387,12 @@
         bookBtn.style.opacity = allow ? "" : "0.65";
         bookBtn.style.pointerEvents = allow ? "" : "none";
         bookBtn.textContent = allow ? originalText : "Unavailable";
+
+        if (addToCartBtn) {
+            addToCartBtn.disabled = !allow;
+            addToCartBtn.style.opacity = allow ? "" : "0.65";
+            addToCartBtn.style.pointerEvents = allow ? "" : "none";
+        }
     }
 
     function setColorAvailabilityMessage(message) {
@@ -715,6 +722,60 @@
         localStorage.setItem("selectedBike", JSON.stringify(selection));
     }
 
+    async function buildCartItem() {
+        const selection = await buildSelection();
+        const product = await resolveProduct(selection.model);
+        return {
+            productId: Number(product && product.id || 0),
+            model: selection.model,
+            price: selection.total,
+            imageUrl: selection.image,
+            detailUrl: window.location.pathname + window.location.search,
+            category: selection.subtitle,
+            info: String(product && product.info || ""),
+            selectedColor: selection.selectedColor,
+            quantity: 1
+        };
+    }
+
+    function ensureAddToCartButton() {
+        const priceRow = document.querySelector(".price-row");
+        const bookBtn = document.querySelector(".check-btn");
+        if (!priceRow || !bookBtn) {
+            return null;
+        }
+
+        let actionGroup = priceRow.querySelector(".bike-purchase-actions");
+        if (!actionGroup) {
+            actionGroup = document.createElement("div");
+            actionGroup.className = "bike-purchase-actions";
+            bookBtn.parentElement.insertBefore(actionGroup, bookBtn);
+            actionGroup.appendChild(bookBtn);
+        }
+
+        let addToCartBtn = actionGroup.querySelector(".add-to-cart-btn-inline");
+        if (!addToCartBtn) {
+            addToCartBtn = document.createElement("button");
+            addToCartBtn.type = "button";
+            addToCartBtn.className = "add-to-cart-btn-inline";
+            addToCartBtn.textContent = "Add to Cart";
+            actionGroup.appendChild(addToCartBtn);
+        }
+
+        if (addToCartBtn.dataset.cartBound !== "1") {
+            addToCartBtn.dataset.cartBound = "1";
+            addToCartBtn.addEventListener("click", async function () {
+                if (!window.EcodriveCart || typeof window.EcodriveCart.addItem !== "function") {
+                    return;
+                }
+                const item = await buildCartItem();
+                window.EcodriveCart.addItem(item);
+            });
+        }
+
+        return addToCartBtn;
+    }
+
     document.addEventListener(
         "click",
         async function (event) {
@@ -734,6 +795,7 @@
 
     void hydratePriceDisplay();
     applyBikeImageBorder();
+    ensureAddToCartButton();
     void applyColorAvailability();
 
     window.addEventListener("storage", function (event) {

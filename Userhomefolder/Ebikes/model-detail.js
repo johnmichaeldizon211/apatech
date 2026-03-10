@@ -27,6 +27,7 @@
     const modelSpecsEl = document.getElementById("model-specs");
     const modelStatusEl = document.getElementById("model-status");
     const bookNowBtn = document.getElementById("book-now-btn");
+    const addToCartBtn = document.getElementById("add-to-cart-btn");
 
     const profileBtn = document.querySelector(".profile-menu .profile-btn");
     const dropdown = document.querySelector(".profile-menu .dropdown");
@@ -284,6 +285,28 @@
         });
     }
 
+    function addCurrentProductToCart() {
+        if (!currentProduct) {
+            setStatus("This model is unavailable for cart.", "error");
+            return;
+        }
+        if (!window.EcodriveCart || typeof window.EcodriveCart.addItem !== "function") {
+            setStatus("Cart is still loading. Please try again.", "error");
+            return;
+        }
+        window.EcodriveCart.addItem({
+            productId: currentProduct.id,
+            model: currentProduct.model,
+            price: currentProduct.price,
+            imageUrl: currentProduct.imageUrl,
+            detailUrl: currentProduct.detailUrl || window.location.pathname + window.location.search,
+            category: currentProduct.category,
+            info: currentProduct.info,
+            quantity: 1
+        });
+        setStatus("Added to cart.", "");
+    }
+
     function renderProduct(productInput) {
         const product = productInput && typeof productInput === "object" ? productInput : {};
         if (!isProductAvailable(product)) {
@@ -305,6 +328,9 @@
         modelImageEl.alt = `${model} image`;
         renderSpecs(product);
         bookNowBtn.disabled = false;
+        if (addToCartBtn) {
+            addToCartBtn.disabled = false;
+        }
         setStatus("", "");
     }
 
@@ -322,6 +348,9 @@
         note.innerHTML = "<strong>Notice:</strong> This model is not available for booking.";
         modelSpecsEl.appendChild(note);
         bookNowBtn.disabled = true;
+        if (addToCartBtn) {
+            addToCartBtn.disabled = true;
+        }
         setStatus(message || "Model unavailable.", "error");
     }
 
@@ -407,6 +436,10 @@
                 persistSelection(currentProduct);
                 window.location.href = toBookingUrl(currentProduct);
             });
+        }
+
+        if (addToCartBtn) {
+            addToCartBtn.addEventListener("click", addCurrentProductToCart);
         }
 
         const productId = parseProductIdFromQuery();

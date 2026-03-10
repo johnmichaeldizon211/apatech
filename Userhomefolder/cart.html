@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecodrive | Cart</title>
+    <link rel="stylesheet" href="cart.css?v=20260310d" data-ecodrive-user-cart-style="1">
+    <link rel="stylesheet" href="userhome-theme.css?v=20260310a">
+    <link rel="stylesheet" href="nav-responsive.css?v=20260306c">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="cart-page">
+    <nav class="navbar">
+        <div class="logo">ECODRIVE</div>
+
+        <div class="nav-right">
+            <ul class="nav-links">
+                <li><a href="userhome.html">Home</a></li>
+                <li><a href="bookings/bookings.html">Bookings</a></li>
+                <li><a href="userhome2.html">Ebikes Products</a></li>
+                <li><a href="contact/contact.html">Contact</a></li>
+                <li><a href="priv,rep/repair.html">Repair Booking</a></li>
+            </ul>
+
+            <div class="profile-menu">
+                <button class="profile-btn" aria-label="Profile">
+                    <img src="userhomelogo.jpg" alt="Profile">
+                </button>
+
+                <div class="dropdown">
+                    <a href="../Usersetting.html/settings.html">Account</a>
+                    <a href="../Usersetting.html/settings.html#orderSection">Order Status</a>
+                    <a class="logout-btn" href="../frontpage.html">Log Out</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="cart-shell">
+        <section class="cart-page-head">
+            <div>
+                <p class="cart-page-kicker">Saved Picks</p>
+                <h1 class="cart-page-title">Your cart, ready when you are</h1>
+                <p class="cart-page-copy">Review the ebikes you saved, adjust quantities, then continue to the existing booking flow for the model you want to reserve.</p>
+            </div>
+            <a class="cart-page-link" href="userhome2.html">Browse more models</a>
+        </section>
+
+        <section id="cart-root" aria-live="polite"></section>
+    </main>
+
+    <script src="../session.js"></script>
+    <script>
+        (function () {
+            const profileBtn = document.querySelector(".profile-menu .profile-btn");
+            const dropdown = document.querySelector(".profile-menu .dropdown");
+
+            if (profileBtn && dropdown) {
+                profileBtn.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    dropdown.classList.toggle("show");
+                });
+
+                dropdown.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                });
+
+                document.addEventListener("click", function () {
+                    dropdown.classList.remove("show");
+                });
+            }
+        })();
+    </script>
+</body>
+</html>
