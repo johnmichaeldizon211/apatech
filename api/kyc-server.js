@@ -55,7 +55,10 @@ try {
     mysql = null;
 }
 
-const REQUESTED_PORT = parsePositiveInt(process.env.KYC_PORT, 5050);
+const REQUESTED_PORT = parsePositiveInt(
+    process.env.KYC_PORT,
+    parsePositiveInt(process.env.PORT, 5050)
+);
 const PORT = REQUESTED_PORT === 5500 ? 5050 : REQUESTED_PORT;
 const USED_PORT_REMAP = REQUESTED_PORT === 5500;
 const PUBLIC_API_BASE = String(process.env.PUBLIC_API_BASE || "").trim().replace(/\/+$/, "");

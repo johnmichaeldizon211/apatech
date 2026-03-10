@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="ebike2.css">
     <link rel="stylesheet" href="../nav-responsive.css?v=20260306c">
     <link rel="stylesheet" href="../userhome-theme.css?v=20260310a">
+    <link rel="stylesheet" href="../cart.css?v=20260311a">
 </head>
 <body>
     <div class="bg-shape bg-left"></div>
@@ -67,7 +68,10 @@
             </ul>
             <div class="price-row">
                 <p class="price">Price: ₱ 45,000.00</p>
-                <button class="check-btn" onclick="location.href='../payment/booking.html'">Book Now</button>
+                <div class="bike-purchase-actions">
+                    <button class="check-btn" onclick="location.href='../payment/booking.html'">Book Now</button>
+                    <button class="add-to-cart-btn-inline" type="button">Add to Cart</button>
+                </div>
             </div>
 
             <div class="bike-page-nav">
@@ -169,9 +173,11 @@
         })();
     </script>
     <script src="../../session.js"></script>
-    <script src="ebike-booking-selection.js?v=20260309b"></script>
+    <script src="../cart.js?v=20260311a"></script>
+    <script src="ebike-booking-selection.js?v=20260311a"></script>
 </body>
 </html>
+
 
 
 

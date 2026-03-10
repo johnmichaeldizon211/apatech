@@ -378,8 +378,8 @@ body {
 .dot.blue { background: #2f56aa; }
 .dot.red { background: #ff4040; }
 .dot.brown { background: #6b4a34; }
-.dot.green { background: #16a56b; }
-/* Side arrows for bike navigation */
+
+
 .bike-page-nav {
     position: fixed;
     left: 0;

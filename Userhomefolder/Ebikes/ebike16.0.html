@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="ebike16.css">
     <link rel="stylesheet" href="../nav-responsive.css?v=20260306c">
     <link rel="stylesheet" href="../userhome-theme.css?v=20260310a">
+    <link rel="stylesheet" href="../cart.css?v=20260311a">
 </head>
 <body>
     <div class="bg-shape bg-left"></div>
@@ -50,7 +51,7 @@
                 <div class="color-dots">
                     <button type="button" class="dot blue active" aria-label="Blue color" data-color="blue" data-image="../16b.png"></button>
                     <button type="button" class="dot red" aria-label="Red color" data-color="red" data-image="../16r.png"></button>
-                    <button type="button" class="dot green" aria-label="Green color" data-color="green" data-image="../16g.png"></button>
+                    <button type="button" class="dot brown" aria-label="Brown color" data-color="brown" data-image="../16g.png"></button>
                 </div>
             </div>
         </section>
@@ -69,9 +70,12 @@
                 <li><strong>Speed:</strong> 25 - 30 km/h</li>
                 <li><strong>Charging time:</strong> 6 - 8 hrs</li>
             </ul>
-            <div class="price-row">
-                <p class="price">Price: ₱60,000.00</p>
-                <button class="check-btn" onclick="location.href='../payment/booking.html'">Book Now</button>
+                        <div class="price-row">
+                <p class="price">Price: &#8369;60,000.00</p>
+                <div class="bike-purchase-actions">
+                    <button class="check-btn" onclick="location.href='../payment/booking.html'">Book Now</button>
+                    <button class="add-to-cart-btn-inline" type="button">Add to Cart</button>
+                </div>
             </div>
 
             <div class="bike-page-nav">
@@ -123,9 +127,13 @@
         })();
     </script>
     <script src="../../session.js"></script>
-    <script src="ebike-booking-selection.js?v=20260309b"></script>
+    <script src="../cart.js?v=20260311a"></script>
+    <script src="ebike-booking-selection.js?v=20260311a"></script>
 </body>
 </html>
+
+
+
 
 
 
