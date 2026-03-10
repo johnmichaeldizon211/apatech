@@ -35,7 +35,7 @@ img {
 }
 
 .container {
-    max-width: 1100px;
+    max-width: 980px;
     margin: 0 auto;
     padding: 0 32px;
 }
@@ -51,7 +51,7 @@ img {
     align-items: center;
     gap: 20px;
     padding: 16px 32px;
-    max-width: 1200px;
+    max-width: 1020px;
     margin: 0 auto;
 }
 
@@ -60,16 +60,6 @@ img {
     font-weight: 700;
     letter-spacing: 0.6px;
     color: #1b3a82;
-}
-
-.nav-search input {
-    width: 260px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid #c9dbe7;
-    background: #f7fcff;
-    font-size: 14px;
-    outline: none;
 }
 
 .nav-actions {
@@ -113,131 +103,62 @@ img {
 }
 
 .hero {
-    padding: 36px 0 12px;
+    padding: 16px 0 12px;
 }
 
-.hero-inner {
-    display: flex;
-    gap: 48px;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.hero-copy {
-    max-width: 520px;
-}
-
-.eyebrow {
-    margin: 0 0 12px;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    color: var(--muted);
-}
-
-.hero-copy h1 {
-    margin: 0 0 12px;
-    font-size: 46px;
-    color: #162b5b;
-}
-
-.hero-lead {
-    margin: 0 0 8px;
-    font-size: 18px;
-    font-weight: 600;
-    color: #213a7b;
-}
-
-.hero-body {
-    margin: 0 0 14px;
-    font-size: 15px;
-    line-height: 1.7;
-    color: #4a5a74;
-}
-
-.brand {
-    color: #1f4bbd;
-    font-weight: 600;
-}
-
-.hero-note {
-    margin: 0 0 22px;
-    font-size: 14px;
-    color: #7a879b;
-}
-
-.hero-actions {
-    display: flex;
-    gap: 12px;
-}
-
-.hero-visual {
-    position: relative;
-    min-width: 360px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.hero-circle {
-    position: absolute;
-    width: 340px;
-    height: 340px;
-    border-radius: 50%;
-    background: #cfe8f4;
-    right: -10px;
-    top: -10px;
-    z-index: 0;
-}
-
-.hero-img {
-    width: 360px;
-    border-radius: 20px;
-    position: relative;
-    z-index: 1;
-    filter: drop-shadow(0 24px 35px rgba(15, 23, 42, 0.25));
+.hero-banner-img {
+    width: 100%;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    display: block;
 }
 
 .promo {
-    padding: 28px 0 8px;
+    padding: 18px 0 6px;
 }
 
 .promo-inner {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 28px;
+    gap: 12px;
     align-items: stretch;
 }
 
 .stat-card {
     background: var(--card);
-    padding: 24px;
+    padding: 10px 12px;
     border-radius: 16px;
     box-shadow: var(--shadow);
+    max-width: 360px;
+    justify-self: start;
+    margin-top: 40px;
+    margin-left: 30px;
 }
 
 .stat-card h2 {
     margin: 0;
-    font-size: 20px;
-    color: #1c2f63;
+    font-size: 18px;
+    color: #2b4fb5;
+    font-weight: 700;
 }
 
 .stat-card h3 {
-    margin: 6px 0 12px;
+    margin: 6px 0 10px;
     font-size: 16px;
-    color: #3559a8;
+    color: #1b2437;
+    font-weight: 600;
 }
 
 .stat-card p {
-    margin: 0 0 20px;
-    color: #5a6a84;
-    line-height: 1.6;
-    font-size: 14px;
+    margin: 0 0 12px;
+    color: #6a778d;
+    line-height: 1.55;
+    font-size: 13px;
 }
 
 .stat-row {
     display: flex;
-    gap: 20px;
+    gap: 12px;
     flex-wrap: wrap;
 }
 
@@ -248,15 +169,36 @@ img {
 .stat-number {
     display: block;
     font-weight: 700;
-    font-size: 18px;
+    font-size: 16px;
     color: #1c2f63;
 }
 
 .stat-label {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
-    color: #6b7b93;
+    color: #7b879c;
     margin-top: 4px;
+}
+
+.stat-icon {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.stat-icon.riders {
+    background: #f2c94c;
+}
+
+.stat-icon.miles {
+    background: #6fcf97;
+}
+
+.stat-icon.power {
+    background: #bb6bd9;
 }
 
 .promo-card {
@@ -265,23 +207,26 @@ img {
     border-radius: 16px;
     overflow: hidden;
     box-shadow: var(--shadow);
-    min-height: 280px;
+    height: 300px;
 }
 
 .promo-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: #f2f4f8;
+    padding: 4px;
 }
 
 .promo-badge {
     position: absolute;
     left: 16px;
-    top: 16px;
-    width: 120px;
-    height: 120px;
+    top: -2px;
+    width: 130px;
+    height: 130px;
     border-radius: 50%;
-    background: radial-gradient(circle at top, #ffcc66, #e0301e);
+    background: radial-gradient(circle at 30% 30%, #ffb35c, #d7261e);
+    border: 4px solid #caa45a;
     color: #ffffff;
     font-weight: 700;
     font-size: 12px;
@@ -292,29 +237,46 @@ img {
     text-align: center;
     line-height: 1.1;
     padding: 10px;
-    box-shadow: 0 10px 20px rgba(224, 48, 30, 0.35);
+    box-shadow: 0 12px 18px rgba(128, 22, 22, 0.35);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.promo-badge span {
+.promo-badge-sub {
     margin-top: 6px;
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.promo-badge-note {
+    margin-top: 6px;
+    font-size: 9px;
     font-weight: 600;
+    color: #ffe9cc;
 }
 
 .promo-action {
     position: absolute;
-    left: 16px;
-    bottom: 16px;
+    left: 32px;
+    top: 102px;
+}
+
+.promo-action .btn {
+    border-radius: 999px;
+    padding: 6px 18px;
+    font-size: 12px;
+    background: #2e5ea8;
+    box-shadow: 0 6px 12px rgba(21, 40, 90, 0.35);
 }
 
 .lineup {
-    padding: 24px 0 48px;
+    padding: 12px 0 32px;
 }
 
-.lineup-inner {
+.lineup-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24px;
+    grid-template-rows: auto auto;
+    gap: 12px;
     align-items: stretch;
 }
 
@@ -322,50 +284,42 @@ img {
 .about-card {
     background: var(--card);
     border-radius: 16px;
-    padding: 16px;
+    padding: 10px;
     box-shadow: var(--shadow);
     position: relative;
     overflow: hidden;
 }
 
+.lineup-about {
+    min-height: 280px;
+}
+
 .product-card img {
     width: 100%;
-    height: 220px;
-    object-fit: cover;
+    height: 270px;
+    object-fit: contain;
+    background: #f2f4f8;
+    padding: 4px;
     border-radius: 12px;
 }
 
-.product-feature img {
-    height: 240px;
+.lineup-blitz {
+    height: 300px;
 }
 
-.product-label {
-    position: absolute;
-    left: 26px;
-    bottom: 26px;
-    background: rgba(15, 23, 42, 0.78);
-    color: #ffffff;
-    padding: 6px 10px;
-    border-radius: 10px;
-    font-size: 12px;
-    letter-spacing: 0.6px;
+.lineup-blitz img {
+    height: 100%;
 }
 
-.product-chip {
-    position: absolute;
-    right: 22px;
-    bottom: 26px;
-    background: #f8fafc;
-    color: #1c2f63;
-    padding: 6px 10px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
+.lineup-econo img,
+.lineup-ecab img {
+    height: 260px;
 }
+
 
 .about-card h2 {
     margin: 0 0 6px;
-    font-size: 20px;
+    font-size: 14px;
     color: #1c2f63;
 }
 
@@ -377,35 +331,17 @@ img {
 }
 
 .about-card p {
-    margin: 0 0 12px;
-    font-size: 14px;
-    line-height: 1.6;
+    margin: 0 0 8px;
+    font-size: 11px;
+    line-height: 1.5;
     color: #5a6a84;
-}
-
-.about-banner {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 120px;
-    height: 70px;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 2px solid #2b6fe3;
-    box-shadow: 0 10px 16px rgba(15, 23, 42, 0.18);
-}
-
-.about-banner img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
 }
 
 .about-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 6px;
 }
 
 .pill {
@@ -475,17 +411,8 @@ img {
         padding: 0 20px;
     }
 
-    .hero-inner {
-        flex-direction: column;
-        text-align: left;
-    }
-
-    .hero-visual {
-        order: -1;
-    }
-
     .promo-inner,
-    .lineup-inner {
+    .lineup-grid {
         grid-template-columns: 1fr;
     }
 
@@ -505,23 +432,9 @@ img {
         width: 100%;
     }
 
-    .hero-copy h1 {
-        font-size: 36px;
-    }
-
-    .hero-circle {
-        width: 260px;
-        height: 260px;
-        right: 0;
-    }
-
-    .hero-img {
-        width: 280px;
-    }
-
     .product-card img,
     .product-feature img {
-        height: 200px;
+        height: 220px;
     }
 
     .footer-inner {
