@@ -329,11 +329,74 @@ document.addEventListener("DOMContentLoaded", function () {
         return "req_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
     }
 
-    function openRequirementAttachment(dataUrl) {
-        const popup = window.open(dataUrl, "_blank", "noopener");
+    function buildRequirementPreviewHtml(attachment) {
+        const fileName = escapeHtml(String(attachment && attachment.fileName || "Attachment"));
+        const mime = escapeHtml(String(attachment && attachment.mime || ""));
+        const sizeLabel = formatFileSize(attachment && attachment.sizeBytes);
+        const uploadedAt = formatDateTime(attachment && attachment.uploadedAt);
+        const metaParts = [];
+        if (sizeLabel) {
+            metaParts.push(sizeLabel);
+        }
+        if (uploadedAt) {
+            metaParts.push(uploadedAt);
+        }
+        const metaLine = metaParts.length ? ("<div class=\"meta\">" + escapeHtml(metaParts.join(" • ")) + "</div>") : "";
+        return "<!DOCTYPE html>"
+            + "<html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+            + "<title>Ecodrive Requirement</title>"
+            + "<style>"
+            + "*{box-sizing:border-box}body{margin:0;padding:16px;background:#eef2f7;font-family:'Poppins',Arial,sans-serif;color:#0f172a}"
+            + ".sheet{max-width:880px;margin:0 auto;background:#fff;border:1px solid #d7e0ee;border-radius:16px;padding:18px 20px}"
+            + ".brand{font-weight:700;font-size:18px;color:#1f3f89;letter-spacing:0.6px;text-align:center}"
+            + ".title{margin:8px 0 4px;font-size:16px;font-weight:600;text-align:center}"
+            + ".meta{text-align:center;font-size:12px;color:#475569}"
+            + ".preview{margin:16px 0;display:flex;justify-content:center;align-items:center;background:#f8fafc;border:1px dashed #c7d2fe;border-radius:12px;min-height:360px;overflow:hidden}"
+            + ".preview img{max-width:100%;height:auto;display:block}"
+            + ".preview iframe{width:100%;height:520px;border:none}"
+            + ".actions{display:flex;justify-content:center;gap:10px;margin-top:10px}"
+            + ".actions button{border:1px solid #1f3f89;border-radius:999px;padding:8px 16px;background:#fff;color:#1f3f89;font-weight:600;cursor:pointer}"
+            + ".actions .download{background:#1f3f89;color:#fff}"
+            + "@media print{body{background:#fff;padding:0}.sheet{border:none;border-radius:0}.actions{display:none}}"
+            + "</style></head><body>"
+            + "<div class=\"sheet\">"
+            + "<div class=\"brand\">ECODRIVE</div>"
+            + "<div class=\"title\">" + fileName + "</div>"
+            + (mime ? ("<div class=\"meta\">" + mime + "</div>") : "")
+            + metaLine
+            + "<div id=\"requirementPreview\" class=\"preview\"></div>"
+            + "<div class=\"actions\">"
+            + "<button type=\"button\" class=\"download\" id=\"requirementDownloadBtn\">Download</button>"
+            + "<button type=\"button\" id=\"requirementPrintBtn\">Print</button>"
+            + "</div>"
+            + "</div>"
+            + "<script>"
+            + "const dataUrl=" + JSON.stringify(String(attachment && attachment.dataUrl || "")) + ";"
+            + "const mime=" + JSON.stringify(String(attachment && attachment.mime || "")) + ";"
+            + "const fileName=" + JSON.stringify(String(attachment && attachment.fileName || "attachment")) + ";"
+            + "const preview=document.getElementById('requirementPreview');"
+            + "const isPdf=/pdf/i.test(mime)||/^data:application\\/pdf/i.test(dataUrl);"
+            + "if(isPdf){const frame=document.createElement('iframe');frame.src=dataUrl;preview.appendChild(frame);}else{const img=document.createElement('img');img.src=dataUrl;img.alt=fileName;preview.appendChild(img);}"
+            + "document.getElementById('requirementPrintBtn').addEventListener('click',()=>window.print());"
+            + "document.getElementById('requirementDownloadBtn').addEventListener('click',()=>{const a=document.createElement('a');a.href=dataUrl;a.download=fileName||'attachment';document.body.appendChild(a);a.click();document.body.removeChild(a);});"
+            + "</script>"
+            + "</body></html>";
+    }
+
+    function openRequirementAttachment(attachment) {
+        if (!attachment || !attachment.dataUrl) {
+            window.alert("Attachment is unavailable for this record.");
+            return;
+        }
+        const popup = window.open("", "_blank", "width=920,height=820");
         if (!popup) {
             window.alert("Please allow pop-ups to view this document.");
+            return;
         }
+        popup.document.open();
+        popup.document.write(buildRequirementPreviewHtml(attachment));
+        popup.document.close();
+        popup.focus();
     }
 
     function downloadRequirementAttachment(dataUrl, fileName) {
@@ -2191,7 +2254,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 if (action === "view") {
-                    openRequirementAttachment(attachment.dataUrl);
+                    openRequirementAttachment(attachment);
                     return;
                 }
                 if (action === "download") {
