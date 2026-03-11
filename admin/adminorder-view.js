@@ -246,11 +246,21 @@ document.addEventListener("DOMContentLoaded", function () {
             || mergedStatus.includes("cancel");
     }
 
-    function isInstallmentPaymentLocked(record) {
+    function getInstallmentPaymentLockReason(record) {
         if (getBookingMode(record) !== "installment") {
-            return false;
+            return "";
         }
-        return isRejectedOrCancelledBooking(record);
+        if (isRejectedOrCancelledBooking(record)) {
+            return "Cancelled or rejected bookings cannot be marked as paid.";
+        }
+        if (!canPrintReceiptStatus(record && record.status, record && record.fulfillmentStatus)) {
+            return "Approve the installment application before marking it as paid.";
+        }
+        return "";
+    }
+
+    function isInstallmentPaymentLocked(record) {
+        return Boolean(getInstallmentPaymentLockReason(record));
     }
 
     function setTextContent(target, value, fallback) {
@@ -2332,7 +2342,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 if (isInstallmentPaymentLocked(currentBooking)) {
-                    window.alert("Cancelled installment bookings cannot be marked as paid.");
+                    window.alert(getInstallmentPaymentLockReason(currentBooking) || "Installment payment cannot be marked as paid yet.");
                     return;
                 }
 
