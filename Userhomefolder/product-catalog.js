@@ -41,6 +41,22 @@
         { id: 15, model: "E-CAB 1000", price: 75000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 15.png", detailUrl: "/Userhomefolder/Ebikes/ebike15.0.html", isActive: true },
         { id: 16, model: "ECONO 800 MP", price: 60000, category: "3-Wheel", imageUrl: "/Userhomefolder/image 16.png", detailUrl: "/Userhomefolder/Ebikes/ebike16.0.html", isActive: true }
     ];
+    const SUGGESTED_CONFIG = [
+        { matchers: ["ECONO 350 MINI-II"], detailId: 8, badge: "Best Seller" },
+        { matchers: ["ECONO 500 MP"], detailId: 7, badge: "Popular" },
+        { matchers: ["BLITZ 2000"], detailId: 1, badge: "Top Pick" },
+        { matchers: ["E-CARGO 800", "E-CARGO 800J"], detailId: 13, badge: "Suggested" }
+    ];
+    const BEST_SELLER_FILTER_CONFIG = [
+        { matchers: ["ECONO 350 MINI-II"], detailId: 8 },
+        { matchers: ["ECONO 500 MP"], detailId: 7 },
+        { matchers: ["BLITZ 2000"], detailId: 1 }
+    ];
+    const RECOMMENDED_FILTER_CONFIG = [
+        { matchers: ["E-CARGO 800", "E-CARGO 800J"], detailId: 13 },
+        { matchers: ["ECONO 800 MP II"], detailId: 12 },
+        { matchers: ["ECAB 100V V2", "E-CAB MAX 1500"], detailId: 11 }
+    ];
     const DEFAULT_IMAGE_BY_MODEL = DEFAULT_PRODUCTS.reduce(function (map, item) {
         const key = String(item && item.model || "").trim().toLowerCase();
         if (key && item && item.imageUrl) {
@@ -59,6 +75,12 @@
 
     function normalizeText(value) {
         return String(value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function normalizeKey(value) {
+        return normalizeText(value)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "");
     }
 
     function parseWheelCategory(value) {
@@ -107,6 +129,12 @@
         return "";
     }
 
+    function extractDetailId(detailUrl) {
+        const raw = String(detailUrl || "").trim();
+        const match = raw.match(/ebike(\d+)\.0\.html/i);
+        return match ? Number(match[1]) : 0;
+    }
+
     function resolveCategory(rawCategory, detailUrl) {
         const fromDetail = inferCategoryFromDetailUrl(detailUrl);
         if (fromDetail) {
@@ -118,6 +146,89 @@
 
     function normalizeCategory(value) {
         return parseWheelCategory(value) || "Other";
+    }
+
+    function matchesSuggestedConfig(product, config) {
+        const detailId = extractDetailId(product && product.detailUrl);
+        if (config.detailId && detailId === config.detailId) {
+            return true;
+        }
+        const modelKey = normalizeKey(product && product.model);
+        if (!modelKey) {
+            return false;
+        }
+        return (config.matchers || []).some(function (matcher) {
+            const matcherKey = normalizeKey(matcher);
+            return matcherKey && (modelKey === matcherKey || modelKey.includes(matcherKey) || matcherKey.includes(modelKey));
+        });
+    }
+
+    function pickSuggestedProducts(catalog, configs) {
+        const available = (Array.isArray(catalog) ? catalog : []).filter(isCatalogProductAvailable);
+        const used = new Set();
+        return (configs || [])
+            .map(function (config) {
+                const match = available.find(function (product) {
+                    const key = String(product.id || "") + "|" + String(product.detailUrl || product.model || "");
+                    if (used.has(key)) {
+                        return false;
+                    }
+                    return matchesSuggestedConfig(product, config);
+                });
+                if (!match) {
+                    return null;
+                }
+                used.add(String(match.id || "") + "|" + String(match.detailUrl || match.model || ""));
+                return Object.assign({}, match, { suggestedBadge: config.badge || "Suggested" });
+            })
+            .filter(Boolean);
+    }
+
+    function applyPricePreset(products, preset) {
+        const mode = String(preset || "").trim().toLowerCase();
+        if (!mode) {
+            return products;
+        }
+        if (mode === "best") {
+            return products.filter(function (item) {
+                return matchesSuggestedConfig(item, BEST_SELLER_FILTER_CONFIG);
+            });
+        }
+        if (mode === "recommended") {
+            return products.filter(function (item) {
+                return matchesSuggestedConfig(item, RECOMMENDED_FILTER_CONFIG);
+            });
+        }
+
+        const prices = products
+            .map(function (item) { return Number(item.price || 0); })
+            .filter(function (price) { return Number.isFinite(price) && price > 0; })
+            .sort(function (a, b) { return a - b; });
+        if (!prices.length) {
+            return products;
+        }
+        const lowIndex = Math.floor((prices.length - 1) / 3);
+        const midIndex = Math.floor((prices.length - 1) * 2 / 3);
+        const lowMax = prices[lowIndex];
+        const midMax = prices[midIndex];
+
+        if (mode === "low") {
+            return products.filter(function (item) {
+                return Number(item.price || 0) <= lowMax;
+            });
+        }
+        if (mode === "mid") {
+            return products.filter(function (item) {
+                const price = Number(item.price || 0);
+                return price > lowMax && price <= midMax;
+            });
+        }
+        if (mode === "high") {
+            return products.filter(function (item) {
+                return Number(item.price || 0) > midMax;
+            });
+        }
+        return products;
     }
 
     function parsePrice(value) {
@@ -424,6 +535,15 @@
         });
     }
 
+    function formatPeso(amount) {
+        return new Intl.NumberFormat("en-PH", {
+            style: "currency",
+            currency: "PHP",
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(Number(amount || 0));
+    }
+
     function buildBookingUrl(product) {
         const params = new URLSearchParams();
         params.set("model", product.model || "Ecodrive E-Bike");
@@ -518,6 +638,64 @@
         return card;
     }
 
+    function createSuggestedCard(product) {
+        const card = document.createElement("article");
+        card.className = "suggested-card";
+
+        const badge = document.createElement("span");
+        badge.className = "suggested-badge";
+        badge.textContent = product.suggestedBadge || "Suggested";
+        card.appendChild(badge);
+
+        const image = document.createElement("img");
+        image.src = resolveAssetPath(product.imageUrl || getDefaultImageForModel(product.model));
+        image.alt = product.model || "E-Bike";
+        card.appendChild(image);
+
+        const title = document.createElement("h3");
+        title.className = "suggested-title";
+        title.textContent = product.model || "E-Bike";
+        card.appendChild(title);
+
+        const meta = document.createElement("div");
+        meta.className = "suggested-meta";
+        const price = document.createElement("span");
+        price.textContent = formatPeso(product.price);
+        const category = document.createElement("span");
+        category.textContent = product.category || "E-Bike";
+        meta.appendChild(price);
+        meta.appendChild(category);
+        card.appendChild(meta);
+
+        const action = document.createElement("button");
+        action.className = "suggested-action";
+        action.type = "button";
+        action.textContent = "View";
+        action.addEventListener("click", function () {
+            window.location.href = getProductActionUrl(product);
+        });
+        card.appendChild(action);
+
+        return card;
+    }
+
+    function renderSuggestedSection(catalog) {
+        const grid = document.getElementById("suggested-grid");
+        if (!grid) {
+            return;
+        }
+        const picks = pickSuggestedProducts(catalog, SUGGESTED_CONFIG);
+        grid.innerHTML = "";
+        if (!picks.length) {
+            return;
+        }
+        const fragment = document.createDocumentFragment();
+        picks.forEach(function (product) {
+            fragment.appendChild(createSuggestedCard(product));
+        });
+        grid.appendChild(fragment);
+    }
+
     function detectCategoryFromPage() {
         const fileName = String(window.location.pathname.split("/").pop() || "").toLowerCase();
         if (fileName.includes("2wheel")) {
@@ -532,36 +710,69 @@
         return "";
     }
 
-    function renderProducts(container, catalog, categoryFilter) {
+    function getFilterState() {
+        const searchInput = document.getElementById("catalog-search");
+        const wheelSelect = document.getElementById("catalog-wheel");
+        const priceSelect = document.getElementById("catalog-price");
+
+        const query = normalizeText(searchInput && searchInput.value).toLowerCase();
+        const wheel = wheelSelect ? normalizeText(wheelSelect.value) : "";
+        const pricePreset = priceSelect ? normalizeText(priceSelect.value) : "";
+
+        return {
+            query: query,
+            wheel: wheel,
+            pricePreset: pricePreset
+        };
+    }
+
+    function renderProducts(container, catalog, categoryFilter, filterState) {
         if (!container) {
             return;
         }
 
+        const filters = filterState && typeof filterState === "object" ? filterState : {};
         const normalizedCategory = parseWheelCategory(categoryFilter);
-        const shouldFilter = Boolean(normalizedCategory);
+        const wheelFilter = parseWheelCategory(filters.wheel);
+        const activeCategory = wheelFilter || normalizedCategory;
+        const shouldFilterCategory = Boolean(activeCategory);
+        const query = normalizeText(filters.query).toLowerCase();
+        const pricePreset = normalizeText(filters.pricePreset).toLowerCase();
+
         const scoped = catalog
             .filter(function (item) {
                 return isCatalogProductAvailable(item);
             })
             .filter(function (item) {
-                if (!shouldFilter) {
+                if (!shouldFilterCategory) {
                     return true;
                 }
-                return item.category === normalizedCategory;
+                return item.category === activeCategory;
+            })
+            .filter(function (item) {
+                if (!query) {
+                    return true;
+                }
+                const haystack = normalizeKey([item.model, item.category, item.info].filter(Boolean).join(" "));
+                const needle = normalizeKey(query);
+                return needle ? haystack.includes(needle) : true;
             });
+
+        const priced = applyPricePreset(scoped, pricePreset);
+        const finalList = priced;
 
         container.innerHTML = "";
 
-        if (!scoped.length) {
+        if (!finalList.length) {
             const emptyCard = document.createElement("article");
             emptyCard.className = "card";
-            emptyCard.innerHTML = "<div class=\"card-body\"><h3 class=\"prod-name\">No models available</h3><p class=\"price\">Please check again later.</p></div>";
+            emptyCard.innerHTML = "<div class=\"card-body\"><h3 class=\"prod-name\">No models available</h3><p class=\"price\">Try adjusting the filters.</p></div>";
             container.appendChild(emptyCard);
             return;
         }
 
         const fragment = document.createDocumentFragment();
-        scoped.forEach(function (product) {
+        finalList.forEach(function (product) {
             fragment.appendChild(createCard(product));
         });
         container.appendChild(fragment);
@@ -581,7 +792,9 @@
         try {
             const catalog = await loadCatalog();
             const categoryFilter = opts.category || detectCategoryFromPage();
-            renderProducts(container, catalog, categoryFilter);
+            const filterState = getFilterState();
+            renderProducts(container, catalog, categoryFilter, filterState);
+            renderSuggestedSection(catalog);
             return catalog;
         } finally {
             clearCatalogLoading();
@@ -603,10 +816,49 @@
         ROOT.classList.remove("catalog-loading");
     }
 
+    function setupCatalogFilters() {
+        const searchInput = document.getElementById("catalog-search");
+        const wheelSelect = document.getElementById("catalog-wheel");
+        const priceSelect = document.getElementById("catalog-price");
+        const clearBtn = document.getElementById("catalog-clear");
+        if (!(searchInput || wheelSelect || priceSelect || clearBtn)) {
+            return;
+        }
+
+        let debounceId = null;
+        function scheduleRender() {
+            if (debounceId) {
+                clearTimeout(debounceId);
+            }
+            debounceId = setTimeout(function () {
+                void renderPageProducts();
+            }, 160);
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener("input", scheduleRender);
+        }
+        if (wheelSelect) {
+            wheelSelect.addEventListener("change", scheduleRender);
+        }
+        if (priceSelect) {
+            priceSelect.addEventListener("change", scheduleRender);
+        }
+        if (clearBtn) {
+            clearBtn.addEventListener("click", function () {
+                if (searchInput) searchInput.value = "";
+                if (wheelSelect) wheelSelect.value = "";
+                if (priceSelect) priceSelect.value = "";
+                scheduleRender();
+            });
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         if (!IS_USERHOME_CATALOG_PAGE) {
             return;
         }
+        setupCatalogFilters();
         void renderPageProducts();
     });
 

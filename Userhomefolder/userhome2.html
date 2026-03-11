@@ -47,12 +47,44 @@
 <main>
     <section class="page-head">
         <h1 class="section-title">E-BIKES</h1>
-        <div class="category-filter">
-            <a class="filter active" href="userhome2.html">ALL</a>
-            <a class="filter" href="userhome2-2wheel.html">2-WHEEL</a>
-            <a class="filter" href="userhome2-3wheel.html">3-WHEEL</a>
-            <a class="filter" href="userhome2-4wheel.html">4-WHEEL</a>
+    </section>
+
+    <section class="catalog-filters" aria-label="Search and filters">
+        <div class="search-field">
+            <label class="sr-only" for="catalog-search">Search ebike</label>
+            <input id="catalog-search" type="search" placeholder="Search model or keyword">
         </div>
+        <div class="filter-field">
+            <label for="catalog-wheel">Wheel Type</label>
+            <select id="catalog-wheel">
+                <option value="">All wheels</option>
+                <option value="2-Wheel">2-Wheel</option>
+                <option value="3-Wheel">3-Wheel</option>
+                <option value="4-Wheel">4-Wheel</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="catalog-price">Filter</label>
+            <select id="catalog-price">
+                <option value="">All prices</option>
+                <option value="low">Lowest price</option>
+                <option value="mid">Mid price</option>
+                <option value="high">High price</option>
+                <option value="best">Best seller</option>
+                <option value="recommended">Most recommended</option>
+            </select>
+        </div>
+        <button type="button" class="filter-clear" id="catalog-clear">Clear</button>
+    </section>
+
+    <section class="suggested-section" aria-label="Best sellers and suggested ebikes">
+        <div class="suggested-head">
+            <div>
+                <p class="suggested-kicker">Top Picks</p>
+                <h2>Best sellers and suggested rides</h2>
+            </div>
+        </div>
+        <div class="suggested-grid" id="suggested-grid"></div>
     </section>
 
     <section class="products">
