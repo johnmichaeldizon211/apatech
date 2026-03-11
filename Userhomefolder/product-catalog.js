@@ -64,6 +64,8 @@
         }
         return map;
     }, {});
+    let globalBookingStats = null;
+    let bookingStatsPromise = null;
 
     function safeParse(raw) {
         try {
@@ -184,20 +186,141 @@
             .filter(Boolean);
     }
 
+    function extractModelFromRecord(record) {
+        if (!record || typeof record !== "object") {
+            return "";
+        }
+        return String(
+            record.model
+            || record.bikeModel
+            || record.selectedModel
+            || (record.selectedBike && record.selectedBike.model)
+            || (record.item && record.item.model)
+            || ""
+        ).trim();
+    }
+
+    function readBookingRecordsFromStorage() {
+        const keys = ["ecodrive_bookings", "ecodrive_orders", "orders"];
+        const records = [];
+        keys.forEach(function (key) {
+            const parsed = safeParse(localStorage.getItem(key));
+            if (Array.isArray(parsed)) {
+                parsed.forEach(function (entry) {
+                    if (entry && typeof entry === "object") {
+                        records.push(entry);
+                    }
+                });
+            }
+        });
+        const latest = safeParse(localStorage.getItem("latestBooking"));
+        if (latest && typeof latest === "object") {
+            records.push(latest);
+        }
+        return records;
+    }
+
+    function getLocalBookingCountsMap() {
+        const counts = new Map();
+        const records = readBookingRecordsFromStorage();
+        records.forEach(function (record) {
+            const model = extractModelFromRecord(record);
+            if (!model) {
+                return;
+            }
+            const key = normalizeKey(model);
+            if (!key) {
+                return;
+            }
+            counts.set(key, (counts.get(key) || 0) + 1);
+        });
+        return counts;
+    }
+
+    function getBookingCountsMap() {
+        if (globalBookingStats && globalBookingStats.counts instanceof Map) {
+            return globalBookingStats.counts;
+        }
+        return getLocalBookingCountsMap();
+    }
+
+    function getBookedRanking(products, countsMap) {
+        const list = (Array.isArray(products) ? products : [])
+            .map(function (product) {
+                const key = normalizeKey(product && product.model);
+                const count = key && countsMap ? (countsMap.get(key) || 0) : 0;
+                return { product: product, count: count };
+            })
+            .filter(function (entry) {
+                return entry.product && entry.count > 0;
+            })
+            .sort(function (a, b) {
+                if (b.count !== a.count) {
+                    return b.count - a.count;
+                }
+                return String(a.product.model || "").localeCompare(String(b.product.model || ""));
+            });
+        return list;
+    }
+
+    function buildHighlightProduct(product, count, badge) {
+        return Object.assign({}, product, {
+            badge: badge,
+            ratingLabel: count > 0 ? count + " bookings" : (product.category || "Suggested")
+        });
+    }
+
+    function getBookingHighlights(catalog, options) {
+        const opts = options && typeof options === "object" ? options : {};
+        const limitBest = Number.isFinite(opts.limitBest) ? opts.limitBest : 3;
+        const limitPopular = Number.isFinite(opts.limitPopular) ? opts.limitPopular : 3;
+        const counts = getBookingCountsMap();
+        const ranking = getBookedRanking(catalog, counts);
+        const bestSellers = ranking.slice(0, limitBest).map(function (entry) {
+            return buildHighlightProduct(entry.product, entry.count, "Best Seller");
+        });
+        let mostPopular = ranking.slice(limitBest, limitBest + limitPopular).map(function (entry) {
+            return buildHighlightProduct(entry.product, entry.count, "Most Popular");
+        });
+        if (!mostPopular.length && ranking.length) {
+            mostPopular = ranking.slice(0, limitPopular).map(function (entry) {
+                return buildHighlightProduct(entry.product, entry.count, "Most Popular");
+            });
+        }
+        return {
+            bestSellers: bestSellers,
+            mostPopular: mostPopular,
+            hasData: ranking.length > 0
+        };
+    }
+
+    function pickFallbackMatches(products, configs) {
+        return (Array.isArray(products) ? products : []).filter(function (item) {
+            return matchesSuggestedConfig(item, configs);
+        });
+    }
+
     function applyPricePreset(products, preset) {
         const mode = String(preset || "").trim().toLowerCase();
         if (!mode) {
             return products;
         }
+        const counts = getBookingCountsMap();
+        const ranking = getBookedRanking(products, counts);
         if (mode === "best") {
-            return products.filter(function (item) {
-                return matchesSuggestedConfig(item, BEST_SELLER_FILTER_CONFIG);
-            });
+            if (ranking.length) {
+                return ranking.slice(0, 3).map(function (entry) { return entry.product; });
+            }
+            return pickFallbackMatches(products, BEST_SELLER_FILTER_CONFIG);
         }
         if (mode === "recommended") {
-            return products.filter(function (item) {
-                return matchesSuggestedConfig(item, RECOMMENDED_FILTER_CONFIG);
-            });
+            if (ranking.length > 3) {
+                return ranking.slice(3, 6).map(function (entry) { return entry.product; });
+            }
+            if (ranking.length) {
+                return ranking.slice(0, 3).map(function (entry) { return entry.product; });
+            }
+            return pickFallbackMatches(products, RECOMMENDED_FILTER_CONFIG);
         }
 
         const prices = products
@@ -435,6 +558,79 @@
 
     function getApiUrl(path) {
         return API_BASE ? `${API_BASE}${path}` : path;
+    }
+
+    function getApiHeaders() {
+        const headers = {};
+        const token = global.EcodriveSession && typeof global.EcodriveSession.getToken === "function"
+            ? String(global.EcodriveSession.getToken() || "").trim()
+            : "";
+        if (token) {
+            headers.Authorization = "Bearer " + token;
+        }
+        return headers;
+    }
+
+    function normalizeBookingStatsPayload(payload) {
+        if (!payload || payload.success !== true || !Array.isArray(payload.models)) {
+            return null;
+        }
+        const counts = new Map();
+        payload.models.forEach(function (row) {
+            const model = String(row && row.model || "").trim();
+            const key = normalizeKey(model);
+            if (!key) {
+                return;
+            }
+            const count = Number(row && row.bookings || 0);
+            const numeric = Number.isFinite(count) ? count : 0;
+            counts.set(key, (counts.get(key) || 0) + numeric);
+        });
+        return {
+            counts: counts,
+            asOf: payload.asOf || null
+        };
+    }
+
+    async function fetchBookingStatsFromApi() {
+        try {
+            const response = await fetch(getApiUrl("/api/bookings/stats"), {
+                method: "GET",
+                headers: getApiHeaders()
+            });
+            if (!response.ok) {
+                return null;
+            }
+            const payload = await response.json().catch(function () {
+                return null;
+            });
+            return normalizeBookingStatsPayload(payload);
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function ensureBookingStatsLoaded() {
+        if (globalBookingStats) {
+            return Promise.resolve(globalBookingStats);
+        }
+        if (bookingStatsPromise) {
+            return bookingStatsPromise;
+        }
+        bookingStatsPromise = fetchBookingStatsFromApi()
+            .then(function (result) {
+                if (result) {
+                    globalBookingStats = result;
+                }
+                return globalBookingStats;
+            })
+            .catch(function () {
+                return null;
+            })
+            .finally(function () {
+                bookingStatsPromise = null;
+            });
+        return bookingStatsPromise;
     }
 
     function getDefaultImageForModel(model) {
@@ -684,7 +880,17 @@
         if (!grid) {
             return;
         }
-        const picks = pickSuggestedProducts(catalog, SUGGESTED_CONFIG);
+        const counts = getBookingCountsMap();
+        const ranked = getBookedRanking(catalog, counts);
+        let picks = ranked.slice(0, 4).map(function (entry, index) {
+            const badge = index < 2 ? "Best Seller" : "Recommended";
+            return Object.assign({}, entry.product, {
+                suggestedBadge: badge
+            });
+        });
+        if (!picks.length) {
+            picks = pickSuggestedProducts(catalog, SUGGESTED_CONFIG);
+        }
         grid.innerHTML = "";
         if (!picks.length) {
             return;
@@ -791,6 +997,7 @@
 
         try {
             const catalog = await loadCatalog();
+            await ensureBookingStatsLoaded();
             const categoryFilter = opts.category || detectCategoryFromPage();
             const filterState = getFilterState();
             renderProducts(container, catalog, categoryFilter, filterState);
@@ -875,7 +1082,9 @@
     global.EcodriveCatalog = {
         loadCatalog: loadCatalog,
         renderPageProducts: renderPageProducts,
-        getCachedCatalog: getCachedCatalog
+        getCachedCatalog: getCachedCatalog,
+        getBookingHighlights: getBookingHighlights,
+        ensureBookingStatsLoaded: ensureBookingStatsLoaded
     };
 })(window);
 

@@ -7107,6 +7107,44 @@ async function handleCancelBooking(req, res, orderId) {
     }
 }
 
+async function handlePublicBookingModelStats(_req, res, parsedUrl) {
+    try {
+        const rawLimit = Number(parsedUrl.searchParams.get("limit") || 12);
+        const limit = Number.isFinite(rawLimit)
+            ? Math.min(Math.max(Math.floor(rawLimit), 1), 50)
+            : 12;
+        const pool = await getDbPool();
+        const [rows] = await pool.execute(
+            `SELECT model,
+                    COUNT(*) AS bookings
+             FROM bookings
+             WHERE model IS NOT NULL
+               AND TRIM(model) <> ''
+               AND (review_decision IS NULL OR LOWER(review_decision) <> 'rejected')
+               AND LOWER(status) NOT LIKE '%reject%'
+               AND LOWER(status) NOT LIKE '%cancel%'
+               AND LOWER(fulfillment_status) NOT LIKE '%cancel%'
+             GROUP BY model
+             ORDER BY bookings DESC, model ASC
+             LIMIT ?`,
+            [limit]
+        );
+        const models = Array.isArray(rows)
+            ? rows.map((row) => ({
+                model: String(row.model || ""),
+                bookings: Number(row.bookings || 0)
+            }))
+            : [];
+        sendJson(res, 200, {
+            success: true,
+            asOf: new Date().toISOString(),
+            models: models
+        });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load booking stats." });
+    }
+}
+
 async function handleAdminBookings(_req, res, parsedUrl) {
     try {
         const authSession = requireAuthSession(_req, res, { role: "admin" });
@@ -8951,6 +8989,11 @@ async function requestListener(req, res) {
 
     if (req.method === "GET" && pathname === "/api/bookings") {
         await handleListBookings(req, res, parsedUrl);
+        return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/bookings/stats") {
+        await handlePublicBookingModelStats(req, res, parsedUrl);
         return;
     }
 

@@ -398,8 +398,18 @@ if (profileBtn && dropdown) {
         }
 
         const catalog = await getCatalog();
-        const bestSellers = pickConfiguredProducts(catalog, BEST_SELLER_CONFIG);
-        const mostPopular = pickConfiguredProducts(catalog, MOST_POPULAR_CONFIG);
+        if (window.EcodriveCatalog && typeof window.EcodriveCatalog.ensureBookingStatsLoaded === "function") {
+            await window.EcodriveCatalog.ensureBookingStatsLoaded();
+        }
+        const bookingHighlights = (window.EcodriveCatalog && typeof window.EcodriveCatalog.getBookingHighlights === "function")
+            ? window.EcodriveCatalog.getBookingHighlights(catalog, { limitBest: 3, limitPopular: 3 })
+            : null;
+        const bestSellers = (bookingHighlights && bookingHighlights.bestSellers && bookingHighlights.bestSellers.length)
+            ? bookingHighlights.bestSellers
+            : pickConfiguredProducts(catalog, BEST_SELLER_CONFIG);
+        const mostPopular = (bookingHighlights && bookingHighlights.mostPopular && bookingHighlights.mostPopular.length)
+            ? bookingHighlights.mostPopular
+            : pickConfiguredProducts(catalog, MOST_POPULAR_CONFIG);
         const newArrivals = pickConfiguredProducts(catalog, NEW_ARRIVAL_CONFIG);
         const dealPicks = pickConfiguredProducts(catalog, DEAL_CONFIG);
 
