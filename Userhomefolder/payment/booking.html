@@ -67,7 +67,7 @@
                 <div class="schedule-grid" role="group" aria-label="Preferred Schedule">
                     <div class="schedule-field" id="schedule-date-field">
                         <label for="schedule-date">Preferred Date</label>
-                        <input id="schedule-date" type="date" name="schedule_date" required>
+                        <select id="schedule-date" name="schedule_date" required></select>
                     </div>
                     <div class="schedule-field" id="schedule-time-field">
                         <label for="schedule-time">Preferred Time</label>
@@ -75,6 +75,39 @@
                     </div>
                 </div>
                 <p id="schedule-estimated-note" class="schedule-estimated-note" aria-live="polite"></p>
+
+                <label class="ship-label ship-title" id="ship-address-title" for="ship-street">Delivery Address</label>
+                <section class="ship-address-grid" id="ship-address-grid" aria-label="Delivery address fields">
+                    <div class="ship-address-field">
+                        <label for="ship-province">Province</label>
+                        <select class="ship-input" id="ship-province">
+                            <option value="Bulacan">Bulacan</option>
+                        </select>
+                    </div>
+                    <div class="ship-address-field">
+                        <label for="ship-city">City / Municipality</label>
+                        <select class="ship-input" id="ship-city">
+                            <option value="">Select city / municipality</option>
+                            <option value="City of Baliwag">City of Baliwag</option>
+                            <option value="San Ildefonso">San Ildefonso</option>
+                            <option value="San Rafael">San Rafael</option>
+                            <option value="Pulilan">Pulilan</option>
+                            <option value="Bustos">Bustos</option>
+                        </select>
+                    </div>
+                    <div class="ship-address-field">
+                        <label for="ship-barangay">Barangay</label>
+                        <select class="ship-input" id="ship-barangay">
+                            <option value="">Select barangay</option>
+                        </select>
+                    </div>
+                    <div class="ship-address-field ship-address-field-street">
+                        <label for="ship-street">House / Street</label>
+                        <input class="ship-input" id="ship-street" type="text" placeholder="House no., street, subdivision">
+                    </div>
+                </section>
+                <label class="ship-label ship-preview-label" for="ship-address-display">Full Address</label>
+                <input class="ship-input ship-input-readonly" id="ship-address-display" type="text" placeholder="Complete address will appear here" readonly>
 
                 <h2>Payment Method</h2>
                 <div class="payment-options" role="group" aria-label="Payment Method">
@@ -87,6 +120,12 @@
                         <span>INSTALLMENT</span>
                     </button>
                 </div>
+                <div class="price-lines">
+                    <p class="line-item"><span>Subtotal</span><span id="summary-subtotal">&#8369;0.00</span></p>
+                    <p class="line-item"><span>Shipping Fee</span><span id="summary-shipping">&#8369;0.00</span></p>
+                    <p class="line-item total"><span>Total</span><span id="summary-total">&#8369;0.00</span></p>
+                </div>
+                <button id="confirm-btn" type="button" class="confirm-btn">Confirm Booking</button>
                 <p id="form-error" class="form-error" aria-live="polite"></p>
             </form>
         </section>
@@ -96,39 +135,6 @@
             <p class="summary-subtitle" id="summary-subtitle">E-Bike</p>
 
             <img id="summary-image" src="../image 1.png" alt="Selected E-Bike">
-
-            <label class="ship-label ship-title" id="ship-address-title" for="ship-street">Delivery Address</label>
-            <section class="ship-address-grid" id="ship-address-grid" aria-label="Delivery address fields">
-                <div class="ship-address-field ship-address-field-street">
-                    <label for="ship-street">House / Street</label>
-                    <input class="ship-input" id="ship-street" type="text" placeholder="House no., street, subdivision">
-                </div>
-                <div class="ship-address-field">
-                    <label for="ship-barangay">Barangay</label>
-                    <select class="ship-input" id="ship-barangay">
-                        <option value="">Select barangay</option>
-                    </select>
-                </div>
-                <div class="ship-address-field">
-                    <label for="ship-city">City / Municipality</label>
-                    <select class="ship-input" id="ship-city">
-                        <option value="">Select city / municipality</option>
-                        <option value="City of Baliwag">City of Baliwag</option>
-                        <option value="San Ildefonso">San Ildefonso</option>
-                        <option value="San Rafael">San Rafael</option>
-                        <option value="Pulilan">Pulilan</option>
-                        <option value="Bustos">Bustos</option>
-                    </select>
-                </div>
-                <div class="ship-address-field">
-                    <label for="ship-province">Province</label>
-                    <select class="ship-input" id="ship-province">
-                        <option value="Bulacan">Bulacan</option>
-                    </select>
-                </div>
-            </section>
-            <label class="ship-label ship-preview-label" for="ship-address-display">Full Address</label>
-            <input class="ship-input ship-input-readonly" id="ship-address-display" type="text" placeholder="Complete address will appear here" readonly>
 
             <section class="ship-map-panel" id="ship-map-panel" aria-label="Shipping address map">
                 <div class="ship-map-actions">
@@ -144,14 +150,6 @@
                     src="https://www.openstreetmap.org/export/embed.html?bbox=120.9400%2C14.5200%2C121.0600%2C14.6600&layer=mapnik&marker=14.5995%2C120.9842"></iframe>
                 <p id="ship-map-status" class="ship-map-status" aria-live="polite">Map preview updates when you change the address.</p>
             </section>
-
-            <div class="price-lines">
-                <p class="line-item"><span>Subtotal</span><span id="summary-subtotal">&#8369;0.00</span></p>
-                <p class="line-item"><span>Shipping Fee</span><span id="summary-shipping">&#8369;0.00</span></p>
-                <p class="line-item total"><span>Total</span><span id="summary-total">&#8369;0.00</span></p>
-            </div>
-
-            <button id="confirm-btn" type="button" class="confirm-btn">Confirm Booking</button>
         </aside>
     </main>
     <script src="../../session.js"></script>

@@ -293,12 +293,76 @@
         return value;
     }
 
-    function getTomorrowDateStart() {
-        return getDateStartOffset(1);
+    function getTodayDateStart() {
+        return getDateStartOffset(0);
     }
 
     function getBookingWindowMaxDateStart() {
         return getDateStartOffset(3);
+    }
+
+    function getCurrentYearRange() {
+        const year = new Date().getFullYear();
+        return {
+            start: new Date(year, 0, 1, 0, 0, 0, 0),
+            end: new Date(year, 11, 31, 0, 0, 0, 0)
+        };
+    }
+
+    function clampScheduleWindowToCurrentYear(minDate, maxDate) {
+        const yearRange = getCurrentYearRange();
+        let min = minDate;
+        let max = maxDate;
+
+        if (min < yearRange.start) {
+            min = yearRange.start;
+        }
+        if (max > yearRange.end) {
+            max = yearRange.end;
+        }
+        if (min > max) {
+            min = max;
+        }
+
+        return { min, max };
+    }
+
+    function renderScheduleDateOptions(selectedValue) {
+        if (!scheduleDateInput) {
+            return { options: [], value: "" };
+        }
+
+        const window = clampScheduleWindowToCurrentYear(
+            getTodayDateStart(),
+            getBookingWindowMaxDateStart()
+        );
+        const options = [];
+        const cursor = new Date(window.min);
+        cursor.setHours(0, 0, 0, 0);
+        const max = new Date(window.max);
+        max.setHours(0, 0, 0, 0);
+
+        while (cursor.getTime() <= max.getTime()) {
+            options.push(formatLocalDateInputValue(cursor));
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
+        const desired = options.includes(selectedValue) ? selectedValue : (options[0] || "");
+        scheduleDateInput.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select date";
+        scheduleDateInput.appendChild(placeholder);
+
+        options.forEach(function (value) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = formatScheduleDateDisplay(value);
+            scheduleDateInput.appendChild(option);
+        });
+
+        scheduleDateInput.value = desired;
+        return { options, value: desired };
     }
 
     function isScheduleDateWithinWindow(dateValue) {
@@ -306,14 +370,19 @@
         if (!selectedDate) {
             return false;
         }
-        const min = getTomorrowDateStart().getTime();
-        const max = getBookingWindowMaxDateStart().getTime();
+        const window = clampScheduleWindowToCurrentYear(
+            getTodayDateStart(),
+            getBookingWindowMaxDateStart()
+        );
+        const min = window.min.getTime();
+        const max = window.max.getTime();
         const selected = selectedDate.getTime();
         return selected >= min && selected <= max;
     }
 
     function getScheduleWindowValidationMessage() {
-        return "Booking date must be within tomorrow and the next 2 days.";
+        const year = new Date().getFullYear();
+        return "Booking date must be within today and the next 3 days of " + year + ".";
     }
 
     function parseScheduleDateTime(dateValue, timeValue) {
@@ -366,16 +435,8 @@
     }
 
     function initializeScheduleInputs() {
-        const minimumDate = getTomorrowDateStart();
-        const maximumDate = getBookingWindowMaxDateStart();
-        const minimumDateValue = formatLocalDateInputValue(minimumDate);
-        const maximumDateValue = formatLocalDateInputValue(maximumDate);
-        scheduleDateInput.min = minimumDateValue;
-        scheduleDateInput.max = maximumDateValue;
-
-        if (!scheduleDateInput.value || !isScheduleDateWithinWindow(scheduleDateInput.value)) {
-            scheduleDateInput.value = minimumDateValue;
-        }
+        const currentValue = scheduleDateInput.value;
+        renderScheduleDateOptions(currentValue);
 
         if (!scheduleTimeInput.value) {
             scheduleTimeInput.value = "09:00";
@@ -383,7 +444,8 @@
     }
 
     function getEstimatedDeliveryLabelForSelection() {
-        return "Booking window: tomorrow to next 2 days.";
+        const year = new Date().getFullYear();
+        return "Booking window: today to next 3 days of " + year + ".";
     }
 
     function syncScheduleInputsByService() {
@@ -403,8 +465,9 @@
         scheduleTimeInput.disabled = !requiresTime;
         scheduleTimeInput.required = requiresTime;
         if (requiresSchedule) {
+            renderScheduleDateOptions(scheduleDateInput.value);
             if (!scheduleDateInput.value || !isScheduleDateWithinWindow(scheduleDateInput.value)) {
-                scheduleDateInput.value = scheduleDateInput.min || formatLocalDateInputValue(getTomorrowDateStart());
+                renderScheduleDateOptions("");
             }
         } else {
             scheduleDateInput.value = "";
