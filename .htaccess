@@ -1,6 +1,15 @@
 DirectoryIndex frontpage.html index.html index.php
 
+<IfModule LiteSpeed>
+    CacheDisable public /
+</IfModule>
+
 <IfModule mod_headers.c>
+    <FilesMatch "\.(html|css|js)$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
     <Files "session.js">
         Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
         Header set Pragma "no-cache"

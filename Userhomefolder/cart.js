@@ -413,7 +413,15 @@
             return;
         }
 
-        if (!document.querySelector(".cart-nav-btn")) {
+        var existingButtons = Array.prototype.slice.call(document.querySelectorAll(".cart-nav-btn"));
+        if (existingButtons.length > 1) {
+            for (var i = 1; i < existingButtons.length; i += 1) {
+                existingButtons[i].remove();
+            }
+        }
+
+        var existing = document.querySelector(".cart-nav-btn");
+        if (!existing) {
             var button = document.createElement("a");
             button.className = "cart-nav-btn";
             button.href = getCartPageUrl();
@@ -423,6 +431,8 @@
                 button.classList.add("active");
             }
             profileMenu.parentElement.insertBefore(button, profileMenu);
+        } else if (existing.parentElement !== profileMenu.parentElement) {
+            profileMenu.parentElement.insertBefore(existing, profileMenu);
         }
 
         updateCartBadges(readItems());
