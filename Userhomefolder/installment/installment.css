@@ -304,6 +304,21 @@ input {
     margin-bottom: 14px;
 }
 
+.info-card {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    margin-bottom: 16px;
+}
+
+.info-card h2 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
 .plan-panel h2 {
     margin: 0 0 10px;
     font-size: 13px;
@@ -487,8 +502,12 @@ input {
     gap: 10px 12px;
 }
 
-.personal-grid {
-    grid-template-columns: 1.2fr 1.2fr 1.2fr 0.8fr 0.6fr;
+.personal-info-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.contact-info-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .employment-grid {
@@ -496,7 +515,7 @@ input {
 }
 
 .requirements-upload-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
 }
 
 .upload-field {
@@ -512,6 +531,54 @@ input {
     color: #153a73;
 }
 
+.upload-title {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.upload-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0 8px;
+    border-bottom: 1px solid #d5e0ef;
+    margin-bottom: 8px;
+}
+
+.toggle-buttons {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.toggle-btn {
+    border: 1.6px solid #2f4fa5;
+    border-radius: 999px;
+    padding: 4px 12px;
+    background: #ffffff;
+    color: #1d3f7a;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.toggle-btn.active {
+    background: #2e4eaa;
+    border-color: #2e4eaa;
+    color: #fff;
+}
+
+.upload-body input[type="file"] {
+    height: auto;
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 11px;
+    background: #fff;
+    border: 1.6px solid #9fb4dc;
+    border-radius: 8px;
+    width: 100%;
+}
+
 .upload-field input[type="file"] {
     height: auto;
     min-height: 34px;
@@ -525,6 +592,14 @@ input {
     color: #33507f;
     line-height: 1.3;
     min-height: 13px;
+}
+
+.upload-hint {
+    display: block;
+    margin: 2px 0 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #38527c;
 }
 
 .upload-help {
@@ -546,6 +621,14 @@ input {
 
 .field-span-2 {
     grid-column: span 2;
+}
+
+.field-span-3 {
+    grid-column: span 3;
+}
+
+.field-span-4 {
+    grid-column: span 4;
 }
 
 .action-row {
@@ -682,7 +765,8 @@ input {
         font-size: 24px;
     }
 
-    .personal-grid {
+    .personal-info-grid,
+    .contact-info-grid {
         grid-template-columns: 1fr 1fr;
     }
 
@@ -730,12 +814,18 @@ input {
     .scan-grid,
     .employment-grid,
     .requirements-upload-grid,
-    .personal-grid,
+    .personal-info-grid,
+    .contact-info-grid,
     .plan-grid {
         grid-template-columns: 1fr;
     }
 
     .field-span-2 {
+        grid-column: span 1;
+    }
+
+    .field-span-3,
+    .field-span-4 {
         grid-column: span 1;
     }
 

@@ -82,9 +82,10 @@ document.addEventListener("DOMContentLoaded", function () {
         "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
         "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"
     ];
+    const VALID_ID_NOTE = "Accepted IDs: PhilSys ID, UMID, Passport, Driver's License, PhilHealth ID.";
     const INSTALLMENT_REQUIREMENT_FIELDS = [
-        { key: "validId1", label: "Valid ID #1", required: true },
-        { key: "validId2", label: "Valid ID #2", required: true },
+        { key: "validId1", label: "Valid ID #1", note: VALID_ID_NOTE, required: true },
+        { key: "validId2", label: "Valid ID #2", note: VALID_ID_NOTE, required: true },
         { key: "proofOfIncome", label: "Proof of Income", required: true },
         { key: "payslipOrCoe", label: "Payslip / COE", requiredWhen: "Employed" },
         { key: "businessPermit", label: "Business Permit", requiredWhen: "Business Owner" },
@@ -344,6 +345,20 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.removeChild(anchor);
     }
 
+    function formatFileSize(bytes) {
+        const value = Number(bytes || 0);
+        if (!Number.isFinite(value) || value <= 0) {
+            return "";
+        }
+        if (value < 1024) {
+            return value + " B";
+        }
+        if (value < 1024 * 1024) {
+            return (value / 1024).toFixed(1) + " KB";
+        }
+        return (value / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
     function renderInstallmentRequirements(record) {
         if (!instRequirementsCard || !instRequirementsList || !instEmploymentTypeBadge) {
             return;
@@ -380,10 +395,42 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = document.createElement("article");
             row.className = "requirement-item";
 
+            const copy = document.createElement("div");
+            copy.className = "requirement-copy";
+
             const title = document.createElement("span");
             title.className = "requirement-title";
             title.textContent = definition.label;
-            row.appendChild(title);
+            copy.appendChild(title);
+
+            if (definition.note) {
+                const note = document.createElement("span");
+                note.className = "requirement-subtext";
+                note.textContent = definition.note;
+                copy.appendChild(note);
+            }
+
+            if (attachment) {
+                const metaParts = [];
+                if (attachment.fileName) {
+                    metaParts.push(attachment.fileName);
+                }
+                const sizeLabel = formatFileSize(attachment.sizeBytes);
+                if (sizeLabel) {
+                    metaParts.push(sizeLabel);
+                }
+                if (attachment.uploadedAt) {
+                    metaParts.push(formatDateTime(attachment.uploadedAt));
+                }
+                if (metaParts.length) {
+                    const meta = document.createElement("span");
+                    meta.className = "requirement-meta";
+                    meta.textContent = metaParts.join(" · ");
+                    copy.appendChild(meta);
+                }
+            }
+
+            row.appendChild(copy);
 
             const status = document.createElement("span");
             status.className = "requirement-status";

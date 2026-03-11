@@ -57,6 +57,27 @@
     const ALLOWED_REGULAR_MONTHS = ["6", "12", "18", "24"];
     const REGULAR_PLAN_MATRIX = [
         {
+            model: "BLITZ 1200",
+            battery: "60V 20AH",
+            srp: 45000,
+            minDp: 3000,
+            monthly: { "6": 7970, "12": 4470, "18": 3304, "24": 2720 }
+        },
+        {
+            model: "FUN 350R II",
+            battery: "48V 20AH",
+            srp: 24000,
+            minDp: 1500,
+            monthly: { "6": 4270, "12": 2395, "18": 1770, "24": 1457 }
+        },
+        {
+            model: "CANDY 800",
+            battery: "48V 20AH",
+            srp: 39000,
+            minDp: 2000,
+            monthly: { "6": 7021, "12": 3938, "18": 2910, "24": 2396 }
+        },
+        {
             model: "ECONO350 MINI-II",
             battery: "48V 20AH",
             srp: 39000,
@@ -78,11 +99,39 @@
             monthly: { "6": 10240, "12": 5740, "18": 4240, "24": 3490 }
         },
         {
+            model: "ECONO 800 MP",
+            battery: "60V 32AH",
+            srp: 60000,
+            minDp: 9000,
+            monthly: { "6": 9678, "12": 5428, "18": 4011, "24": 3303 }
+        },
+        {
             model: "ECONO 800 MP II",
             battery: "60V 20AH",
             srp: 63500,
             minDp: 9500,
             monthly: { "6": 10240, "12": 5740, "18": 4240, "24": 3490 }
+        },
+        {
+            model: "ECARGO 100",
+            battery: "60V 32AH",
+            srp: 72500,
+            minDp: 14500,
+            monthly: { "6": 11006, "12": 6173, "18": 4562, "24": 3756 }
+        },
+        {
+            model: "E-CARGO 800J",
+            battery: "60V 20AH",
+            srp: 65000,
+            minDp: 10000,
+            monthly: { "6": 10437, "12": 5853, "18": 4326, "24": 3562 }
+        },
+        {
+            model: "E-CAB 1000",
+            battery: "48V 80AH",
+            srp: 75000,
+            minDp: 15000,
+            monthly: { "6": 11386, "12": 6386, "18": 4719, "24": 3886 }
         },
         {
             model: "ECAB 1000 V2",
@@ -97,6 +146,13 @@
             srp: 78000,
             minDp: 13500,
             monthly: { "6": 12153, "12": 6778, "18": 4987, "24": 4091 }
+        },
+        {
+            model: "E-CAB MAX 1500",
+            battery: "60V 32AH",
+            srp: 130000,
+            minDp: 26000,
+            monthly: { "6": 19736, "12": 11068, "18": 8180, "24": 6735 }
         },
         {
             model: "BLITZ 2000 ADV",
@@ -114,6 +170,11 @@
         }
     ];
     const MODEL_ALIAS_ENTRIES = [
+        ["BLITZ 1200", "BLITZ 1200"],
+        ["FUN 350R II", "FUN 350R II"],
+        ["FUN 350R", "FUN 350R II"],
+        ["FUN 1500 FI", "FUN 350R II"],
+        ["CANDY 800", "CANDY 800"],
         ["ECONO350 MINI-II", "ECONO350 MINI-II"],
         ["ECONO350 MINI II", "ECONO350 MINI-II"],
         ["ECONO 350 MINI-II", "ECONO350 MINI-II"],
@@ -127,11 +188,25 @@
         ["ECONO 650 MP 48V", "ECONO MP 650 48V"],
         ["ECONO 650 48V", "ECONO MP 650 48V"],
         ["ECONO 650MP", "ECONO MP 650 48V"],
+        ["ECONO 800 MP", "ECONO 800 MP"],
+        ["ECONO 800MP", "ECONO 800 MP"],
         ["ECONO 800 MP II", "ECONO 800 MP II"],
+        ["ECARGO 100", "ECARGO 100"],
+        ["E-CARGO 100", "ECARGO 100"],
+        ["E CARGO 100", "ECARGO 100"],
+        ["E-CARGO 800J", "E-CARGO 800J"],
+        ["E-CARGO 800", "E-CARGO 800J"],
+        ["ECARGO 800J", "E-CARGO 800J"],
+        ["ECARGO 800", "E-CARGO 800J"],
+        ["E-CAB 1000", "E-CAB 1000"],
+        ["ECAB 1000", "E-CAB 1000"],
         ["ECAB 100V V2", "ECAB 1000 V2"],
+        ["ECAB 1000 II", "ECAB 1000 V2"],
         ["ECAB 1000 V2", "ECAB 1000 V2"],
         ["TRAVELLER 1500", "TRAVELLER 1500"],
         ["TRAVELER 1500", "TRAVELLER 1500"],
+        ["E-CAB MAX 1500", "E-CAB MAX 1500"],
+        ["ECAB MAX 1500", "E-CAB MAX 1500"],
         ["BLITZ 2000", "BLITZ 2000 ADV"],
         ["BLITZ 2000 ADV", "BLITZ 2000 ADV"],
         ["BLITZ 200R", "BLITZ 200R"],
@@ -1067,10 +1142,10 @@
         const data = getInstallmentFormData();
         const employmentTypeInput = document.getElementById("employmentType");
         if (employmentTypeInput) {
-            const selectionValue = toBusinessOwnerSelectionValue(
+            const normalized = normalizeStep3EmploymentType(
                 data.employmentType || data.employment_type || data.ownerType || data.workType
             );
-            employmentTypeInput.value = selectionValue;
+            employmentTypeInput.value = normalized;
         }
 
         const uploads = data.requirementsUploads && typeof data.requirementsUploads === "object"
@@ -1170,6 +1245,8 @@
         const minDpEl = document.getElementById("planMinDp");
         const monthlyEl = document.getElementById("planMonthlyAmortization");
         const monthsSelect = document.getElementById("monthsToPay");
+        const dobInput = document.getElementById("dob");
+        const ageInput = document.getElementById("age");
         const submitBtn = form ? form.querySelector("button[type='submit']") : null;
         if (!form) {
             return;
@@ -1177,6 +1254,119 @@
 
         const seededData = seedStep2();
         setupStep2LocationSelectors(seededData);
+
+        function parseDobDate(value) {
+            const cleaned = String(value || "").trim();
+            const match = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!match) {
+                return null;
+            }
+            const year = Number(match[1]);
+            const month = Number(match[2]) - 1;
+            const day = Number(match[3]);
+            const parsed = new Date(year, month, day, 0, 0, 0, 0);
+            if (
+                Number.isNaN(parsed.getTime())
+                || parsed.getFullYear() !== year
+                || parsed.getMonth() !== month
+                || parsed.getDate() !== day
+            ) {
+                return null;
+            }
+            return parsed;
+        }
+
+        function getAgeFromDob(dobValue) {
+            const parsed = parseDobDate(dobValue);
+            if (!parsed) {
+                return "";
+            }
+            const today = new Date();
+            let age = today.getFullYear() - parsed.getFullYear();
+            const monthDiff = today.getMonth() - parsed.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < parsed.getDate())) {
+                age -= 1;
+            }
+            return Number.isFinite(age) && age >= 0 ? String(age) : "";
+        }
+
+        function updateAgeFromDob(dobValue) {
+            if (!ageInput) {
+                return;
+            }
+            ageInput.value = getAgeFromDob(dobValue);
+        }
+
+        function getDobRange() {
+            const min = new Date(1945, 0, 1, 0, 0, 0, 0);
+            const max = new Date();
+            max.setHours(0, 0, 0, 0);
+            return { min, max };
+        }
+
+        function isDobWithinRange(value) {
+            const parsed = parseDobDate(value);
+            if (!parsed) {
+                return false;
+            }
+            const range = getDobRange();
+            return parsed.getTime() >= range.min.getTime() && parsed.getTime() <= range.max.getTime();
+        }
+
+        if (dobInput) {
+            const range = getDobRange();
+            const pad = function (value) {
+                return String(value).padStart(2, "0");
+            };
+            const maxValue = [
+                range.max.getFullYear(),
+                pad(range.max.getMonth() + 1),
+                pad(range.max.getDate())
+            ].join("-");
+            dobInput.min = "1945-01-01";
+            dobInput.max = maxValue;
+
+            const validateDobInput = function () {
+                const raw = dobInput.value || "";
+                if (!raw) {
+                    dobInput.setCustomValidity("");
+                    if (ageInput) {
+                        ageInput.value = "";
+                    }
+                    return;
+                }
+                if (!isDobWithinRange(raw)) {
+                    const parsed = parseDobDate(raw);
+                    const range = getDobRange();
+                    if (parsed && parsed.getTime() > range.max.getTime()) {
+                        const pad = function (value) {
+                            return String(value).padStart(2, "0");
+                        };
+                        const clamped = [
+                            range.max.getFullYear(),
+                            pad(range.max.getMonth() + 1),
+                            pad(range.max.getDate())
+                        ].join("-");
+                        dobInput.value = clamped;
+                        dobInput.setCustomValidity("");
+                        updateAgeFromDob(clamped);
+                        return;
+                    }
+                    dobInput.setCustomValidity("Date of birth must be between 1945 and the current year.");
+                    if (ageInput) {
+                        ageInput.value = "";
+                    }
+                } else {
+                    dobInput.setCustomValidity("");
+                    updateAgeFromDob(raw);
+                }
+            };
+
+            dobInput.addEventListener("input", validateDobInput);
+            dobInput.addEventListener("change", validateDobInput);
+            dobInput.addEventListener("blur", validateDobInput);
+            updateAgeFromDob(dobInput.value);
+        }
 
         const draft = getCheckoutDraft() || {};
         const planState = {
@@ -1391,6 +1581,16 @@
                 return;
             }
 
+            if (!isDobWithinRange(data.dob)) {
+                if (error) {
+                    error.textContent = "Date of birth must be between 1945 and the current year.";
+                }
+                if (dobInput) {
+                    dobInput.focus();
+                }
+                return;
+            }
+
             const merged = {
                 ...getInstallmentFormData(),
                 ...data,
@@ -1420,6 +1620,9 @@
         const employmentTypeInput = document.getElementById("employmentType");
         const payslipWrap = document.getElementById("payslipOrCoeWrap");
         const businessPermitWrap = document.getElementById("businessPermitWrap");
+        const payslipBody = document.getElementById("payslipOrCoeBody");
+        const businessPermitBody = document.getElementById("businessPermitBody");
+        const toggleButtons = Array.from(document.querySelectorAll(".toggle-btn[data-employment]"));
         if (!form) {
             return;
         }
@@ -1468,6 +1671,38 @@
             return Boolean(definition.requiredWhen) && definition.requiredWhen === employmentType;
         }
 
+        function setToggleState(type, value) {
+            toggleButtons.forEach(function (button) {
+                if ((button.getAttribute("data-employment") || "") !== type) {
+                    return;
+                }
+                const isActive = (button.getAttribute("data-value") || "") === value;
+                button.classList.toggle("active", isActive);
+            });
+        }
+
+        function syncEmploymentTogglesFromInput() {
+            const employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
+            if (employmentType === "Employed") {
+                setToggleState("Employed", "Yes");
+                setToggleState("Business Owner", "No");
+                return;
+            }
+            if (employmentType === "Business Owner") {
+                setToggleState("Business Owner", "Yes");
+                setToggleState("Employed", "No");
+                return;
+            }
+            setToggleState("Employed", "No");
+            setToggleState("Business Owner", "No");
+        }
+
+        function setEmploymentType(nextType) {
+            employmentTypeInput.value = nextType;
+            syncEmploymentTogglesFromInput();
+            syncConditionalRequirementFields();
+        }
+
         function setFileNameLabel(definition) {
             if (!definition || !definition.fileName || !definition.input) {
                 return;
@@ -1481,11 +1716,11 @@
             const isEmployed = employmentType === "Employed";
             const isBusinessOwner = employmentType === "Business Owner";
 
-            if (payslipWrap) {
-                payslipWrap.hidden = !isEmployed;
+            if (payslipBody) {
+                payslipBody.hidden = !isEmployed;
             }
-            if (businessPermitWrap) {
-                businessPermitWrap.hidden = !isBusinessOwner;
+            if (businessPermitBody) {
+                businessPermitBody.hidden = !isBusinessOwner;
             }
 
             requirementNodes.forEach(function (definition) {
@@ -1520,6 +1755,7 @@
         }
 
         seedStep3();
+        syncEmploymentTogglesFromInput();
         requirementNodes.forEach(function (definition) {
             if (!definition || !definition.input) {
                 return;
@@ -1532,11 +1768,25 @@
                 }
             });
         });
-        employmentTypeInput.addEventListener("change", function () {
-            syncConditionalRequirementFields();
-            if (error) {
-                error.textContent = "";
-            }
+        toggleButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                const type = button.getAttribute("data-employment") || "";
+                const value = button.getAttribute("data-value") || "";
+                const current = normalizeStep3EmploymentType(employmentTypeInput.value);
+                if (value === "Yes") {
+                    setEmploymentType(type);
+                } else {
+                    if (current === type) {
+                        setEmploymentType("");
+                    } else {
+                        setToggleState(type, "No");
+                        syncConditionalRequirementFields();
+                    }
+                }
+                if (error) {
+                    error.textContent = "";
+                }
+            });
         });
         syncConditionalRequirementFields();
 
@@ -1556,7 +1806,7 @@
                 const employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
                 if (!employmentType) {
                     if (error) {
-                        error.textContent = "Please select Yes or No for business owner.";
+                        error.textContent = "Please select if you are employed or a business owner.";
                     }
                     return;
                 }

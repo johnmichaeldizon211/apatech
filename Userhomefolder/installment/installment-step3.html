@@ -68,24 +68,18 @@
 
         <section class="installment-card">
             <form id="installmentStep3Form" novalidate>
+                <input type="hidden" id="employmentType" value="">
                 <div class="form-grid requirements-upload-grid">
-                    <label class="field-span-2">
-                        <span>Are you a Business Owner?</span>
-                        <select id="employmentType" required>
-                            <option value="">Select</option>
-                            <option value="No">No</option>
-                            <option value="Yes">Yes</option>
-                        </select>
-                    </label>
-
                     <label class="upload-field">
                         <span>Valid ID #1</span>
+                        <small class="upload-hint">Accepted IDs: Philippine National ID (PhilSys ID), UMID, Passport, Driver's License, PhilHealth ID.</small>
                         <input id="validId1" type="file" accept="image/*,application/pdf" required>
                         <small id="validId1Name" class="upload-file-name">No file selected</small>
                     </label>
 
                     <label class="upload-field">
                         <span>Valid ID #2</span>
+                        <small class="upload-hint">Accepted IDs: Philippine National ID (PhilSys ID), UMID, Passport, Driver's License, PhilHealth ID.</small>
                         <input id="validId2" type="file" accept="image/*,application/pdf" required>
                         <small id="validId2Name" class="upload-file-name">No file selected</small>
                     </label>
@@ -96,17 +90,35 @@
                         <small id="proofOfIncomeName" class="upload-file-name">No file selected</small>
                     </label>
 
-                    <label id="payslipOrCoeWrap" class="upload-field">
-                        <span>Payslip / COE (if Employed)</span>
-                        <input id="payslipOrCoe" type="file" accept="image/*,application/pdf">
-                        <small id="payslipOrCoeName" class="upload-file-name">No file selected</small>
-                    </label>
+                    <div id="payslipOrCoeWrap" class="upload-field">
+                        <span class="upload-title">Payslip / COE (if Employed)</span>
+                        <div class="upload-toggle">
+                            <span>Are you employed?</span>
+                            <div class="toggle-buttons" role="group" aria-label="Are you employed">
+                                <button type="button" class="toggle-btn" data-employment="Employed" data-value="Yes">Yes</button>
+                                <button type="button" class="toggle-btn" data-employment="Employed" data-value="No">No</button>
+                            </div>
+                        </div>
+                        <div id="payslipOrCoeBody" class="upload-body" hidden>
+                            <input id="payslipOrCoe" type="file" accept="image/*,application/pdf">
+                            <small id="payslipOrCoeName" class="upload-file-name">No file selected</small>
+                        </div>
+                    </div>
 
-                    <label id="businessPermitWrap" class="upload-field" hidden>
-                        <span>Business Permit (if Business Owner)</span>
-                        <input id="businessPermit" type="file" accept="image/*,application/pdf">
-                        <small id="businessPermitName" class="upload-file-name">No file selected</small>
-                    </label>
+                    <div id="businessPermitWrap" class="upload-field">
+                        <span class="upload-title">Business Permit (if Business Owner)</span>
+                        <div class="upload-toggle">
+                            <span>Are you a business owner?</span>
+                            <div class="toggle-buttons" role="group" aria-label="Are you a business owner">
+                                <button type="button" class="toggle-btn" data-employment="Business Owner" data-value="Yes">Yes</button>
+                                <button type="button" class="toggle-btn" data-employment="Business Owner" data-value="No">No</button>
+                            </div>
+                        </div>
+                        <div id="businessPermitBody" class="upload-body" hidden>
+                            <input id="businessPermit" type="file" accept="image/*,application/pdf">
+                            <small id="businessPermitName" class="upload-file-name">No file selected</small>
+                        </div>
+                    </div>
 
                     <label class="upload-field">
                         <span>Proof of Billing (Meralco / Water / Internet)</span>
