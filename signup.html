@@ -4,28 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up - Ecodrive</title>
-    <link rel="stylesheet" href="signup.css?v=20260302-1">
+    <link rel="stylesheet" href="signup.css?v=20260311">
 </head>
-<body>
+<body class="auth-body signup-body">
 
-<div class="signup-container">
-
-    <div class="left">
-        <h2>Sign up</h2>
+<main class="auth-shell">
+    <section class="panel form-panel">
+        <h1 class="form-title">Sign up</h1>
 
         <form id="signup-form" novalidate>
 
-            <label for="firstName">First Name*</label>
-            <input id="firstName" name="firstName" type="text" placeholder="Enter your first name" autocomplete="given-name">
-            <span class="error" id="firstName-error"></span>
-
-            <label for="middleInitial">Middle Initial (Optional)</label>
-            <input id="middleInitial" name="middleInitial" type="text" placeholder="Ex. A" maxlength="3" autocomplete="additional-name">
-            <span class="error" id="middleInitial-error"></span>
-
-            <label for="lastName">Last Name*</label>
-            <input id="lastName" name="lastName" type="text" placeholder="Enter your last name" autocomplete="family-name">
-            <span class="error" id="lastName-error"></span>
+            <label for="fullName">Full Name*</label>
+            <input id="fullName" name="fullName" type="text" placeholder="Enter your name" autocomplete="name">
+            <span class="error" id="fullName-error"></span>
 
             <label for="email">Email*</label>
             <input id="email" name="email" type="email" placeholder="Enter your email">
@@ -47,10 +38,14 @@
             <p class="note">Must be at least 8 characters, include uppercase, number and symbol.</p>
             <span class="error" id="password-error"></span>
 
-            <button class="create-btn" type="submit" id="continue-btn" disabled>Continue to verification</button>
+            <label for="confirmPassword">Repeat Password*</label>
+            <input id="confirmPassword" name="confirmPassword" type="password" placeholder="Repeat your password">
+            <span class="error" id="confirmPassword-error"></span>
+
+            <button class="create-btn" type="submit" id="continue-btn" disabled>Create account</button>
 
             <p class="login-link">
-                Already have an account? <a href="log in.html">Log in</a>
+                Already have an account? <a href="log in.html">Sign in</a>
             </p>
 
         </form>
@@ -79,13 +74,14 @@
                 <p class="verification-status" id="verification-status" aria-live="polite"></p>
             </div>
         </section>
-    </div>
 
-    <div class="right">
-        <img src="ebike3.jpg" alt="Ecodrive">
-    </div>
+        <p class="location">Ecodrive, Baliwag, Bulacan</p>
+    </section>
 
-</div>
+    <section class="panel visual-panel">
+        <img class="hero-image" src="signup.png" alt="Create Your Ecodrive Account">
+    </section>
+</main>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

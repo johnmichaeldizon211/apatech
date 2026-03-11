@@ -3,6 +3,15 @@
     src: url('Poppins-Regular.ttf');
 }
 
+:root {
+    --ink: #121a2c;
+    --muted: #5b6a85;
+    --card: rgba(255, 255, 255, 0.92);
+    --card-border: rgba(188, 208, 231, 0.75);
+    --primary: #0f1c35;
+    --primary-strong: #0b162b;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -12,109 +21,157 @@ body {
     height: 100%;
 }
 
-body {
+body.auth-body {
     margin: 0;
     font-family: 'Poppins', sans-serif;
-    background: #ffffff;
-    color: #1b1b1b;
+    color: var(--ink);
+    background: linear-gradient(135deg, #f4f9ff 0%, #dfeaf8 100%);
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: clamp(16px, 3vw, 34px);
+    position: relative;
     overflow-x: hidden;
 }
 
-.signup-container {
+body.auth-body::before,
+body.auth-body::after {
+    content: "";
+    position: fixed;
+    width: 420px;
+    height: 420px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+    z-index: 0;
+}
+
+body.auth-body::before {
+    top: -140px;
+    left: -120px;
+}
+
+body.auth-body::after {
+    bottom: -160px;
+    right: -120px;
+    background: radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0));
+}
+
+.auth-shell {
+    position: relative;
+    z-index: 1;
+    width: min(1100px, 96vw);
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: clamp(16px, 3vw, 28px);
+    align-items: center;
+}
+
+.panel {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: clamp(16px, 3vw, 28px);
+    box-shadow: 0 24px 48px rgba(18, 32, 58, 0.12);
+    backdrop-filter: blur(4px);
+}
+
+.visual-panel {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
     display: flex;
-    min-height: 100dvh;
+    align-items: center;
+    justify-content: center;
+}
+
+.hero-image {
     width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 18px;
+    box-shadow: 0 16px 35px rgba(18, 36, 64, 0.18);
 }
 
-.left,
-.right {
-    width: 50%;
-    min-width: 0;
-}
-
-.left {
-    width: 50%;
-    padding: clamp(16px, 3vh, 28px) clamp(18px, 4.2vw, 54px);
+.form-panel {
+    max-width: 460px;
+    width: 100%;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    overflow-y: auto;
+    gap: 10px;
 }
 
-.left h2 {
-    font-size: clamp(22px, 2vw, 28px);
-    margin: 0 0 10px;
-    text-align: left;
+.form-title {
+    margin: 0 0 6px;
+    text-align: center;
+    font-size: clamp(22px, 2.2vw, 28px);
+    color: #0f1b34;
 }
 
-#signup-form {
-    width: min(100%, 450px);
-    margin: 0 auto 0 0;
-}
-
+#signup-form,
 .verification-step {
-    width: min(100%, 450px);
-    margin: 0 auto 0 0;
-}
-
-.verification-step h3 {
-    font-size: clamp(24px, 4.2vw, 44px);
-    line-height: 1.05;
-    letter-spacing: -0.03em;
-    color: #1f2157;
-    margin: 0 0 10px;
-}
-
-.verification-intro {
-    font-size: 16px;
-    color: #6b6d7d;
-    line-height: 1.45;
-    margin: 0 0 14px;
+    width: 100%;
 }
 
 form label {
     display: block;
-    margin-bottom: 2px;
-    font-size: 13px;
-    color: #555;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #4a5b75;
 }
 
 form input {
     width: 100%;
-    padding: 8px 10px;
-    margin: 3px 0 4px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 4px;
+    border: 1px solid #bcd1ec;
+    border-radius: 10px;
     font: inherit;
-    font-size: 16px;
+    font-size: 14px;
+    color: #1b2436;
+    background: #fff;
+}
+
+form input:focus {
+    outline: none;
+    border-color: #6aa3ff;
+    box-shadow: 0 0 0 3px rgba(106, 163, 255, 0.2);
 }
 
 .note {
     font-size: 11px;
-    color: #777;
-    margin: 1px 0 3px;
+    color: #6b768b;
+    margin: 6px 0 4px;
 }
 
 .create-btn {
     width: 100%;
-    padding: 10px;
-    background: #1f3ba7;
+    padding: 11px;
+    background: var(--primary);
     color: white;
     border: none;
-    border-radius: 6px;
-    margin-top: 5px;
+    border-radius: 10px;
+    margin-top: 8px;
     cursor: pointer;
     font-size: 14px;
+    font-weight: 600;
     font-family: inherit;
+    box-shadow: 0 8px 16px rgba(15, 28, 53, 0.2);
+}
+
+.create-btn:hover:not([disabled]) {
+    background: var(--primary-strong);
 }
 
 .secondary-btn {
     width: 100%;
-    padding: 9px 10px;
+    padding: 10px;
     background: #ffffff;
     color: #1f3ba7;
-    border: 1px solid #1f3ba7;
-    border-radius: 6px;
+    border: 1px solid #bcd1ec;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
@@ -124,105 +181,28 @@ form input {
     background: #edf2ff;
 }
 
-.create-btn:hover:not([disabled]) {
-    background: #17308f;
-}
-
 .login-link {
     text-align: center;
     margin-top: 12px;
-    font-size: 13px;
+    font-size: 12px;
+    color: #55627c;
 }
 
 .login-link a {
     text-decoration: none;
-    color: #0044cc;
+    color: #1b4fd6;
+    font-weight: 600;
 }
 
 .login-link a:hover {
     text-decoration: underline;
 }
 
-.right {
-    width: 50%;
-    padding: clamp(10px, 2vw, 24px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.right img {
-    width: min(100%, 640px);
-    max-height: min(90dvh, 820px);
-    height: min(100%, 820px);
-    object-fit: cover;
-    display: block;
-    border-radius: 14px;
-}
-
-@media (max-width: 900px) {
-    .signup-container {
-        flex-direction: column-reverse;
-        min-height: 100dvh;
-    }
-
-    .left,
-    .right {
-        width: 100%;
-    }
-
-    .right {
-        min-height: clamp(170px, 32dvh, 280px);
-        padding: 10px 14px;
-    }
-
-    .left {
-        padding: 24px 18px 26px;
-        justify-content: flex-start;
-    }
-
-    #signup-form,
-    .verification-step {
-        width: min(100%, 540px);
-        margin: 0 auto;
-    }
-
-    .right img {
-        width: 100%;
-        height: 100%;
-        max-height: 320px;
-    }
-}
-
-@media (max-width: 600px) {
-    .left {
-        padding: 18px 14px 22px;
-    }
-
-    .right {
-        min-height: clamp(150px, 24dvh, 220px);
-    }
-
-    .create-btn {
-        font-size: 13px;
-    }
-
-    .otp-card {
-        padding: 18px 13px 14px;
-    }
-
-    .verification-intro {
-        font-size: 14px;
-    }
-
-    .otp-inputs {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-    }
-
-    .otp-digit {
-        font-size: 21px;
-    }
+.location {
+    text-align: center;
+    font-size: 11px;
+    color: #7a879f;
+    margin: 4px 0 0;
 }
 
 .error {
@@ -234,16 +214,30 @@ form input {
 }
 
 .otp-card {
-    border: 1px solid #e8e9f0;
-    border-radius: 12px;
-    padding: 22px 16px 16px;
+    border: 1px solid #e4e9f3;
+    border-radius: 16px;
+    padding: 20px 16px 16px;
     background: #ffffff;
-    box-shadow: 0 10px 24px rgba(21, 28, 55, 0.08);
+    box-shadow: 0 12px 26px rgba(21, 28, 55, 0.1);
+}
+
+.verification-step h3 {
+    font-size: clamp(20px, 3vw, 28px);
+    line-height: 1.1;
+    color: #1f2157;
+    margin: 0 0 10px;
+}
+
+.verification-intro {
+    font-size: 14px;
+    color: #6b6d7d;
+    line-height: 1.45;
+    margin: 0 0 14px;
 }
 
 .verification-contact {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
     color: #626b83;
     word-break: break-all;
 }
@@ -255,17 +249,16 @@ form input {
 
 .otp-inputs {
     display: grid;
-    grid-template-columns: repeat(4, 54px);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin: 18px 0 14px;
-    justify-content: flex-start;
 }
 
 .otp-digit {
     border: 2px solid #d9dcea;
-    border-radius: 8px;
+    border-radius: 10px;
     text-align: center;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 600;
     color: #2e3561;
     letter-spacing: 0.03em;
@@ -289,7 +282,7 @@ form input {
 
 .otp-timer {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
     color: #626b83;
 }
 
@@ -300,7 +293,7 @@ form input {
     margin: 0;
     color: #4f63c8;
     font: inherit;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     text-decoration: underline;
@@ -344,7 +337,7 @@ form input {
 
 input.invalid {
     border-color: #d93025;
-    box-shadow: 0 0 0 3px rgba(217,48,37,0.06);
+    box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.06);
 }
 
 .input-with-toggle {
@@ -360,17 +353,18 @@ input.invalid {
     right: 8px;
     top: 50%;
     transform: translateY(-50%);
-    background: transparent;
-    border: none;
+    background: #edf3ff;
+    border: 1px solid #c3d5f1;
     padding: 6px 8px;
     cursor: pointer;
     color: #556;
     font-size: 12px;
+    border-radius: 8px;
 }
 
 .toggle-password:focus {
-    outline: 2px solid rgba(0,0,0,0.06);
-    border-radius: 4px;
+    outline: 2px solid rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
 }
 
 .toast {
@@ -381,35 +375,12 @@ input.invalid {
     color: #fff;
     padding: 10px 14px;
     border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
     opacity: 0;
     transform: translateY(-10px);
     transition: opacity 0.18s ease, transform 0.18s ease;
     pointer-events: none;
     z-index: 9999;
-}
-
-@media (max-width: 420px) {
-    .left {
-        padding: 16px 12px 20px;
-    }
-
-    .left h2 {
-        text-align: center;
-    }
-
-    .toast {
-        right: 12px;
-        left: 12px;
-        top: 12px;
-        text-align: center;
-    }
-
-    .otp-meta {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 4px;
-    }
 }
 
 .toast.show {
@@ -429,4 +400,44 @@ input.invalid {
 .create-btn[disabled] {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+    .auth-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .visual-panel {
+        order: 2;
+    }
+
+    .form-panel {
+        order: 1;
+    }
+}
+
+@media (max-width: 600px) {
+    .panel {
+        padding: 16px;
+        border-radius: 18px;
+    }
+
+    .otp-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .otp-digit {
+        font-size: 20px;
+    }
+}
+
+@media (max-width: 420px) {
+    .toast {
+        right: 12px;
+        left: 12px;
+        top: 12px;
+        text-align: center;
+    }
 }

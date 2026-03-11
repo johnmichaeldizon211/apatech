@@ -4,13 +4,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var form = document.getElementById("signup-form");
     var verificationStep = document.getElementById("signup-verification-step");
 
-    var firstNameInput = document.getElementById("firstName");
-    var middleInitialInput = document.getElementById("middleInitial");
-    var lastNameInput = document.getElementById("lastName");
+    var fullNameInput = document.getElementById("fullName");
     var emailInput = document.getElementById("email");
     var phoneInput = document.getElementById("phone");
     var addressInput = document.getElementById("address");
     var passwordInput = document.getElementById("password");
+    var confirmPasswordInput = document.getElementById("confirmPassword");
 
     var continueBtn = document.getElementById("continue-btn");
     var backToFormBtn = document.getElementById("back-to-form-btn");
@@ -25,13 +24,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     var toast = document.getElementById("toast");
 
-    var firstNameErr = document.getElementById("firstName-error");
-    var middleInitialErr = document.getElementById("middleInitial-error");
-    var lastNameErr = document.getElementById("lastName-error");
+    var fullNameErr = document.getElementById("fullName-error");
     var emailErr = document.getElementById("email-error");
     var phoneErr = document.getElementById("phone-error");
     var addressErr = document.getElementById("address-error");
     var passwordErr = document.getElementById("password-error");
+    var confirmPasswordErr = document.getElementById("confirmPassword-error");
 
     if (
         !form ||
@@ -39,19 +37,24 @@ document.addEventListener("DOMContentLoaded", function () {
         !continueBtn ||
         !verifyCodeBtn ||
         !resendCodeBtn ||
-        !backToFormBtn
+        !backToFormBtn ||
+        !fullNameInput ||
+        !emailInput ||
+        !phoneInput ||
+        !addressInput ||
+        !passwordInput ||
+        !confirmPasswordInput
     ) {
         return;
     }
 
     var touched = {
-        firstName: false,
-        middleInitial: false,
-        lastName: false,
+        fullName: false,
         email: false,
         phone: false,
         address: false,
-        password: false
+        password: false,
+        confirmPassword: false
     };
     var submitted = false;
     var isFormValid = false;
@@ -96,9 +99,19 @@ document.addEventListener("DOMContentLoaded", function () {
         return "API is unavailable (" + base + "). Run: cd APATECH/api && node kyc-server.js";
     }
 
-    function normalizeMiddleInitial(value) {
-        var cleaned = String(value || "").trim().replace(/[^a-zA-Z]/g, "");
-        return cleaned ? cleaned.slice(0, 1).toUpperCase() : "";
+    function parseFullName(value) {
+        var cleaned = String(value || "").trim().replace(/\s+/g, " ");
+        var parts = cleaned ? cleaned.split(" ") : [];
+        var first = parts[0] || "";
+        var last = parts.length > 1 ? parts[parts.length - 1] : "";
+        var middle = parts.length > 2 ? parts.slice(1, -1).join(" ") : "";
+        var middleInitial = middle ? middle.trim().charAt(0).toUpperCase() : "";
+        return {
+            full: cleaned,
+            first: first,
+            last: last,
+            middleInitial: middleInitial
+        };
     }
 
     function normalizePhone(value) {
@@ -167,10 +180,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function collectSignupPayload() {
+        var nameParts = parseFullName(fullNameInput.value);
         return {
-            firstName: String(firstNameInput.value || "").trim(),
-            middleInitial: normalizeMiddleInitial(middleInitialInput.value),
-            lastName: String(lastNameInput.value || "").trim(),
+            firstName: nameParts.first,
+            middleInitial: nameParts.middleInitial,
+            lastName: nameParts.last,
             email: String(emailInput.value || "").trim().toLowerCase(),
             phone: normalizePhone(phoneInput.value),
             address: String(addressInput.value || "").trim(),
@@ -266,36 +280,40 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function validateForm() {
-        var firstName = String(firstNameInput.value || "").trim();
-        var middleInitialRaw = String(middleInitialInput.value || "").trim();
-        var lastName = String(lastNameInput.value || "").trim();
+        var fullName = String(fullNameInput.value || "").trim();
         var email = String(emailInput.value || "").trim();
         var phone = String(phoneInput.value || "").trim();
         var address = String(addressInput.value || "").trim();
         var password = String(passwordInput.value || "");
+        var confirmPassword = String(confirmPasswordInput.value || "");
 
-        var firstNameMsg = firstName.length < 2 ? "Please enter your first name." : "";
-        var middleInitialMsg = (
-            middleInitialRaw &&
-            !/^[a-zA-Z][.]?$/.test(middleInitialRaw)
-        ) ? "Use one letter only for middle initial." : "";
-        var lastNameMsg = lastName.length < 2 ? "Please enter your last name." : "";
+        var nameParts = parseFullName(fullName);
+        var fullNameMsg = (
+            nameParts.full.length < 3 ||
+            nameParts.first.length < 2 ||
+            nameParts.last.length < 2
+        ) ? "Please enter your full name." : "";
         var emailMsg = !isValidEmail(email) ? "Please enter a valid email." : "";
         var phoneMsg = !isValidPhone(phone) ? "Use 09XXXXXXXXX or +639XXXXXXXXX." : "";
         var addressMsg = address.length < 5 ? "Please enter a complete address." : "";
         var passwordMsg = !isStrongPassword(password)
             ? "Password must be 8+ chars and include upper, lower, number and symbol."
             : "";
+        var confirmPasswordMsg = password !== confirmPassword ? "Passwords do not match." : "";
 
-        setFieldError(firstNameInput, firstNameErr, firstNameMsg, touched.firstName || submitted);
-        setFieldError(middleInitialInput, middleInitialErr, middleInitialMsg, touched.middleInitial || submitted);
-        setFieldError(lastNameInput, lastNameErr, lastNameMsg, touched.lastName || submitted);
+        setFieldError(fullNameInput, fullNameErr, fullNameMsg, touched.fullName || submitted);
         setFieldError(emailInput, emailErr, emailMsg, touched.email || submitted);
         setFieldError(phoneInput, phoneErr, phoneMsg, touched.phone || submitted);
         setFieldError(addressInput, addressErr, addressMsg, touched.address || submitted);
         setFieldError(passwordInput, passwordErr, passwordMsg, touched.password || submitted);
+        setFieldError(
+            confirmPasswordInput,
+            confirmPasswordErr,
+            confirmPasswordMsg,
+            touched.confirmPassword || submitted
+        );
 
-        isFormValid = !firstNameMsg && !middleInitialMsg && !lastNameMsg && !emailMsg && !phoneMsg && !addressMsg && !passwordMsg;
+        isFormValid = !fullNameMsg && !emailMsg && !phoneMsg && !addressMsg && !passwordMsg && !confirmPasswordMsg;
         continueBtn.disabled = !isFormValid;
         return isFormValid;
     }
@@ -587,13 +605,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     [
-        { key: "firstName", input: firstNameInput },
-        { key: "middleInitial", input: middleInitialInput },
-        { key: "lastName", input: lastNameInput },
+        { key: "fullName", input: fullNameInput },
         { key: "email", input: emailInput },
         { key: "phone", input: phoneInput },
         { key: "address", input: addressInput },
-        { key: "password", input: passwordInput }
+        { key: "password", input: passwordInput },
+        { key: "confirmPassword", input: confirmPasswordInput }
     ].forEach(function (entry) {
         if (!entry.input) {
             return;
@@ -603,9 +620,6 @@ document.addEventListener("DOMContentLoaded", function () {
             validateForm();
         });
         entry.input.addEventListener("input", function () {
-            if (entry.key === "middleInitial") {
-                entry.input.value = normalizeMiddleInitial(entry.input.value);
-            }
             if (entry.key === "email" || entry.key === "phone") {
                 resetVerificationState();
             }
