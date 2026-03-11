@@ -6263,11 +6263,8 @@ async function handleAdminSettingsUpdatePassword(req, res) {
             sendJson(res, 400, { success: false, message: "Current password is required." });
             return;
         }
-        if (!isStrongPassword(newPassword)) {
-            sendJson(res, 400, {
-                success: false,
-                message: "Password must be 8+ chars with upper, lower, number, and symbol."
-            });
+        if (!newPassword) {
+            sendJson(res, 400, { success: false, message: "New password is required." });
             return;
         }
 

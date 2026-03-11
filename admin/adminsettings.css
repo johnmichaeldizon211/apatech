@@ -132,7 +132,7 @@ body {
 .settings-grid {
     margin-top: 22px;
     display: grid;
-    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    grid-template-columns: minmax(280px, 1fr);
     gap: 18px;
 }
 
