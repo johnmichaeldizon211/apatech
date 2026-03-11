@@ -274,11 +274,19 @@
             return "Business Owner";
         }
         if (
-            raw === "no"
-            || raw === "employed"
+            raw === "employed"
             || raw === "employee"
         ) {
             return "Employed";
+        }
+        if (
+            raw === "no"
+            || raw === "none"
+            || raw === "not employed"
+            || raw === "not_employed"
+            || raw === "neither"
+        ) {
+            return "None";
         }
         return "";
     }
@@ -1773,14 +1781,15 @@
                 const type = button.getAttribute("data-employment") || "";
                 const value = button.getAttribute("data-value") || "";
                 const current = normalizeStep3EmploymentType(employmentTypeInput.value);
+                const hasOtherSelection = Boolean(current && current !== "None" && current !== type);
                 if (value === "Yes") {
                     setEmploymentType(type);
                 } else {
-                    if (current === type) {
-                        setEmploymentType("");
-                    } else {
+                    if (hasOtherSelection) {
                         setToggleState(type, "No");
                         syncConditionalRequirementFields();
+                    } else {
+                        setEmploymentType("None");
                     }
                 }
                 if (error) {
@@ -1803,12 +1812,12 @@
                     error.textContent = "";
                 }
 
-                const employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
+                let employmentType = normalizeStep3EmploymentType(employmentTypeInput.value);
                 if (!employmentType) {
-                    if (error) {
-                        error.textContent = "Please select if you are employed or a business owner.";
-                    }
-                    return;
+                    employmentType = "None";
+                    employmentTypeInput.value = employmentType;
+                    syncEmploymentTogglesFromInput();
+                    syncConditionalRequirementFields();
                 }
 
                 const missing = requirementNodes.find(function (definition) {
