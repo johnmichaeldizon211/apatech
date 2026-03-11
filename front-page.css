@@ -62,6 +62,26 @@ img {
     color: #1b3a82;
 }
 
+.nav-search {
+    flex: 1;
+    max-width: 320px;
+    margin: 0 16px;
+}
+
+.nav-search input {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid #cbd7e6;
+    font-size: 13px;
+    background: #ffffff;
+    color: var(--text);
+}
+
+.nav-search input::placeholder {
+    color: #8a99b2;
+}
+
 .nav-actions {
     display: flex;
     gap: 12px;
