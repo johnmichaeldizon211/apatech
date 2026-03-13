@@ -3,11 +3,12 @@
         return;
     }
 
-    const DEFAULT_HOST = "ecodrivebookingplatform.shop";
-    const DEFAULT_API_BASE = "https://" + DEFAULT_HOST;
+    const DEFAULT_API_BASE = "https://apatech.vercel.app";
     const CACHE_KEY = "ecodrive_reviews_cache_v1";
     const REVIEWED_KEY = "ecodrive_reviewed_orders_v1";
-    const API_PATH = "/api/reviews.php";
+    const API_PATH = "/api/reviews";
+    const MAX_REVIEW_IMAGES = 3;
+    const MAX_REVIEW_IMAGE_BYTES = 2 * 1024 * 1024;
 
     function safeParse(value) {
         try {
@@ -48,20 +49,19 @@
     }
 
     function resolveApiBase() {
-        const stored = String(
-            localStorage.getItem("ecodrive_reviews_api_base") || ""
-        ).trim();
-
+        const stored = String(localStorage.getItem("ecodrive_reviews_api_base") || "").trim();
+        const sessionBase = (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function")
+            ? String(window.EcodriveSession.getApiBase() || "").trim()
+            : "";
         const host = window.location && window.location.hostname;
         const isLocalhost = host && (host === "localhost" || host === "127.0.0.1");
         if (isLocalhost) {
-            if (stored) {
-                return stored.replace(/\/+$/, "");
-            }
-            return window.location.origin.replace(/\/+$/, "");
+            const localBase = stored || sessionBase || window.location.origin;
+            return localBase.replace(/\/+$/, "");
         }
 
-        return DEFAULT_API_BASE;
+        const resolved = sessionBase || DEFAULT_API_BASE;
+        return resolved.replace(/\/+$/, "");
     }
 
     const API_BASE = resolveApiBase();
@@ -120,23 +120,73 @@
         }
     }
 
-    function dataUrlToBlob(dataUrl) {
+    function isDataImage(value) {
+        return typeof value === "string" && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value);
+    }
+
+    function estimateDataUrlBytes(dataUrl) {
         if (!dataUrl || typeof dataUrl !== "string") {
-            return null;
+            return 0;
         }
-        const parts = dataUrl.split(",");
-        if (parts.length < 2) {
-            return null;
+        const commaIndex = dataUrl.indexOf(",");
+        if (commaIndex === -1) {
+            return 0;
         }
-        const match = parts[0].match(/data:([^;]+);base64/i);
-        const mime = match ? match[1] : "image/jpeg";
-        const binary = atob(parts[1]);
-        const len = binary.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i += 1) {
-            bytes[i] = binary.charCodeAt(i);
+        const base64 = dataUrl.slice(commaIndex + 1);
+        return Math.floor(base64.length * 3 / 4);
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise(function (resolve, reject) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                resolve(reader.result);
+            };
+            reader.onerror = function () {
+                reject(new Error("Unable to read file"));
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function normalizeReviewImages(images) {
+        const list = Array.isArray(images) ? images : [];
+        const output = [];
+        for (let i = 0; i < list.length; i += 1) {
+            if (output.length >= MAX_REVIEW_IMAGES) {
+                break;
+            }
+            const image = list[i];
+            if (!image) continue;
+            let dataUrl = "";
+            if (typeof image === "string") {
+                dataUrl = image;
+            } else if (image && typeof image === "object") {
+                if (typeof image.src === "string") {
+                    dataUrl = image.src;
+                } else if (typeof image.dataUrl === "string") {
+                    dataUrl = image.dataUrl;
+                } else if (image.file instanceof File) {
+                    if (image.file.size > MAX_REVIEW_IMAGE_BYTES) {
+                        throw new Error("Each image must be under 2MB.");
+                    }
+                    dataUrl = await readFileAsDataUrl(image.file);
+                }
+            } else if (image instanceof File) {
+                if (image.size > MAX_REVIEW_IMAGE_BYTES) {
+                    throw new Error("Each image must be under 2MB.");
+                }
+                dataUrl = await readFileAsDataUrl(image);
+            }
+            if (!dataUrl || !isDataImage(dataUrl)) {
+                continue;
+            }
+            if (estimateDataUrlBytes(dataUrl) > MAX_REVIEW_IMAGE_BYTES) {
+                throw new Error("Each image must be under 2MB.");
+            }
+            output.push(dataUrl);
         }
-        return new Blob([bytes], { type: mime });
+        return output;
     }
 
     async function submitReview(input) {
@@ -150,49 +200,32 @@
             return { success: false, message: "Missing product or rating." };
         }
 
-        const form = new FormData();
-        form.append("product_id", productId);
-        form.append("product_name", productName);
-        form.append("rating", String(rating));
-        form.append("review_text", String(review.text || ""));
-        form.append("reviewer_name", String(review.name || "Anonymous"));
-        if (review.orderId) {
-            form.append("order_id", String(review.orderId));
+        let imagesPayload = [];
+        try {
+            imagesPayload = await normalizeReviewImages(review.images);
+        } catch (error) {
+            return { success: false, message: error.message || "Unable to attach images." };
         }
-        if (review.userEmail) {
-            form.append("user_email", String(review.userEmail));
-        }
-        if (review.status) {
-            form.append("booking_status", String(review.status));
-        }
-        if (review.fulfillmentStatus) {
-            form.append("fulfillment_status", String(review.fulfillmentStatus));
-        }
-
-        if (Array.isArray(review.images)) {
-            review.images.forEach(function (image, index) {
-                if (!image) return;
-                if (image instanceof File) {
-                    form.append("images[]", image, image.name || `review-${index + 1}.jpg`);
-                    return;
-                }
-                if (image.file instanceof File) {
-                    form.append("images[]", image.file, image.file.name || `review-${index + 1}.jpg`);
-                    return;
-                }
-                if (image.src) {
-                    const blob = dataUrlToBlob(image.src);
-                    if (blob) {
-                        form.append("images[]", blob, image.name || `review-${index + 1}.jpg`);
-                    }
-                }
-            });
-        }
+        const payload = {
+            product_id: productId,
+            product_name: productName,
+            rating: rating,
+            review_text: String(review.text || ""),
+            reviewer_name: String(review.name || "Anonymous"),
+            order_id: review.orderId ? String(review.orderId) : "",
+            user_email: review.userEmail ? String(review.userEmail) : "",
+            booking_status: review.status ? String(review.status) : "",
+            fulfillment_status: review.fulfillmentStatus ? String(review.fulfillmentStatus) : "",
+            images: imagesPayload
+        };
 
         try {
             const response = await fetch(getApiUrl(""), {
                 method: "POST",
-                body: form
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
             });
             const payload = await response.json().catch(function () {
                 return {};

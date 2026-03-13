@@ -1548,6 +1548,26 @@ async function ensureDbSchema() {
         }
 
         await pool.execute(
+            `CREATE TABLE IF NOT EXISTS ebike_reviews (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                order_id VARCHAR(64) NOT NULL,
+                product_id VARCHAR(120) NOT NULL,
+                product_name VARCHAR(180) NOT NULL,
+                user_email VARCHAR(190) NULL,
+                reviewer_name VARCHAR(120) NOT NULL,
+                rating TINYINT UNSIGNED NOT NULL,
+                review_text TEXT NOT NULL,
+                images_json LONGTEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_ebike_reviews_order_id (order_id),
+                KEY idx_ebike_reviews_product (product_id),
+                KEY idx_ebike_reviews_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        );
+
+        await pool.execute(
             `CREATE TABLE IF NOT EXISTS products (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 model VARCHAR(180) NOT NULL,
@@ -7114,6 +7134,204 @@ async function handleCancelBooking(req, res, orderId) {
     }
 }
 
+function normalizeReviewProductId(value) {
+    const slug = String(value || "")
+        .toLowerCase()
+        .replace(/model\s*:/gi, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    return slug.slice(0, 120);
+}
+
+function isDeliveredReviewStatus(status, fulfillment) {
+    const merged = normalizeText(`${status || ""} ${fulfillment || ""}`).toLowerCase();
+    return merged.includes("delivered")
+        || merged.includes("completed")
+        || merged.includes("complete");
+}
+
+function estimateDataUrlBytes(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== "string") {
+        return 0;
+    }
+    const commaIndex = dataUrl.indexOf(",");
+    if (commaIndex === -1) {
+        return 0;
+    }
+    const base64 = dataUrl.slice(commaIndex + 1);
+    return Math.floor(base64.length * 3 / 4);
+}
+
+function normalizeReviewImages(imagesInput) {
+    const list = Array.isArray(imagesInput) ? imagesInput : [];
+    const output = [];
+    const maxImages = 3;
+    const maxBytes = 2 * 1024 * 1024;
+    for (let i = 0; i < list.length; i += 1) {
+        if (output.length >= maxImages) {
+            break;
+        }
+        const entry = list[i];
+        let src = "";
+        if (typeof entry === "string") {
+            src = entry;
+        } else if (entry && typeof entry === "object") {
+            if (typeof entry.src === "string") {
+                src = entry.src;
+            } else if (typeof entry.dataUrl === "string") {
+                src = entry.dataUrl;
+            }
+        }
+        if (!src || !isDataImage(src)) {
+            continue;
+        }
+        if (estimateDataUrlBytes(src) > maxBytes) {
+            return { error: "Each image must be under 2MB." };
+        }
+        output.push(src);
+    }
+    return { images: output, error: "" };
+}
+
+function formatReviewDisplayDate(dateInput) {
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput || "");
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function mapReviewImages(imagesJson) {
+    const parsed = typeof imagesJson === "string" ? safeJsonParse(imagesJson) : imagesJson;
+    if (!Array.isArray(parsed)) {
+        return [];
+    }
+    return parsed.map((entry) => {
+        if (typeof entry === "string") {
+            return { src: entry };
+        }
+        if (entry && typeof entry === "object" && typeof entry.src === "string") {
+            return { src: entry.src };
+        }
+        return null;
+    }).filter(Boolean);
+}
+
+async function fetchReviewsByProduct(pool, productId) {
+    const [rows] = await pool.execute(
+        "SELECT id, order_id, product_id, product_name, reviewer_name, rating, review_text, images_json, created_at FROM ebike_reviews WHERE product_id = ? ORDER BY created_at DESC",
+        [productId]
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    return list.map((row) => ({
+        id: Number(row.id || 0),
+        orderId: row.order_id,
+        productId: row.product_id,
+        productName: row.product_name,
+        name: row.reviewer_name,
+        rating: Number(row.rating || 0),
+        text: row.review_text,
+        images: mapReviewImages(row.images_json),
+        createdAt: row.created_at,
+        displayDate: formatReviewDisplayDate(row.created_at)
+    }));
+}
+
+async function handleReviewsGet(_req, res, parsedUrl) {
+    try {
+        const productId = normalizeReviewProductId(parsedUrl.searchParams.get("product_id"));
+        if (!productId) {
+            sendJson(res, 400, { success: false, message: "Missing product_id." });
+            return;
+        }
+        const pool = await getDbPool();
+        const reviews = await fetchReviewsByProduct(pool, productId);
+        sendJson(res, 200, { success: true, reviews: reviews });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load reviews." });
+    }
+}
+
+async function handleReviewsPost(req, res) {
+    try {
+        const body = await readBody(req);
+        const productId = normalizeReviewProductId(body.product_id || body.productId);
+        const productName = normalizeText(body.product_name || body.productName || "").slice(0, 180);
+        const orderId = normalizeOrderId(body.order_id || body.orderId || "", false);
+        const reviewerName = normalizeText(body.reviewer_name || body.reviewerName || body.name || "Anonymous").slice(0, 120);
+        const reviewText = normalizeText(body.review_text || body.reviewText || body.text || "");
+        const userEmail = normalizeEmail(body.user_email || body.userEmail || "");
+        const rating = Number(body.rating || 0);
+
+        if (!productId || !productName || !orderId || !reviewText || rating < 1 || rating > 5) {
+            sendJson(res, 400, { success: false, message: "Missing required review fields." });
+            return;
+        }
+
+        const pool = await getDbPool();
+        const [bookingRows] = await pool.execute(
+            "SELECT status, fulfillment_status FROM bookings WHERE order_id = ? LIMIT 1",
+            [orderId]
+        );
+        let booking = Array.isArray(bookingRows) && bookingRows.length ? bookingRows[0] : null;
+        if (!booking) {
+            const fallbackStatus = body.booking_status || body.bookingStatus || "";
+            const fallbackFulfillment = body.fulfillment_status || body.fulfillmentStatus || "";
+            if (!isDeliveredReviewStatus(fallbackStatus, fallbackFulfillment)) {
+                sendJson(res, 403, { success: false, message: "Booking not found." });
+                return;
+            }
+            booking = { status: fallbackStatus, fulfillment_status: fallbackFulfillment };
+        }
+        if (!isDeliveredReviewStatus(booking.status, booking.fulfillment_status)) {
+            sendJson(res, 403, { success: false, message: "Review is available only after delivery." });
+            return;
+        }
+
+        const [existingRows] = await pool.execute(
+            "SELECT id FROM ebike_reviews WHERE order_id = ? LIMIT 1",
+            [orderId]
+        );
+        if (Array.isArray(existingRows) && existingRows.length > 0) {
+            sendJson(res, 409, { success: false, message: "Review already submitted." });
+            return;
+        }
+
+        const imageResult = normalizeReviewImages(body.images);
+        if (imageResult.error) {
+            sendJson(res, 400, { success: false, message: imageResult.error });
+            return;
+        }
+        const imagesJson = imageResult.images && imageResult.images.length
+            ? JSON.stringify(imageResult.images)
+            : null;
+
+        await pool.execute(
+            "INSERT INTO ebike_reviews (order_id, product_id, product_name, user_email, reviewer_name, rating, review_text, images_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                orderId,
+                productId,
+                productName,
+                userEmail || null,
+                reviewerName,
+                Math.round(rating),
+                reviewText,
+                imagesJson
+            ]
+        );
+
+        const reviews = await fetchReviewsByProduct(pool, productId);
+        sendJson(res, 201, { success: true, reviews: reviews });
+    } catch (error) {
+        sendJson(res, 500, { success: false, message: error.message || "Unable to submit review." });
+    }
+}
+
 async function handlePublicBookingModelStats(_req, res, parsedUrl) {
     try {
         const rawLimit = Number(parsedUrl.searchParams.get("limit") || 12);
@@ -8991,6 +9209,16 @@ async function requestListener(req, res) {
 
     if (req.method === "POST" && pathname === "/api/chat/thread/clear") {
         await handleChatThreadClear(req, res);
+        return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/reviews") {
+        await handleReviewsGet(req, res, parsedUrl);
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/reviews") {
+        await handleReviewsPost(req, res);
         return;
     }
 
