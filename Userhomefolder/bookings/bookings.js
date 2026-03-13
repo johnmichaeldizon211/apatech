@@ -1276,9 +1276,16 @@
             }
 
             function getReviewStore() {
-                return window.EcodriveReviews && typeof window.EcodriveReviews.addReview === "function"
-                    ? window.EcodriveReviews
-                    : null;
+                if (!window.EcodriveReviews) {
+                    return null;
+                }
+                if (typeof window.EcodriveReviews.submitReview === "function") {
+                    return window.EcodriveReviews;
+                }
+                if (typeof window.EcodriveReviews.addReview === "function") {
+                    return window.EcodriveReviews;
+                }
+                return null;
             }
 
             function normalizeReviewModelName(value) {
