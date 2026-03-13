@@ -220,25 +220,50 @@
         };
 
         try {
-            const response = await fetch(getApiUrl(""), {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-            const payload = await response.json().catch(function () {
-                return {};
-            });
-            if (!response.ok || !payload || payload.success !== true) {
-                return { success: false, message: payload && payload.message ? payload.message : "Unable to submit review." };
+            const responsePayload = await postReviewPayload(payload);
+            if (!responsePayload || responsePayload.success !== true) {
+                return {
+                    success: false,
+                    message: responsePayload && responsePayload.message ? responsePayload.message : "Unable to submit review."
+                };
             }
-            setCachedReviews(productId, Array.isArray(payload.reviews) ? payload.reviews : getCachedReviews(productId));
+            setCachedReviews(productId, Array.isArray(responsePayload.reviews) ? responsePayload.reviews : getCachedReviews(productId));
             markOrderReviewed(review.orderId, review.createdAt);
-            return { success: true, reviews: payload.reviews || [] };
-        } catch (_error) {
-            return { success: false, message: "Network error while submitting review." };
+            return { success: true, reviews: responsePayload.reviews || [] };
+        } catch (error) {
+            return { success: false, message: error && error.message ? error.message : "Network error while submitting review." };
         }
+    }
+
+    function postReviewPayload(payload) {
+        return new Promise(function (resolve, reject) {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", getApiUrl(""), true);
+            xhr.setRequestHeader("Content-Type", "text/plain");
+            xhr.onload = function () {
+                const status = xhr.status || 0;
+                const responseText = xhr.responseText || "";
+                let parsed = {};
+                if (responseText) {
+                    try {
+                        parsed = JSON.parse(responseText);
+                    } catch (_error) {
+                        parsed = {};
+                    }
+                }
+                if (status >= 200 && status < 300) {
+                    resolve(parsed);
+                    return;
+                }
+                parsed = parsed && typeof parsed === "object" ? parsed : {};
+                parsed.message = parsed.message || "Unable to submit review.";
+                resolve(parsed);
+            };
+            xhr.onerror = function () {
+                reject(new Error("Network error while submitting review."));
+            };
+            xhr.send(JSON.stringify(payload));
+        });
     }
 
     function isOrderReviewed(orderId, createdAt) {
