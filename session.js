@@ -9,7 +9,7 @@
     var LEGACY_API_BASE_KEY = "ecodrive_kyc_api_base";
     var DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5050";
     var DEFAULT_VERCEL_API_BASE = "https://apatech.vercel.app";
-    var DEFAULT_REMOTE_API_BASE = DEFAULT_VERCEL_API_BASE;
+    var DEFAULT_REMOTE_API_BASE = "https://apatech-production.up.railway.app";
     var EXTERNAL_API_FRONTEND_HOSTS = {
         "ecodrivebookingplatform.shop": true,
         "www.ecodrivebookingplatform.shop": true
