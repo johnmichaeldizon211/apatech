@@ -49,10 +49,11 @@ img {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     padding: 16px 32px;
     max-width: 1020px;
     margin: 0 auto;
+    flex-wrap: wrap;
 }
 
 .logo {
@@ -62,30 +63,11 @@ img {
     color: #1b3a82;
 }
 
-.nav-search {
-    flex: 1;
-    max-width: 320px;
-    margin: 0 16px;
-}
-
-.nav-search input {
-    width: 100%;
-    padding: 9px 12px;
-    border-radius: 10px;
-    border: 1px solid #cbd7e6;
-    font-size: 13px;
-    background: #ffffff;
-    color: var(--text);
-}
-
-.nav-search input::placeholder {
-    color: #8a99b2;
-}
-
 .nav-actions {
     display: flex;
     gap: 12px;
     align-items: center;
+    margin-left: auto;
 }
 
 .btn {
@@ -431,6 +413,11 @@ img {
         padding: 0 20px;
     }
 
+    .stat-card {
+        max-width: none;
+        margin: 0;
+    }
+
     .promo-inner,
     .lineup-grid {
         grid-template-columns: 1fr;
@@ -448,8 +435,29 @@ img {
         align-items: flex-start;
     }
 
-    .nav-search input {
+    .nav-actions {
         width: 100%;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .hero {
+        padding: 12px 0 8px;
+    }
+
+    .promo-card {
+        height: auto;
+        min-height: 260px;
+    }
+
+    .promo-card img {
+        height: 240px;
+    }
+
+    .promo-action {
+        left: 16px;
+        top: auto;
+        bottom: 16px;
     }
 
     .product-card img,
@@ -459,5 +467,47 @@ img {
 
     .footer-inner {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 540px) {
+    .nav-inner {
+        padding: 12px 16px;
+        gap: 12px;
+    }
+
+    .btn {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+
+    .hero-banner-img {
+        border-radius: 12px;
+    }
+
+    .stat-card {
+        padding: 12px;
+    }
+
+    .promo-badge {
+        width: 100px;
+        height: 100px;
+        font-size: 10px;
+        left: 12px;
+        top: 4px;
+    }
+
+    .promo-action {
+        left: 12px;
+        bottom: 12px;
+    }
+
+    .product-card img,
+    .product-feature img {
+        height: 200px;
+    }
+
+    .footer {
+        padding: 24px 0 32px;
     }
 }
