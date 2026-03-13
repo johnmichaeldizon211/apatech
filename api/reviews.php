@@ -26,11 +26,23 @@ function read_config()
         "pass" => getenv("DB_PASSWORD") ?: ""
     ];
 
-    $overridePath = __DIR__ . "/reviews-config.php";
-    if (file_exists($overridePath)) {
-        $override = include $overridePath;
-        if (is_array($override)) {
-            $config = array_merge($config, $override);
+    $docRoot = isset($_SERVER["DOCUMENT_ROOT"]) ? rtrim($_SERVER["DOCUMENT_ROOT"], "/") : "";
+    $overridePaths = [
+        __DIR__ . "/reviews-config.php",
+        $docRoot ? ($docRoot . "/api/reviews-config.php") : "",
+        $docRoot ? ($docRoot . "/reviews-config.php") : ""
+    ];
+
+    foreach ($overridePaths as $overridePath) {
+        if (!$overridePath) {
+            continue;
+        }
+        if (file_exists($overridePath)) {
+            $override = include $overridePath;
+            if (is_array($override)) {
+                $config = array_merge($config, $override);
+                break;
+            }
         }
     }
 
