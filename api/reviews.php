@@ -23,7 +23,9 @@ function read_config()
         "port" => getenv("DB_PORT") ?: "3306",
         "name" => getenv("DB_NAME") ?: "",
         "user" => getenv("DB_USER") ?: "",
-        "pass" => getenv("DB_PASSWORD") ?: ""
+        "pass" => getenv("DB_PASSWORD") ?: "",
+        "url" => getenv("DB_URL") ?: "",
+        "db_url" => ""
     ];
 
     $scriptDir = isset($_SERVER["SCRIPT_FILENAME"]) ? dirname($_SERVER["SCRIPT_FILENAME"]) : "";
@@ -102,6 +104,44 @@ function read_config()
                 "paths" => $checks
             ]
         ]);
+    }
+
+    if (!empty($config["url"])) {
+        $parsed = parse_url($config["url"]);
+        if (is_array($parsed) && !empty($parsed["host"])) {
+            $config["host"] = $parsed["host"];
+            if (!empty($parsed["port"])) {
+                $config["port"] = (string) $parsed["port"];
+            }
+            if (!empty($parsed["user"])) {
+                $config["user"] = $parsed["user"];
+            }
+            if (isset($parsed["pass"])) {
+                $config["pass"] = $parsed["pass"];
+            }
+            if (!empty($parsed["path"])) {
+                $config["name"] = ltrim($parsed["path"], "/");
+            }
+        }
+    }
+
+    if (!empty($config["db_url"])) {
+        $parsed = parse_url($config["db_url"]);
+        if (is_array($parsed) && !empty($parsed["host"])) {
+            $config["host"] = $parsed["host"];
+            if (!empty($parsed["port"])) {
+                $config["port"] = (string) $parsed["port"];
+            }
+            if (!empty($parsed["user"])) {
+                $config["user"] = $parsed["user"];
+            }
+            if (isset($parsed["pass"])) {
+                $config["pass"] = $parsed["pass"];
+            }
+            if (!empty($parsed["path"])) {
+                $config["name"] = ltrim($parsed["path"], "/");
+            }
+        }
     }
 
     return $config;

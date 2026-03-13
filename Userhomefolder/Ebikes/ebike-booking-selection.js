@@ -777,7 +777,7 @@
     }
 
     const REVIEW_STYLE_HREF = "ebike-reviews.css?v=20260313";
-    const REVIEW_STORE_SRC = "../reviews-store.js?v=20260313";
+    const REVIEW_STORE_SRC = "../reviews-store.js?v=20260313c";
 
     function ensureReviewStyles() {
         if (document.querySelector("link[data-ebike-reviews]")) {

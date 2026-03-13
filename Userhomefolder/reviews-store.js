@@ -4,6 +4,7 @@
     }
 
     const DEFAULT_HOST = "ecodrivebookingplatform.shop";
+    const DEFAULT_API_BASE = "https://" + DEFAULT_HOST;
     const CACHE_KEY = "ecodrive_reviews_cache_v1";
     const REVIEWED_KEY = "ecodrive_reviewed_orders_v1";
     const API_PATH = "/api/reviews.php";
@@ -48,38 +49,19 @@
 
     function resolveApiBase() {
         const stored = String(
-            localStorage.getItem("ecodrive_reviews_api_base")
-            || localStorage.getItem("ecodrive_api_base")
-            || localStorage.getItem("ecodrive_kyc_api_base")
-            || (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
-                ? window.EcodriveSession.getApiBase()
-                : "")
+            localStorage.getItem("ecodrive_reviews_api_base") || ""
         ).trim();
 
-        function getHost(value) {
-            try {
-                return String(new URL(value).hostname || "").trim().toLowerCase();
-            } catch (_error) {
-                const match = String(value || "").match(/^https?:\/\/([^/:?#]+)/i);
-                return match && match[1] ? String(match[1]).trim().toLowerCase() : "";
-            }
-        }
-
         if (stored) {
-            const host = window.location && window.location.hostname;
-            const storedHost = getHost(stored);
-            if (host && (host === DEFAULT_HOST || host === "www." + DEFAULT_HOST)) {
-                if (storedHost && storedHost !== host) {
-                    return window.location.origin.replace(/\/+$/, "");
-                }
-            }
             return stored.replace(/\/+$/, "");
         }
+
         const host = window.location && window.location.hostname;
-        if (host && (host === DEFAULT_HOST || host === "www." + DEFAULT_HOST)) {
+        if (host && (host === "localhost" || host === "127.0.0.1")) {
             return window.location.origin.replace(/\/+$/, "");
         }
-        return `https://${DEFAULT_HOST}`;
+
+        return DEFAULT_API_BASE;
     }
 
     const API_BASE = resolveApiBase();
