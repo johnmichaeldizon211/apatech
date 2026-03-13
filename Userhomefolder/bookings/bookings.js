@@ -1503,7 +1503,9 @@
                         images: selectedReviewImages,
                         createdAt: activeReviewPayload.createdAt,
                         orderId: activeReviewPayload.orderId,
-                        userEmail: getCurrentUserEmail()
+                        userEmail: getCurrentUserEmail(),
+                        status: activeReviewPayload.status,
+                        fulfillmentStatus: activeReviewPayload.fulfillmentStatus
                     }).then(function (result) {
                         if (!result || result.success !== true) {
                             if (reviewError) reviewError.textContent = result && result.message ? result.message : "Unable to submit review.";
@@ -1619,7 +1621,7 @@
                         ? (
                             reviewed
                                 ? "<span class=\"reviewed-note\">Reviewed</span>"
-                                : "<button type=\"button\" class=\"review-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-model=\"" + encodeToken(reviewModel || item.model || "") + "\">Review</button>"
+                                : "<button type=\"button\" class=\"review-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-model=\"" + encodeToken(reviewModel || item.model || "") + "\" data-status=\"" + encodeToken(item.status || \"\") + "\" data-fulfillment=\"" + encodeToken(item.fulfillmentStatus || \"\") + "\">Review</button>"
                         )
                         : "";
                     const cancelBtnHtml = (!delivered && item.canCancel)
@@ -1729,10 +1731,14 @@
                         const orderId = decodeToken(reviewBtn.getAttribute("data-order-id"));
                         const createdAt = decodeToken(reviewBtn.getAttribute("data-created-at"));
                         const model = decodeToken(reviewBtn.getAttribute("data-model"));
+                        const status = decodeToken(reviewBtn.getAttribute("data-status"));
+                        const fulfillmentStatus = decodeToken(reviewBtn.getAttribute("data-fulfillment"));
                         openReviewModal({
                             orderId: orderId,
                             createdAt: createdAt,
-                            model: model
+                            model: model,
+                            status: status,
+                            fulfillmentStatus: fulfillmentStatus
                         });
                         return;
                     }

@@ -52,12 +52,12 @@
             localStorage.getItem("ecodrive_reviews_api_base") || ""
         ).trim();
 
-        if (stored) {
-            return stored.replace(/\/+$/, "");
-        }
-
         const host = window.location && window.location.hostname;
-        if (host && (host === "localhost" || host === "127.0.0.1")) {
+        const isLocalhost = host && (host === "localhost" || host === "127.0.0.1");
+        if (isLocalhost) {
+            if (stored) {
+                return stored.replace(/\/+$/, "");
+            }
             return window.location.origin.replace(/\/+$/, "");
         }
 
@@ -161,6 +161,12 @@
         }
         if (review.userEmail) {
             form.append("user_email", String(review.userEmail));
+        }
+        if (review.status) {
+            form.append("booking_status", String(review.status));
+        }
+        if (review.fulfillmentStatus) {
+            form.append("fulfillment_status", String(review.fulfillmentStatus));
         }
 
         if (Array.isArray(review.images)) {

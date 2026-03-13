@@ -312,10 +312,18 @@ function handle_post($pdo)
     $bookingStmt->execute([$orderId]);
     $booking = $bookingStmt->fetch();
     if (!$booking) {
-        json_response([
-            "success" => false,
-            "message" => "Booking not found."
-        ], 403);
+        $fallbackStatus = $_POST["booking_status"] ?? "";
+        $fallbackFulfillment = $_POST["fulfillment_status"] ?? "";
+        if (!is_delivered_status($fallbackStatus, $fallbackFulfillment)) {
+            json_response([
+                "success" => false,
+                "message" => "Booking not found."
+            ], 403);
+        }
+        $booking = [
+            "status" => $fallbackStatus,
+            "fulfillment_status" => $fallbackFulfillment
+        ];
     }
     if (!is_delivered_status($booking["status"] ?? "", $booking["fulfillment_status"] ?? "")) {
         json_response([
