@@ -1621,7 +1621,7 @@
                         ? (
                             reviewed
                                 ? "<span class=\"reviewed-note\">Reviewed</span>"
-                                : "<button type=\"button\" class=\"review-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-model=\"" + encodeToken(reviewModel || item.model || "") + "\" data-status=\"" + encodeToken(item.status || \"\") + "\" data-fulfillment=\"" + encodeToken(item.fulfillmentStatus || \"\") + "\">Review</button>"
+                                : "<button type=\"button\" class=\"review-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-model=\"" + encodeToken(reviewModel || item.model || "") + "\" data-status=\"" + encodeToken(item.status || "") + "\" data-fulfillment=\"" + encodeToken(item.fulfillmentStatus || "") + "\">Review</button>"
                         )
                         : "";
                     const cancelBtnHtml = (!delivered && item.canCancel)
