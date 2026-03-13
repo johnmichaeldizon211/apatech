@@ -647,6 +647,9 @@ function buildAllowedCorsOrigins(rawInput) {
 
     addOrigin("http://127.0.0.1:5500");
     addOrigin("http://localhost:5500");
+    addOrigin("https://ecodrivebookingplatform.shop");
+    addOrigin("https://www.ecodrivebookingplatform.shop");
+    addOrigin("https://apatech.vercel.app");
     addOrigin(PUBLIC_API_BASE);
 
     return origins;
