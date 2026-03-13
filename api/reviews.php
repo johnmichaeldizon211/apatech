@@ -26,24 +26,82 @@ function read_config()
         "pass" => getenv("DB_PASSWORD") ?: ""
     ];
 
+    $scriptDir = isset($_SERVER["SCRIPT_FILENAME"]) ? dirname($_SERVER["SCRIPT_FILENAME"]) : "";
     $docRoot = isset($_SERVER["DOCUMENT_ROOT"]) ? rtrim($_SERVER["DOCUMENT_ROOT"], "/") : "";
-    $overridePaths = [
-        __DIR__ . "/reviews-config.php",
-        $docRoot ? ($docRoot . "/api/reviews-config.php") : "",
-        $docRoot ? ($docRoot . "/reviews-config.php") : ""
-    ];
 
+    $basePaths = array_filter(array_unique([
+        __DIR__,
+        dirname(__DIR__),
+        dirname(dirname(__DIR__)),
+        $scriptDir,
+        $docRoot,
+        $docRoot ? ($docRoot . "/APATECH") : ""
+    ]));
+
+    $overridePaths = [];
+    foreach ($basePaths as $basePath) {
+        $overridePaths[] = $basePath . "/reviews-config.php";
+        $overridePaths[] = $basePath . "/api/reviews-config.php";
+    }
+    $overridePaths = array_unique(array_filter($overridePaths));
+
+    $configSource = "";
     foreach ($overridePaths as $overridePath) {
-        if (!$overridePath) {
+        if (!$overridePath || !is_readable($overridePath)) {
             continue;
         }
-        if (file_exists($overridePath)) {
-            $override = include $overridePath;
-            if (is_array($override)) {
-                $config = array_merge($config, $override);
-                break;
-            }
+        $DB_HOST = $DB_PORT = $DB_NAME = $DB_USER = $DB_PASSWORD = null;
+        $override = include $overridePath;
+        if (is_array($override)) {
+            $config = array_merge($config, $override);
+            $configSource = $overridePath;
+            break;
         }
+        $localConfig = [];
+        if (!empty($DB_HOST)) {
+            $localConfig["host"] = $DB_HOST;
+        }
+        if (!empty($DB_PORT)) {
+            $localConfig["port"] = $DB_PORT;
+        }
+        if (!empty($DB_NAME)) {
+            $localConfig["name"] = $DB_NAME;
+        }
+        if (!empty($DB_USER)) {
+            $localConfig["user"] = $DB_USER;
+        }
+        if (isset($DB_PASSWORD) && $DB_PASSWORD !== "") {
+            $localConfig["pass"] = $DB_PASSWORD;
+        }
+        if (!empty($localConfig)) {
+            $config = array_merge($config, $localConfig);
+            $configSource = $overridePath;
+            break;
+        }
+    }
+
+    if (isset($_GET["debug"]) && $_GET["debug"] === "1") {
+        $checks = [];
+        foreach ($overridePaths as $path) {
+            if (!$path) {
+                continue;
+            }
+            $checks[] = [
+                "path" => $path,
+                "exists" => file_exists($path),
+                "readable" => is_readable($path)
+            ];
+        }
+        json_response([
+            "success" => false,
+            "debug" => [
+                "script_dir" => $scriptDir,
+                "doc_root" => $docRoot,
+                "config_found" => !empty($config["name"]) && !empty($config["user"]),
+                "config_source" => $configSource ?: null,
+                "paths" => $checks
+            ]
+        ]);
     }
 
     return $config;

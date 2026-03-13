@@ -56,7 +56,23 @@
                 : "")
         ).trim();
 
+        function getHost(value) {
+            try {
+                return String(new URL(value).hostname || "").trim().toLowerCase();
+            } catch (_error) {
+                const match = String(value || "").match(/^https?:\/\/([^/:?#]+)/i);
+                return match && match[1] ? String(match[1]).trim().toLowerCase() : "";
+            }
+        }
+
         if (stored) {
+            const host = window.location && window.location.hostname;
+            const storedHost = getHost(stored);
+            if (host && (host === DEFAULT_HOST || host === "www." + DEFAULT_HOST)) {
+                if (storedHost && storedHost !== host) {
+                    return window.location.origin.replace(/\/+$/, "");
+                }
+            }
             return stored.replace(/\/+$/, "");
         }
         const host = window.location && window.location.hostname;
