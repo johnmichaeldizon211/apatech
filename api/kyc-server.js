@@ -7245,18 +7245,24 @@ async function fetchReviewsByProduct(pool, productId) {
     }));
 }
 
+const REVIEWS_CORS_HEADERS = Object.freeze({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+});
+
 async function handleReviewsGet(_req, res, parsedUrl) {
     try {
         const productId = normalizeReviewProductId(parsedUrl.searchParams.get("product_id"));
         if (!productId) {
-            sendJson(res, 400, { success: false, message: "Missing product_id." });
+            sendJson(res, 400, { success: false, message: "Missing product_id." }, REVIEWS_CORS_HEADERS);
             return;
         }
         const pool = await getDbPool();
         const reviews = await fetchReviewsByProduct(pool, productId);
-        sendJson(res, 200, { success: true, reviews: reviews });
+        sendJson(res, 200, { success: true, reviews: reviews }, REVIEWS_CORS_HEADERS);
     } catch (error) {
-        sendJson(res, 500, { success: false, message: error.message || "Unable to load reviews." });
+        sendJson(res, 500, { success: false, message: error.message || "Unable to load reviews." }, REVIEWS_CORS_HEADERS);
     }
 }
 
@@ -7272,7 +7278,7 @@ async function handleReviewsPost(req, res) {
         const rating = Number(body.rating || 0);
 
         if (!productId || !productName || !orderId || !reviewText || rating < 1 || rating > 5) {
-            sendJson(res, 400, { success: false, message: "Missing required review fields." });
+            sendJson(res, 400, { success: false, message: "Missing required review fields." }, REVIEWS_CORS_HEADERS);
             return;
         }
 
@@ -7286,13 +7292,13 @@ async function handleReviewsPost(req, res) {
             const fallbackStatus = body.booking_status || body.bookingStatus || "";
             const fallbackFulfillment = body.fulfillment_status || body.fulfillmentStatus || "";
             if (!isDeliveredReviewStatus(fallbackStatus, fallbackFulfillment)) {
-                sendJson(res, 403, { success: false, message: "Booking not found." });
+                sendJson(res, 403, { success: false, message: "Booking not found." }, REVIEWS_CORS_HEADERS);
                 return;
             }
             booking = { status: fallbackStatus, fulfillment_status: fallbackFulfillment };
         }
         if (!isDeliveredReviewStatus(booking.status, booking.fulfillment_status)) {
-            sendJson(res, 403, { success: false, message: "Review is available only after delivery." });
+            sendJson(res, 403, { success: false, message: "Review is available only after delivery." }, REVIEWS_CORS_HEADERS);
             return;
         }
 
@@ -7301,13 +7307,13 @@ async function handleReviewsPost(req, res) {
             [orderId]
         );
         if (Array.isArray(existingRows) && existingRows.length > 0) {
-            sendJson(res, 409, { success: false, message: "Review already submitted." });
+            sendJson(res, 409, { success: false, message: "Review already submitted." }, REVIEWS_CORS_HEADERS);
             return;
         }
 
         const imageResult = normalizeReviewImages(body.images);
         if (imageResult.error) {
-            sendJson(res, 400, { success: false, message: imageResult.error });
+            sendJson(res, 400, { success: false, message: imageResult.error }, REVIEWS_CORS_HEADERS);
             return;
         }
         const imagesJson = imageResult.images && imageResult.images.length
@@ -7329,9 +7335,9 @@ async function handleReviewsPost(req, res) {
         );
 
         const reviews = await fetchReviewsByProduct(pool, productId);
-        sendJson(res, 201, { success: true, reviews: reviews });
+        sendJson(res, 201, { success: true, reviews: reviews }, REVIEWS_CORS_HEADERS);
     } catch (error) {
-        sendJson(res, 500, { success: false, message: error.message || "Unable to submit review." });
+        sendJson(res, 500, { success: false, message: error.message || "Unable to submit review." }, REVIEWS_CORS_HEADERS);
     }
 }
 
@@ -9154,6 +9160,10 @@ async function requestListener(req, res) {
     const pathname = parsedUrl.pathname;
 
     if (req.method === "OPTIONS") {
+        if (pathname === "/api/reviews") {
+            sendJson(res, 200, { ok: true }, REVIEWS_CORS_HEADERS);
+            return;
+        }
         sendJson(res, 200, { ok: true });
         return;
     }
