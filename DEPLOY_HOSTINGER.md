@@ -59,6 +59,15 @@ Optional but recommended if using OTP notifications:
 
 Make sure DB env vars point to the same database credentials.
 
+### Reviews API (PHP)
+
+If using the new reviews backend:
+
+1. Import `api/reviews-schema.sql` in phpMyAdmin.
+2. Copy `api/reviews-config.sample.php` to `api/reviews-config.php` and fill in DB credentials (Hostinger shared PHP uses this file).
+3. Ensure the upload folder exists: `public_html/uploads/reviews` (the PHP endpoint auto-creates it when possible).
+4. Access reviews via `https://your-domain.com/api/reviews.php`.
+
 ## 5) Verify after deploy
 
 Health check:

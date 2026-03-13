@@ -23,6 +23,22 @@
             let bookingRefreshInFlight = false;
             let latestRenderedBookingItems = [];
             let receiptPdfLibPromise = null;
+            const reviewModal = document.getElementById("review-modal");
+            const reviewModalClose = document.getElementById("review-modal-close");
+            const reviewModalModel = document.getElementById("review-modal-model");
+            const reviewForm = document.getElementById("booking-review-form");
+            const reviewNameInput = document.getElementById("booking-review-name");
+            const reviewTextInput = document.getElementById("booking-review-text");
+            const reviewError = document.getElementById("booking-review-error");
+            const reviewImageInput = document.getElementById("booking-review-images");
+            const reviewPreview = document.getElementById("booking-review-preview");
+            const reviewStarButtons = document.querySelectorAll(".booking-star-btn");
+            const reviewSubmitBtn = reviewForm ? reviewForm.querySelector(".review-submit-btn") : null;
+            const MAX_REVIEW_IMAGES = 3;
+            const MAX_REVIEW_IMAGE_SIZE = 2 * 1024 * 1024;
+            let activeReviewPayload = null;
+            let selectedReviewRating = 0;
+            let selectedReviewImages = [];
 
             if (profileBtn && dropdown) {
                 profileBtn.addEventListener("click", function (e) {
@@ -1259,6 +1275,244 @@
                 return encodeURIComponent(String(value || ""));
             }
 
+            function getReviewStore() {
+                return window.EcodriveReviews && typeof window.EcodriveReviews.addReview === "function"
+                    ? window.EcodriveReviews
+                    : null;
+            }
+
+            function normalizeReviewModelName(value) {
+                let text = String(value || "")
+                    .replace(/model\s*:/i, "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                text = text.replace(/\(([^)]+)\)\s*$/, function (match, content) {
+                    const normalized = String(content || "").toLowerCase();
+                    if (normalized.includes("wheel") || normalized.includes("color")) {
+                        return "";
+                    }
+                    if (!/\d/.test(normalized)) {
+                        return "";
+                    }
+                    return match;
+                }).trim();
+                return text;
+            }
+
+            function getReviewProductId(modelName) {
+                const store = getReviewStore();
+                const base = normalizeReviewModelName(modelName);
+                if (store && typeof store.slugify === "function") {
+                    return store.slugify(base);
+                }
+                return String(base || "")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+            }
+
+            function isDeliveredBookingStatus(statusValue, fulfillmentValue) {
+                const mergedStatus = (String(statusValue || "") + " " + String(fulfillmentValue || ""))
+                    .toLowerCase();
+                return mergedStatus.includes("delivered")
+                    || mergedStatus.includes("completed")
+                    || mergedStatus.includes("complete");
+            }
+
+            function updateReviewStarButtons() {
+                reviewStarButtons.forEach(function (button) {
+                    const value = Number(button.dataset.value || 0);
+                    button.classList.toggle("active", value <= selectedReviewRating);
+                });
+            }
+
+            function renderReviewPreview() {
+                if (!reviewPreview) {
+                    return;
+                }
+                reviewPreview.innerHTML = "";
+                selectedReviewImages.forEach(function (image, index) {
+                    const item = document.createElement("div");
+                    item.className = "preview-item";
+                    const img = document.createElement("img");
+                    img.src = image.src;
+                    img.alt = image.name || "Preview";
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "preview-remove";
+                    remove.textContent = "×";
+                    remove.addEventListener("click", function () {
+                        selectedReviewImages.splice(index, 1);
+                        renderReviewPreview();
+                    });
+                    item.appendChild(img);
+                    item.appendChild(remove);
+                    reviewPreview.appendChild(item);
+                });
+            }
+
+            function readReviewFileAsDataUrl(file) {
+                return new Promise(function (resolve, reject) {
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                        resolve({
+                            src: reader.result,
+                            name: file.name || "image",
+                            file: file
+                        });
+                    };
+                    reader.onerror = function () {
+                        reject(new Error("Unable to read file"));
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            function handleReviewFiles(files) {
+                if (!files || !files.length) {
+                    return;
+                }
+                const remaining = MAX_REVIEW_IMAGES - selectedReviewImages.length;
+                if (remaining <= 0) {
+                    if (reviewError) reviewError.textContent = "Max 3 images only.";
+                    return;
+                }
+                const picked = Array.from(files).slice(0, remaining);
+                const oversize = picked.find(function (file) {
+                    return file.size > MAX_REVIEW_IMAGE_SIZE;
+                });
+                if (oversize) {
+                    if (reviewError) reviewError.textContent = "Each image must be under 2MB.";
+                    return;
+                }
+
+                Promise.all(picked.map(readReviewFileAsDataUrl))
+                    .then(function (images) {
+                        selectedReviewImages = selectedReviewImages.concat(images);
+                        renderReviewPreview();
+                    })
+                    .catch(function () {
+                        if (reviewError) reviewError.textContent = "Unable to attach image.";
+                    });
+            }
+
+            function resetReviewForm() {
+                if (reviewForm) {
+                    reviewForm.reset();
+                }
+                selectedReviewRating = 0;
+                selectedReviewImages = [];
+                if (reviewError) reviewError.textContent = "";
+                updateReviewStarButtons();
+                renderReviewPreview();
+            }
+
+            function openReviewModal(payload) {
+                const store = getReviewStore();
+                if (!reviewModal || !store || !payload) {
+                    window.alert("Review system is not available.");
+                    return;
+                }
+                if (store.isOrderReviewed(payload.orderId, payload.createdAt)) {
+                    window.alert("Review submitted na.");
+                    return;
+                }
+                activeReviewPayload = payload;
+                if (reviewModalModel) {
+                    reviewModalModel.textContent = payload.model || "Selected ebike";
+                }
+                resetReviewForm();
+                reviewModal.classList.add("open");
+                reviewModal.setAttribute("aria-hidden", "false");
+            }
+
+            function closeReviewModal() {
+                if (!reviewModal) {
+                    return;
+                }
+                reviewModal.classList.remove("open");
+                reviewModal.setAttribute("aria-hidden", "true");
+                activeReviewPayload = null;
+            }
+
+            if (reviewModalClose) {
+                reviewModalClose.addEventListener("click", closeReviewModal);
+            }
+
+            if (reviewModal) {
+                reviewModal.addEventListener("click", function (event) {
+                    if (event.target === reviewModal) {
+                        closeReviewModal();
+                    }
+                });
+            }
+
+            reviewStarButtons.forEach(function (button) {
+                button.addEventListener("click", function () {
+                    selectedReviewRating = Number(button.dataset.value || 0);
+                    updateReviewStarButtons();
+                });
+            });
+
+            if (reviewImageInput) {
+                reviewImageInput.addEventListener("change", function (event) {
+                    if (reviewError) reviewError.textContent = "";
+                    handleReviewFiles(event.target.files || []);
+                    event.target.value = "";
+                });
+            }
+
+            if (reviewForm) {
+                reviewForm.addEventListener("submit", function (event) {
+                    event.preventDefault();
+                    if (reviewError) reviewError.textContent = "";
+                    const store = getReviewStore();
+                    if (!store || !activeReviewPayload) {
+                        if (reviewError) reviewError.textContent = "Review system is not ready.";
+                        return;
+                    }
+                    if (!selectedReviewRating) {
+                        if (reviewError) reviewError.textContent = "Please select a star rating.";
+                        return;
+                    }
+                    const reviewText = reviewTextInput ? reviewTextInput.value.trim() : "";
+                    if (!reviewText) {
+                        if (reviewError) reviewError.textContent = "Please write a short review.";
+                        return;
+                    }
+                    const reviewer = reviewNameInput ? reviewNameInput.value.trim() : "";
+                    const productId = getReviewProductId(activeReviewPayload.model);
+
+                    if (reviewSubmitBtn) {
+                        reviewSubmitBtn.disabled = true;
+                    }
+
+                    store.submitReview({
+                        productId: productId,
+                        productName: activeReviewPayload.model,
+                        rating: selectedReviewRating,
+                        text: reviewText,
+                        name: reviewer || "Anonymous",
+                        images: selectedReviewImages,
+                        createdAt: activeReviewPayload.createdAt,
+                        orderId: activeReviewPayload.orderId,
+                        userEmail: getCurrentUserEmail()
+                    }).then(function (result) {
+                        if (!result || result.success !== true) {
+                            if (reviewError) reviewError.textContent = result && result.message ? result.message : "Unable to submit review.";
+                            return;
+                        }
+                        store.markOrderReviewed(activeReviewPayload.orderId, activeReviewPayload.createdAt);
+                        closeReviewModal();
+                        void refreshBookings(true);
+                    }).finally(function () {
+                        if (reviewSubmitBtn) {
+                            reviewSubmitBtn.disabled = false;
+                        }
+                    });
+                });
+            }
+
             function getRecordOrderId(record) {
                 return String((record && (record.orderId || record.id)) || "").trim();
             }
@@ -1347,11 +1601,26 @@
                     const viewReceiptBtnHtml = canPrintReceipt
                         ? "<button type=\"button\" class=\"receipt-action-btn view-receipt-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">View Receipt</button>"
                         : "";
-                    const cancelBtnHtml = item.canCancel
+                    const reviewStore = getReviewStore();
+                    const reviewEnabled = Boolean(reviewStore);
+                    const delivered = isDeliveredBookingStatus(item.status, item.fulfillmentStatus);
+                    const reviewed = delivered && reviewStore
+                        ? reviewStore.isOrderReviewed(item.orderId, item.createdAt)
+                        : false;
+                    const reviewModel = normalizeReviewModelName(item.model || "");
+                    const reviewBtnHtml = delivered && reviewEnabled
+                        ? (
+                            reviewed
+                                ? "<span class=\"reviewed-note\">Reviewed</span>"
+                                : "<button type=\"button\" class=\"review-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\" data-model=\"" + encodeToken(reviewModel || item.model || "") + "\">Review</button>"
+                        )
+                        : "";
+                    const cancelBtnHtml = (!delivered && item.canCancel)
                         ? "<button type=\"button\" class=\"cancel-btn\" data-order-id=\"" + encodeToken(item.orderId) + "\" data-created-at=\"" + encodeToken(item.createdAt) + "\">Cancel</button>"
                         : "";
-                    const actionHtml = (viewReceiptBtnHtml || cancelBtnHtml)
-                        ? "<div class=\"action-stack\">" + viewReceiptBtnHtml + cancelBtnHtml + "</div>"
+                    const actionItems = [viewReceiptBtnHtml, cancelBtnHtml, reviewBtnHtml].filter(Boolean);
+                    const actionHtml = actionItems.length > 0
+                        ? "<div class=\"action-stack\">" + actionItems.join("") + "</div>"
                         : "<span class=\"cancelled-note\">N/A</span>";
                     const trackingEtaHtml = item.trackingEta
                         ? "<small class=\"fulfillment-eta\">Estimated Delivery: " + escapeHtml(item.trackingEta) + "</small>"
@@ -1448,6 +1717,19 @@
 
             if (bookingRows) {
                 bookingRows.addEventListener("click", async function (event) {
+                    const reviewBtn = event.target.closest(".review-btn");
+                    if (reviewBtn) {
+                        const orderId = decodeToken(reviewBtn.getAttribute("data-order-id"));
+                        const createdAt = decodeToken(reviewBtn.getAttribute("data-created-at"));
+                        const model = decodeToken(reviewBtn.getAttribute("data-model"));
+                        openReviewModal({
+                            orderId: orderId,
+                            createdAt: createdAt,
+                            model: model
+                        });
+                        return;
+                    }
+
                     const receiptBtn = event.target.closest(".view-receipt-btn");
                     if (receiptBtn) {
                         const orderId = decodeToken(receiptBtn.getAttribute("data-order-id"));

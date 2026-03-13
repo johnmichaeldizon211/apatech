@@ -7,3 +7,4 @@ api/admin-credentials.json
 api/*.log
 api/*.out.log
 api/*.err.log
+api/reviews-config.php

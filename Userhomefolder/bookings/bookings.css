@@ -283,6 +283,29 @@ body {
     cursor: not-allowed;
 }
 
+.review-btn {
+    height: 26px;
+    min-width: 86px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 8px;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid #1f4a92;
+    background: #24439a;
+    color: #ffffff;
+}
+
+.review-btn:hover {
+    filter: brightness(0.95);
+}
+
+.reviewed-note {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1f4a92;
+}
+
 .action-stack {
     display: inline-flex;
     gap: 6px;
@@ -294,6 +317,56 @@ body {
     color: #6b7386;
     font-size: 10px;
     font-weight: 700;
+}
+
+.review-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 20, 40, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 120;
+}
+
+.review-modal.open {
+    display: flex;
+}
+
+.review-modal-card {
+    width: min(540px, 92vw);
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+    box-shadow: 0 18px 36px rgba(12, 24, 54, 0.2);
+}
+
+.review-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: #e8eef6;
+    cursor: pointer;
+    font-size: 16px;
+    color: #1f3e6b;
+}
+
+.review-modal h3 {
+    font-size: 16px;
+    color: #0d2f66;
+    margin-bottom: 6px;
+}
+
+.review-modal-model {
+    font-size: 12px;
+    color: #4c5b75;
+    margin-bottom: 12px;
 }
 
 .table-row.placeholder {

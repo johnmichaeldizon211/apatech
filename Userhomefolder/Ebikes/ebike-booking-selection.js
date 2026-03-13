@@ -776,6 +776,275 @@
         return addToCartBtn;
     }
 
+    const REVIEW_STYLE_HREF = "ebike-reviews.css?v=20260313";
+    const REVIEW_STORE_SRC = "../reviews-store.js?v=20260313";
+
+    function ensureReviewStyles() {
+        if (document.querySelector("link[data-ebike-reviews]")) {
+            return;
+        }
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = REVIEW_STYLE_HREF;
+        link.setAttribute("data-ebike-reviews", "1");
+        document.head.appendChild(link);
+    }
+
+    function loadReviewsStore() {
+        if (window.EcodriveReviews) {
+            return Promise.resolve(window.EcodriveReviews);
+        }
+        return new Promise(function (resolve, reject) {
+            const existing = document.querySelector("script[data-review-store]");
+            if (existing) {
+                if (window.EcodriveReviews) {
+                    resolve(window.EcodriveReviews);
+                    return;
+                }
+                existing.addEventListener("load", function () {
+                    resolve(window.EcodriveReviews);
+                }, { once: true });
+                existing.addEventListener("error", function () {
+                    reject(new Error("Unable to load review store."));
+                }, { once: true });
+                return;
+            }
+            const script = document.createElement("script");
+            script.src = REVIEW_STORE_SRC;
+            script.defer = true;
+            script.setAttribute("data-review-store", "1");
+            script.addEventListener("load", function () {
+                resolve(window.EcodriveReviews);
+            }, { once: true });
+            script.addEventListener("error", function () {
+                reject(new Error("Unable to load review store."));
+            }, { once: true });
+            document.head.appendChild(script);
+        });
+    }
+
+    function resolveModelName() {
+        const titleEl = document.querySelector(".model-title");
+        if (!titleEl) {
+            return "";
+        }
+        return String(titleEl.textContent || "")
+            .replace(/model\s*:/i, "")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function ensureReviewSection() {
+        const existing = document.querySelector(".reviews-section");
+        if (existing) {
+            return existing;
+        }
+        const main = document.querySelector("main");
+        if (!main) {
+            return null;
+        }
+        const section = document.createElement("section");
+        section.className = "reviews-section";
+        section.id = "reviews";
+        section.innerHTML = `
+            <div class="reviews-header">
+                <div class="rating-summary">
+                    <div class="rating-score">
+                        <span class="score" data-review-average>0.0</span>
+                        <span class="out-of">out of 5</span>
+                    </div>
+                    <div class="rating-stars" data-review-average-stars>☆☆☆☆☆</div>
+                    <div class="rating-count">Based on <span data-review-count>0</span> reviews</div>
+                </div>
+                <div class="rating-filters">
+                    <button class="filter-btn active" type="button" data-filter="all">All (0)</button>
+                    <button class="filter-btn" type="button" data-filter="5">5 Star (0)</button>
+                    <button class="filter-btn" type="button" data-filter="4">4 Star (0)</button>
+                    <button class="filter-btn" type="button" data-filter="3">3 Star (0)</button>
+                    <button class="filter-btn" type="button" data-filter="2">2 Star (0)</button>
+                    <button class="filter-btn" type="button" data-filter="1">1 Star (0)</button>
+                </div>
+            </div>
+            <div class="review-form-card review-lock">
+                <h3>Rate &amp; Review</h3>
+                <p class="review-lock-note">
+                    Reviews are available after your booking is delivered.
+                    Go to the Bookings page to submit your rating and photos.
+                </p>
+            </div>
+            <div class="review-list" data-review-list></div>
+        `;
+        main.insertAdjacentElement("afterend", section);
+        return section;
+    }
+
+    function initReviewSection() {
+        if (!window.EcodriveReviews) {
+            return;
+        }
+        ensureReviewStyles();
+        const section = ensureReviewSection();
+        if (!section) {
+            return;
+        }
+
+        const productName = resolveModelName();
+        const fallbackKey = window.location.pathname.split("/").pop() || "";
+        const productId = window.EcodriveReviews.slugify(productName || fallbackKey);
+
+        const averageEl = section.querySelector("[data-review-average]");
+        const averageStarsEl = section.querySelector("[data-review-average-stars]");
+        const countEl = section.querySelector("[data-review-count]");
+        const listEl = section.querySelector("[data-review-list]");
+        const filterButtons = Array.from(section.querySelectorAll(".filter-btn"));
+        let activeFilter = "all";
+        let currentReviews = [];
+
+        function renderStars(rating) {
+            const full = "★".repeat(rating);
+            const empty = "☆".repeat(5 - rating);
+            return `${full}${empty}`;
+        }
+
+        function refreshSummary(reviews) {
+            const count = reviews.length;
+            const total = reviews.reduce(function (sum, review) {
+                return sum + Number(review.rating || 0);
+            }, 0);
+            const average = count ? total / count : 0;
+            if (averageEl) averageEl.textContent = average.toFixed(1);
+            if (averageStarsEl) averageStarsEl.textContent = renderStars(Math.round(average || 0));
+            if (countEl) countEl.textContent = String(count);
+
+            const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+            reviews.forEach(function (review) {
+                const rating = Number(review.rating || 0);
+                if (counts[rating] !== undefined) {
+                    counts[rating] += 1;
+                }
+            });
+            filterButtons.forEach(function (button) {
+                const filter = button.dataset.filter;
+                if (filter === "all") {
+                    button.textContent = `All (${count})`;
+                } else {
+                    const stars = Number(filter);
+                    button.textContent = `${stars} Star (${counts[stars] || 0})`;
+                }
+            });
+        }
+
+        function buildReviewCard(review) {
+            const card = document.createElement("div");
+            card.className = "review-card";
+
+            const avatar = document.createElement("div");
+            avatar.className = "reviewer-avatar";
+            avatar.textContent = review.name ? review.name.charAt(0).toUpperCase() : "U";
+
+            const body = document.createElement("div");
+
+            const head = document.createElement("div");
+            head.className = "review-head";
+
+            const nameWrap = document.createElement("div");
+            const nameEl = document.createElement("div");
+            nameEl.className = "review-name";
+            nameEl.textContent = review.name || "Anonymous";
+            const starsEl = document.createElement("div");
+            starsEl.className = "review-stars";
+            starsEl.textContent = renderStars(Number(review.rating || 0));
+            nameWrap.appendChild(nameEl);
+            nameWrap.appendChild(starsEl);
+
+            const dateEl = document.createElement("div");
+            dateEl.className = "review-date";
+            dateEl.textContent = review.displayDate || "";
+
+            head.appendChild(nameWrap);
+            head.appendChild(dateEl);
+
+            const textEl = document.createElement("p");
+            textEl.className = "review-text";
+            textEl.textContent = review.text || "";
+
+            body.appendChild(head);
+            body.appendChild(textEl);
+
+            if (Array.isArray(review.images) && review.images.length > 0) {
+                const media = document.createElement("div");
+                media.className = "review-media";
+                review.images.forEach(function (img) {
+                    if (!img || !img.src) return;
+                    const imageEl = document.createElement("img");
+                    imageEl.src = img.src;
+                    imageEl.alt = "Review image";
+                    media.appendChild(imageEl);
+                });
+                body.appendChild(media);
+            }
+
+            card.appendChild(avatar);
+            card.appendChild(body);
+            return card;
+        }
+
+        function renderList(reviews) {
+            if (!listEl) {
+                return;
+            }
+            listEl.innerHTML = "";
+            if (!reviews.length) {
+                const empty = document.createElement("div");
+                empty.className = "review-empty";
+                empty.textContent = "No reviews yet. Be the first to share your experience.";
+                listEl.appendChild(empty);
+                return;
+            }
+
+            reviews.forEach(function (review) {
+                listEl.appendChild(buildReviewCard(review));
+            });
+        }
+
+        function applyFilter(reviews) {
+            if (activeFilter === "all") {
+                return reviews;
+            }
+            const target = Number(activeFilter);
+            return reviews.filter(function (review) {
+                return Number(review.rating || 0) === target;
+            });
+        }
+
+        function refreshReviews() {
+            return window.EcodriveReviews.fetchReviews(productId)
+                .then(function (reviews) {
+                    currentReviews = Array.isArray(reviews) ? reviews : [];
+                    refreshSummary(currentReviews);
+                    renderList(applyFilter(currentReviews));
+                })
+                .catch(function () {
+                    currentReviews = window.EcodriveReviews.getCachedReviews(productId);
+                    refreshSummary(currentReviews);
+                    renderList(applyFilter(currentReviews));
+                });
+        }
+
+        filterButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                filterButtons.forEach(function (btn) {
+                    btn.classList.remove("active");
+                });
+                button.classList.add("active");
+                activeFilter = button.dataset.filter || "all";
+                renderList(applyFilter(currentReviews));
+            });
+        });
+
+        void refreshReviews();
+    }
+
     document.addEventListener(
         "click",
         async function (event) {
@@ -797,6 +1066,11 @@
     applyBikeImageBorder();
     ensureAddToCartButton();
     void applyColorAvailability();
+    loadReviewsStore()
+        .then(function () {
+            initReviewSection();
+        })
+        .catch(function () {});
 
     window.addEventListener("storage", function (event) {
         if (event.key === COLOR_VARIANT_STORAGE_KEY) {

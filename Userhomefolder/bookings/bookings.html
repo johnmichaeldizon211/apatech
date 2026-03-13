@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="bookings.css?v=20260309-chatbot-pos">
+    <link rel="stylesheet" href="../Ebikes/ebike-reviews.css?v=20260313">
     <link rel="stylesheet" href="../nav-responsive.css?v=20260306c">
     <link rel="stylesheet" href="../userhome-theme.css?v=20260310a">
     <link rel="stylesheet" href="../cart.css?v=20260311a">
@@ -73,9 +74,40 @@
         </form>
     </section>
 
+    <div class="review-modal" id="review-modal" aria-hidden="true">
+        <div class="review-modal-card" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+            <button type="button" class="review-modal-close" id="review-modal-close" aria-label="Close review">×</button>
+            <h3 id="review-modal-title">Rate &amp; Review</h3>
+            <p class="review-modal-model">Model: <span id="review-modal-model"></span></p>
+            <form id="booking-review-form">
+                <div class="star-input" aria-label="Your rating">
+                    <button class="star-btn booking-star-btn" type="button" data-value="1">★</button>
+                    <button class="star-btn booking-star-btn" type="button" data-value="2">★</button>
+                    <button class="star-btn booking-star-btn" type="button" data-value="3">★</button>
+                    <button class="star-btn booking-star-btn" type="button" data-value="4">★</button>
+                    <button class="star-btn booking-star-btn" type="button" data-value="5">★</button>
+                </div>
+                <div class="review-form-fields">
+                    <input type="text" id="booking-review-name" placeholder="Your name (optional)">
+                    <textarea id="booking-review-text" rows="4" placeholder="Share your experience about this e-bike..." required></textarea>
+                </div>
+                <div class="review-upload">
+                    <label class="upload-label" for="booking-review-images">Attach photos (max 3)</label>
+                    <input type="file" id="booking-review-images" accept="image/*" multiple>
+                    <div class="review-image-preview" id="booking-review-preview"></div>
+                </div>
+                <div class="review-form-actions">
+                    <span class="review-form-error" id="booking-review-error"></span>
+                    <button class="review-submit-btn" type="submit">Submit review</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="../../session.js"></script>
     <script src="../cart.js?v=20260311a"></script>
     <script src="../chatbot-brain.js?v=20260304g"></script>
+    <script src="../reviews-store.js?v=20260313"></script>
     <script src="bookings.js?v=20260305a"></script>
 </body>
 </html>
