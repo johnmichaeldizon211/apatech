@@ -1799,6 +1799,7 @@
             if (response.status === 404 || response.status === 405) {
                 return {
                     success: false,
+                    retryable: true,
                     message: "Booking service is currently unavailable."
                 };
             }
@@ -1806,6 +1807,7 @@
             if (response.status === 401 || response.status === 403) {
                 return {
                     success: false,
+                    retryable: false,
                     message: "Your session has expired. Please log in again."
                 };
             }
@@ -1816,6 +1818,7 @@
             if (!response.ok || !payload || payload.success !== true) {
                 return {
                     success: false,
+                    retryable: response.status >= 500,
                     message: String((payload && payload.message) || "Unable to sync booking to server.")
                 };
             }
@@ -1830,28 +1833,54 @@
         } catch (_error) {
             return {
                 success: false,
+                retryable: true,
                 message: "Network error while saving booking. Please try again."
             };
         }
     }
 
-    async function saveBooking(record) {
-        const apiResult = await saveBookingToApi(record);
-        if (!apiResult || apiResult.success !== true) {
-            return apiResult || { success: false, message: "Unable to sync booking to server." };
-        }
-
-        const persistedRecord = apiResult.booking && typeof apiResult.booking === "object"
-            ? Object.assign({}, record, apiResult.booking)
-            : Object.assign({}, record);
-        const removeOrderIds = [record && record.orderId, persistedRecord && persistedRecord.orderId];
-
+    function persistBookingLocally(record) {
+        const persistedRecord = record && typeof record === "object"
+            ? Object.assign({}, record)
+            : {};
+        const removeOrderIds = [
+            persistedRecord.orderId,
+            persistedRecord.id
+        ];
         bookingStorageKeys.forEach(function (key) {
             removeRecordsByOrderIds(key, removeOrderIds);
             appendRecordToStorage(key, persistedRecord);
         });
         localStorage.setItem("latestBooking", JSON.stringify(persistedRecord));
-        return { success: true, message: "", booking: persistedRecord };
+        return persistedRecord;
+    }
+
+    async function saveBooking(record) {
+        const apiResult = await saveBookingToApi(record);
+        if (!apiResult || apiResult.success !== true) {
+            if (apiResult && apiResult.retryable === false) {
+                return apiResult;
+            }
+            const fallbackRecord = Object.assign({}, record, {
+                syncStatus: "local",
+                syncMessage: apiResult && apiResult.message
+                    ? apiResult.message
+                    : "Saved locally. Server sync pending."
+            });
+            const persistedFallback = persistBookingLocally(fallbackRecord);
+            return {
+                success: true,
+                localOnly: true,
+                message: fallbackRecord.syncMessage,
+                booking: persistedFallback
+            };
+        }
+
+        const persistedRecord = apiResult.booking && typeof apiResult.booking === "object"
+            ? Object.assign({}, record, apiResult.booking)
+            : Object.assign({}, record);
+        const storedRecord = persistBookingLocally(persistedRecord);
+        return { success: true, message: "", booking: storedRecord };
     }
 
     function buildOrderDraft() {

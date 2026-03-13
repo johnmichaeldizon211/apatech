@@ -97,6 +97,10 @@
                 } else {
                     successMessage.textContent = "Your " + service.toLowerCase() + " booking for " + model + " has been submitted.";
                 }
+
+                if (latest.syncStatus === "local") {
+                    successMessage.textContent = "Saved locally. " + (latest.syncMessage || "We will sync your booking once the server is available.");
+                }
             }
         })();
     </script>
