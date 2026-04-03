@@ -8,3 +8,5 @@ api/*.log
 api/*.out.log
 api/*.err.log
 api/reviews-config.php
+
+.vercel

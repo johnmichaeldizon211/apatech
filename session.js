@@ -208,6 +208,9 @@
         ) {
             return DEFAULT_REMOTE_API_BASE;
         }
+        if (global.location && /\.vercel\.app$/i.test(global.location.hostname || "")) {
+            return DEFAULT_REMOTE_API_BASE;
+        }
         return getCurrentOrigin() || DEFAULT_REMOTE_API_BASE;
     }
 

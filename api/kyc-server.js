@@ -97,14 +97,49 @@ const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
 
 const DB_CONNECTION_URL = String(
-    process.env.DB_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_URL || ""
+    process.env.DB_URL
+    || process.env.DATABASE_URL
+    || process.env.MYSQL_URL
+    || process.env.MYSQL_PUBLIC_URL
+    || process.env.MYSQL_PRIVATE_URL
+    || ""
 ).trim();
 const DB_URL_CONFIG = parseMySqlConnectionUrl(DB_CONNECTION_URL);
-const DB_HOST = String(process.env.DB_HOST || DB_URL_CONFIG.host || "127.0.0.1").trim();
-const DB_PORT = Number(process.env.DB_PORT || DB_URL_CONFIG.port || "3306");
-const DB_USER = String(process.env.DB_USER || DB_URL_CONFIG.user || "root").trim();
-const DB_PASSWORD = String(process.env.DB_PASSWORD || DB_URL_CONFIG.password || "").trim();
-const DB_NAME = String(process.env.DB_NAME || DB_URL_CONFIG.database || "ecodrive_db").trim();
+const DB_HOST = String(
+    process.env.DB_HOST
+    || process.env.MYSQLHOST
+    || process.env.MYSQL_HOST
+    || DB_URL_CONFIG.host
+    || "127.0.0.1"
+).trim();
+const DB_PORT = Number(
+    process.env.DB_PORT
+    || process.env.MYSQLPORT
+    || process.env.MYSQL_PORT
+    || DB_URL_CONFIG.port
+    || "3306"
+);
+const DB_USER = String(
+    process.env.DB_USER
+    || process.env.MYSQLUSER
+    || process.env.MYSQL_USER
+    || DB_URL_CONFIG.user
+    || "root"
+).trim();
+const DB_PASSWORD = String(
+    process.env.DB_PASSWORD
+    || process.env.MYSQLPASSWORD
+    || process.env.MYSQL_PASSWORD
+    || DB_URL_CONFIG.password
+    || ""
+).trim();
+const DB_NAME = String(
+    process.env.DB_NAME
+    || process.env.MYSQLDATABASE
+    || process.env.MYSQL_DATABASE
+    || DB_URL_CONFIG.database
+    || "ecodrive_db"
+).trim();
 const DB_SSL = parseBooleanEnv(process.env.DB_SSL, Boolean(DB_URL_CONFIG.sslRequired));
 const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 let dbPool = null;

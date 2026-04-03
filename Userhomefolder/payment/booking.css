@@ -241,6 +241,13 @@ body {
     color: #1c335c;
 }
 
+.order-form input[readonly] {
+    background: #eef2f8;
+    color: #203e70;
+    border-color: #a6b9d3;
+    cursor: not-allowed;
+}
+
 .order-form input::placeholder {
     color: #3f5377;
 }
