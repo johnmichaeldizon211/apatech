@@ -97,6 +97,11 @@ const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
 const ADMIN_CREDENTIALS_JSON = String(process.env.ADMIN_CREDENTIALS_JSON || "").trim();
 const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
+const IS_LIKELY_SERVERLESS_RUNTIME = Boolean(
+    String(process.env.VERCEL || "").trim()
+    || String(process.env.AWS_LAMBDA_FUNCTION_NAME || "").trim()
+    || String(process.env.NOW_REGION || "").trim()
+);
 
 const DB_CONNECTION_URL = String(
     process.env.DB_URL
@@ -107,39 +112,69 @@ const DB_CONNECTION_URL = String(
     || ""
 ).trim();
 const DB_URL_CONFIG = parseMySqlConnectionUrl(DB_CONNECTION_URL);
-const DB_HOST = String(
+const DB_HOST_ENV = String(
     process.env.DB_HOST
     || process.env.MYSQLHOST
     || process.env.MYSQL_HOST
-    || DB_URL_CONFIG.host
-    || "127.0.0.1"
+    || ""
 ).trim();
-const DB_PORT = Number(
+const DB_PORT_ENV = String(
     process.env.DB_PORT
     || process.env.MYSQLPORT
     || process.env.MYSQL_PORT
-    || DB_URL_CONFIG.port
-    || "3306"
-);
-const DB_USER = String(
+    || ""
+).trim();
+const DB_USER_ENV = String(
     process.env.DB_USER
     || process.env.MYSQLUSER
     || process.env.MYSQL_USER
-    || DB_URL_CONFIG.user
-    || "root"
+    || ""
 ).trim();
-const DB_PASSWORD = String(
+const DB_PASSWORD_ENV = String(
     process.env.DB_PASSWORD
     || process.env.MYSQLPASSWORD
     || process.env.MYSQL_PASSWORD
-    || DB_URL_CONFIG.password
     || ""
 ).trim();
-const DB_NAME = String(
+const DB_NAME_ENV = String(
     process.env.DB_NAME
     || process.env.MYSQLDATABASE
     || process.env.MYSQL_DATABASE
-    || DB_URL_CONFIG.database
+    || ""
+).trim();
+const SHOULD_FALLBACK_TO_DB_URL_CONFIG = (
+    IS_LIKELY_SERVERLESS_RUNTIME
+    && isLocalDbHost(DB_HOST_ENV)
+    && Boolean(DB_URL_CONFIG.host)
+);
+const DB_HOST = String(
+    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+        ? (DB_URL_CONFIG.host || DB_HOST_ENV)
+        : (DB_HOST_ENV || DB_URL_CONFIG.host))
+    || "127.0.0.1"
+).trim();
+const DB_PORT = Number(
+    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+        ? (DB_URL_CONFIG.port || DB_PORT_ENV)
+        : (DB_PORT_ENV || DB_URL_CONFIG.port))
+    || "3306"
+);
+const DB_USER = String(
+    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+        ? (DB_URL_CONFIG.user || DB_USER_ENV)
+        : (DB_USER_ENV || DB_URL_CONFIG.user))
+    || "root"
+).trim();
+const DB_PASSWORD = String(
+    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+        ? (DB_URL_CONFIG.password || DB_PASSWORD_ENV)
+        : (DB_PASSWORD_ENV || DB_URL_CONFIG.password))
+    || ""
+).trim();
+const DB_NAME = String(
+    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+        ? (DB_URL_CONFIG.database || DB_NAME_ENV)
+        : (DB_NAME_ENV || DB_URL_CONFIG.database))
     || "ecodrive_db"
 ).trim();
 const DB_SSL = parseBooleanEnv(process.env.DB_SSL, Boolean(DB_URL_CONFIG.sslRequired));
@@ -198,11 +233,7 @@ const INSTALLMENT_REMINDER_BATCH_LIMIT = parsePositiveInt(
 );
 let installmentReminderTimer = null;
 let installmentReminderInFlight = false;
-const IS_SERVERLESS_RUNTIME = Boolean(
-    String(process.env.VERCEL || "").trim() ||
-    String(process.env.AWS_LAMBDA_FUNCTION_NAME || "").trim() ||
-    String(process.env.NOW_REGION || "").trim()
-);
+const IS_SERVERLESS_RUNTIME = IS_LIKELY_SERVERLESS_RUNTIME;
 let runtimeBootstrapped = false;
 
 const DEFAULT_PRODUCT_CATALOG = [
