@@ -185,7 +185,11 @@ const DB_NAME = String(
         : (DB_NAME_ENV || DB_URL_CONFIG.database))
     || "ecodrive_db"
 ).trim();
-const DB_SSL = parseBooleanEnv(process.env.DB_SSL, Boolean(DB_URL_CONFIG.sslRequired));
+const SHOULD_DEFAULT_DB_SSL = Boolean(
+    DB_URL_CONFIG.sslRequired
+    || (IS_LIKELY_SERVERLESS_RUNTIME && !isLocalDbHost(DB_HOST))
+);
+const DB_SSL = parseBooleanEnv(process.env.DB_SSL, SHOULD_DEFAULT_DB_SSL);
 const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 let dbPool = null;
 let dbSchemaReadyPromise = null;
