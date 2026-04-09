@@ -94,6 +94,7 @@ const rateLimitBuckets = new Map();
 
 const DEFAULT_ADMIN_LOGIN_ID = String(process.env.ADMIN_LOGIN_ID || "").trim();
 const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
+const ADMIN_CREDENTIALS_JSON = String(process.env.ADMIN_CREDENTIALS_JSON || "").trim();
 const ADMIN_CREDENTIALS_PATH = path.join(__dirname, "admin-credentials.json");
 let adminCredentialsCache = null;
 
@@ -1030,7 +1031,13 @@ function normalizeBranchCity(value, options) {
 function sanitizeAdminEntry(rawInput) {
     const raw = rawInput && typeof rawInput === "object" ? rawInput : {};
     const loginId = normalizeAdminLoginId(raw.loginId || raw.username || raw.email);
-    const passwordHash = String(raw.passwordHash || "").trim();
+    let passwordHash = String(raw.passwordHash || "").trim();
+    if (!passwordHash) {
+        const plainPassword = String(raw.password || "").trim();
+        if (plainPassword) {
+            passwordHash = hashPassword(plainPassword);
+        }
+    }
     if (!isValidAdminLoginId(loginId) || !passwordHash) {
         return null;
     }
@@ -1096,6 +1103,19 @@ function readAdminCredentialsFromDisk() {
     }
 }
 
+function readAdminCredentialsFromEnv() {
+    if (!ADMIN_CREDENTIALS_JSON) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(ADMIN_CREDENTIALS_JSON);
+        return sanitizeAdminCredentialsPayload(parsed);
+    } catch (error) {
+        console.warn("[admin-auth] ADMIN_CREDENTIALS_JSON parse error:", error.message || error);
+        return null;
+    }
+}
+
 function writeAdminCredentialsToDisk(credentialsInput) {
     const payload = sanitizeAdminCredentialsPayload(credentialsInput);
     if (!payload) {
@@ -1111,6 +1131,12 @@ function writeAdminCredentialsToDisk(credentialsInput) {
 
 function getAdminAccounts() {
     if (adminCredentialsCache) {
+        return adminCredentialsCache;
+    }
+
+    const fromEnv = readAdminCredentialsFromEnv();
+    if (fromEnv && Array.isArray(fromEnv.admins) && fromEnv.admins.length > 0) {
+        adminCredentialsCache = fromEnv;
         return adminCredentialsCache;
     }
 

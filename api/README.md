@@ -72,6 +72,7 @@ Use values from `.env.example` (or create `api/.env`):
 - `DB_NAME`
 - `ADMIN_LOGIN_ID` (required if `api/admin-credentials.json` does not exist)
 - `ADMIN_PASSWORD` (required if `api/admin-credentials.json` does not exist)
+- `ADMIN_CREDENTIALS_JSON` (optional, overrides disk file; supports one or many admins in JSON)
 
 Optional OTP delivery config:
 
@@ -102,6 +103,17 @@ Optional auth/OTP behavior:
 - `LOGIN_RATE_LIMIT_MAX` (default `10`)
 - `OTP_SEND_RATE_LIMIT_MAX` (default `6`)
 - `OTP_VERIFY_RATE_LIMIT_MAX` (default `10`)
+
+`ADMIN_CREDENTIALS_JSON` sample for Vercel:
+
+```json
+{
+  "admins": [
+    { "loginId": "ecodrivepulilan", "password": "ecodriveadmin123", "branchCity": "Pulilan" },
+    { "loginId": "ecodrive", "password": "ecodriveadmin123", "branchCity": "City of Baliwag" }
+  ]
+}
+```
 
 ## 4) Run API
 
