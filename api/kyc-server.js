@@ -142,37 +142,45 @@ const DB_NAME_ENV = String(
     || process.env.MYSQL_DATABASE
     || ""
 ).trim();
-const SHOULD_FALLBACK_TO_DB_URL_CONFIG = (
-    IS_LIKELY_SERVERLESS_RUNTIME
-    && isLocalDbHost(DB_HOST_ENV)
-    && Boolean(DB_URL_CONFIG.host)
+const HAS_DB_URL_CONFIG = Boolean(
+    DB_URL_CONFIG.host
+    && DB_URL_CONFIG.user
+    && DB_URL_CONFIG.database
+);
+const SHOULD_PREFER_DB_URL_CONFIG = (
+    HAS_DB_URL_CONFIG
+    && (
+        IS_LIKELY_SERVERLESS_RUNTIME
+        || !DB_HOST_ENV
+        || isLocalDbHost(DB_HOST_ENV)
+    )
 );
 const DB_HOST = String(
-    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+    (SHOULD_PREFER_DB_URL_CONFIG
         ? (DB_URL_CONFIG.host || DB_HOST_ENV)
         : (DB_HOST_ENV || DB_URL_CONFIG.host))
     || "127.0.0.1"
 ).trim();
 const DB_PORT = Number(
-    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+    (SHOULD_PREFER_DB_URL_CONFIG
         ? (DB_URL_CONFIG.port || DB_PORT_ENV)
         : (DB_PORT_ENV || DB_URL_CONFIG.port))
     || "3306"
 );
 const DB_USER = String(
-    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+    (SHOULD_PREFER_DB_URL_CONFIG
         ? (DB_URL_CONFIG.user || DB_USER_ENV)
         : (DB_USER_ENV || DB_URL_CONFIG.user))
     || "root"
 ).trim();
 const DB_PASSWORD = String(
-    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+    (SHOULD_PREFER_DB_URL_CONFIG
         ? (DB_URL_CONFIG.password || DB_PASSWORD_ENV)
         : (DB_PASSWORD_ENV || DB_URL_CONFIG.password))
     || ""
 ).trim();
 const DB_NAME = String(
-    (SHOULD_FALLBACK_TO_DB_URL_CONFIG
+    (SHOULD_PREFER_DB_URL_CONFIG
         ? (DB_URL_CONFIG.database || DB_NAME_ENV)
         : (DB_NAME_ENV || DB_URL_CONFIG.database))
     || "ecodrive_db"
