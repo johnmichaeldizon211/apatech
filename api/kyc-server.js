@@ -539,6 +539,16 @@ function parseMySqlConnectionUrl(rawValue) {
     }
 }
 
+function isLocalDbHost(hostInput) {
+    const host = String(hostInput || "").trim().toLowerCase();
+    return (
+        host === "localhost"
+        || host === "127.0.0.1"
+        || host === "0.0.0.0"
+        || host.endsWith(".local")
+    );
+}
+
 function resolveAuthSessionSecret() {
     const configured = String(process.env.AUTH_SESSION_SECRET || "").trim();
     if (configured.length >= 16) {
@@ -1530,7 +1540,7 @@ async function getDbPool() {
     if (!isDbConfigured()) {
         throw new Error("MySQL is not configured. Set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.");
     }
-    if (IS_SERVERLESS_RUNTIME && isLocalHost(DB_HOST)) {
+    if (IS_SERVERLESS_RUNTIME && isLocalDbHost(DB_HOST)) {
         throw new Error(
             "Database host cannot be localhost/127.0.0.1 on Vercel. Use a hosted MySQL database."
         );
