@@ -1838,6 +1838,25 @@ async function ensureDbSchema() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
         );
 
+        await pool.execute(
+            `CREATE TABLE IF NOT EXISTS product_branch_inventory (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                product_id BIGINT UNSIGNED NOT NULL,
+                branch_city VARCHAR(40) NOT NULL,
+                stock_count INT UNSIGNED NOT NULL DEFAULT 0,
+                color_variants_json LONGTEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_product_branch_inventory (product_id, branch_city),
+                KEY idx_product_branch_city (branch_city),
+                CONSTRAINT fk_product_branch_inventory_product
+                    FOREIGN KEY (product_id)
+                    REFERENCES products(id)
+                    ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        );
+
         try {
             await pool.execute(
                 "ALTER TABLE products ADD COLUMN product_info VARCHAR(255) NULL AFTER category"
@@ -4681,6 +4700,14 @@ function mapProductRow(row) {
     const rawDetailUrl = normalizeProductUrl(row.detail_url || "");
     const detailUrl = rawDetailUrl || buildAutoProductDetailUrl(row.id);
     const isActive = Number(row.is_active || 0) > 0;
+    const branchStockCount = row.branch_stock_count;
+    const branchColorVariants = row.branch_color_variants_json;
+    const resolvedStockCount = branchStockCount !== undefined && branchStockCount !== null
+        ? branchStockCount
+        : row.stock_count;
+    const resolvedColorVariants = branchColorVariants !== undefined && branchColorVariants !== null
+        ? branchColorVariants
+        : row.color_variants_json;
     return {
         id: Number(row.id || 0),
         model: String(row.model || "Ecodrive E-Bike"),
@@ -4689,8 +4716,8 @@ function mapProductRow(row) {
         info: String(row.product_info || ""),
         imageUrl: String(row.image_url || ""),
         detailUrl: detailUrl,
-        stockCount: normalizeProductStockCount(row.stock_count, isActive ? 1 : 0),
-        colorVariants: normalizeProductColorVariants(row.color_variants_json),
+        stockCount: normalizeProductStockCount(resolvedStockCount, isActive ? 1 : 0),
+        colorVariants: normalizeProductColorVariants(resolvedColorVariants),
         isActive: isActive,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
@@ -4798,8 +4825,23 @@ async function reserveProductInventoryForApprovedBooking(connection, bookingInpu
     }
 
     const product = mapProductRow(productRow);
-    const currentStockCount = normalizeProductStockCount(product.stockCount, product.isActive ? 1 : 0);
-    const currentColorVariants = normalizeProductColorVariants(product.colorVariants);
+    const branchCity = resolveBranchCityFromBookingRow(booking);
+    let currentStockCount = normalizeProductStockCount(product.stockCount, product.isActive ? 1 : 0);
+    let currentColorVariants = normalizeProductColorVariants(product.colorVariants);
+    if (branchCity) {
+        const branchRow = await fetchBranchInventoryRow(connection, product.id, branchCity, { forUpdate: true });
+        if (branchRow) {
+            currentStockCount = normalizeProductStockCount(
+                branchRow.stock_count,
+                product.isActive ? 1 : 0
+            );
+            currentColorVariants = normalizeProductColorVariants(
+                branchRow.color_variants_json !== null && branchRow.color_variants_json !== undefined
+                    ? branchRow.color_variants_json
+                    : product.colorVariants
+            );
+        }
+    }
     const requestedColorIndex = findBookingColorVariantIndex(currentColorVariants, booking);
     const requestedColorKey = getBookingColorKey(booking);
 
@@ -4845,18 +4887,39 @@ async function reserveProductInventoryForApprovedBooking(connection, bookingInpu
         }
     }
 
-    await connection.execute(
-        `UPDATE products
-         SET stock_count = ?,
-             color_variants_json = ?,
-             updated_at = NOW()
-         WHERE id = ?`,
-        [
-            nextStockCount,
-            serializeProductColorVariants(nextColorVariants),
-            product.id
-        ]
-    );
+    if (branchCity) {
+        await connection.execute(
+            `INSERT INTO product_branch_inventory (
+                product_id,
+                branch_city,
+                stock_count,
+                color_variants_json
+            ) VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                stock_count = VALUES(stock_count),
+                color_variants_json = VALUES(color_variants_json),
+                updated_at = NOW()`,
+            [
+                product.id,
+                branchCity,
+                nextStockCount,
+                serializeProductColorVariants(nextColorVariants)
+            ]
+        );
+    } else {
+        await connection.execute(
+            `UPDATE products
+             SET stock_count = ?,
+                 color_variants_json = ?,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [
+                nextStockCount,
+                serializeProductColorVariants(nextColorVariants),
+                product.id
+            ]
+        );
+    }
 
     return {
         success: true,
@@ -9120,6 +9183,46 @@ function getProductCategoryFilter(parsedUrl) {
     return parseWheelCategory(raw);
 }
 
+function resolveBranchCityFromRequest(req, parsedUrl) {
+    const session = getAuthSessionFromRequest(req);
+    const sessionBranch = resolveAllowedBookingCityName(session && session.branchCity);
+    if (sessionBranch) {
+        return sessionBranch;
+    }
+    if (parsedUrl && parsedUrl.searchParams) {
+        const rawQuery = String(
+            parsedUrl.searchParams.get("branchCity")
+            || parsedUrl.searchParams.get("branch_city")
+            || ""
+        ).trim();
+        const resolvedQuery = resolveAllowedBookingCityName(rawQuery);
+        if (resolvedQuery) {
+            return resolvedQuery;
+        }
+    }
+    return "";
+}
+
+async function fetchBranchInventoryRow(pool, productId, branchCity, options) {
+    const resolvedBranch = resolveAllowedBookingCityName(branchCity);
+    if (!resolvedBranch) {
+        return null;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    const lockClause = opts.forUpdate ? " FOR UPDATE" : "";
+    const [rows] = await pool.execute(
+        `SELECT product_id, branch_city, stock_count, color_variants_json
+         FROM product_branch_inventory
+         WHERE product_id = ?
+           AND branch_city = ?${lockClause}`,
+        [productId, resolvedBranch]
+    );
+    if (!Array.isArray(rows) || rows.length < 1) {
+        return null;
+    }
+    return rows[0];
+}
+
 async function fetchProductById(pool, productId) {
     const [rows] = await pool.execute(
         `SELECT *
@@ -9127,6 +9230,29 @@ async function fetchProductById(pool, productId) {
          WHERE id = ?
          LIMIT 1`,
         [productId]
+    );
+    if (!Array.isArray(rows) || rows.length < 1) {
+        return null;
+    }
+    return mapProductRow(rows[0]);
+}
+
+async function fetchProductByIdWithBranch(pool, productId, branchCity) {
+    const resolvedBranch = resolveAllowedBookingCityName(branchCity);
+    if (!resolvedBranch) {
+        return fetchProductById(pool, productId);
+    }
+    const [rows] = await pool.execute(
+        `SELECT p.*,
+                bi.stock_count AS branch_stock_count,
+                bi.color_variants_json AS branch_color_variants_json
+         FROM products p
+         LEFT JOIN product_branch_inventory bi
+            ON bi.product_id = p.id
+           AND bi.branch_city = ?
+         WHERE p.id = ?
+         LIMIT 1`,
+        [resolvedBranch, productId]
     );
     if (!Array.isArray(rows) || rows.length < 1) {
         return null;
@@ -9143,14 +9269,26 @@ async function handlePublicProductById(_req, res, productId) {
         }
 
         const pool = await getDbPool();
-        const [rows] = await pool.execute(
-            `SELECT *
-             FROM products
-             WHERE id = ?
-               AND is_active = 1
-             LIMIT 1`,
-            [id]
-        );
+        let parsedUrl = null;
+        try {
+            parsedUrl = new URL(_req && _req.url ? _req.url : "", "http://localhost");
+        } catch (_error) {
+            parsedUrl = null;
+        }
+        const branchCity = resolveBranchCityFromRequest(_req, parsedUrl);
+        const params = [];
+        let query = "SELECT p.*";
+        if (branchCity) {
+            query += ", bi.stock_count AS branch_stock_count, bi.color_variants_json AS branch_color_variants_json";
+        }
+        query += " FROM products p";
+        if (branchCity) {
+            query += " LEFT JOIN product_branch_inventory bi ON bi.product_id = p.id AND bi.branch_city = ?";
+            params.push(branchCity);
+        }
+        query += " WHERE p.id = ? AND p.is_active = 1 LIMIT 1";
+        params.push(id);
+        const [rows] = await pool.execute(query, params);
         if (!Array.isArray(rows) || rows.length < 1) {
             sendJson(res, 404, { success: false, message: "Product not found." });
             return;
@@ -9172,18 +9310,24 @@ async function handleListProducts(_req, res, parsedUrl) {
     try {
         const pool = await getDbPool();
         const categoryFilter = getProductCategoryFilter(parsedUrl);
+        const branchCity = resolveBranchCityFromRequest(_req, parsedUrl);
 
-        let query = `
-            SELECT *
-            FROM products
-            WHERE is_active = 1
-        `;
+        let query = "SELECT p.*";
         const params = [];
+        if (branchCity) {
+            query += ", bi.stock_count AS branch_stock_count, bi.color_variants_json AS branch_color_variants_json";
+        }
+        query += " FROM products p";
+        if (branchCity) {
+            query += " LEFT JOIN product_branch_inventory bi ON bi.product_id = p.id AND bi.branch_city = ?";
+            params.push(branchCity);
+        }
+        query += " WHERE p.is_active = 1";
         if (categoryFilter) {
-            query += " AND category = ?";
+            query += " AND p.category = ?";
             params.push(categoryFilter);
         }
-        query += " ORDER BY FIELD(category, '2-Wheel', '3-Wheel', '4-Wheel', 'Other'), model ASC";
+        query += " ORDER BY FIELD(p.category, '2-Wheel', '3-Wheel', '4-Wheel', 'Other'), p.model ASC";
 
         const [rows] = await pool.execute(query, params);
         const products = Array.isArray(rows)
@@ -9207,22 +9351,31 @@ async function handleAdminProducts(_req, res, parsedUrl) {
         const pool = await getDbPool();
         const includeInactive = String(parsedUrl.searchParams.get("includeInactive") || "").trim().toLowerCase() === "true";
         const categoryFilter = getProductCategoryFilter(parsedUrl);
+        const adminBranch = getAdminBranchCity(authSession);
 
-        let query = "SELECT * FROM products";
-        const whereClauses = [];
+        let query = "SELECT p.*";
         const params = [];
+        if (adminBranch) {
+            query += ", bi.stock_count AS branch_stock_count, bi.color_variants_json AS branch_color_variants_json";
+        }
+        query += " FROM products p";
+        if (adminBranch) {
+            query += " LEFT JOIN product_branch_inventory bi ON bi.product_id = p.id AND bi.branch_city = ?";
+            params.push(adminBranch);
+        }
+        const whereClauses = [];
 
         if (!includeInactive) {
-            whereClauses.push("is_active = 1");
+            whereClauses.push("p.is_active = 1");
         }
         if (categoryFilter) {
-            whereClauses.push("category = ?");
+            whereClauses.push("p.category = ?");
             params.push(categoryFilter);
         }
         if (whereClauses.length > 0) {
             query += ` WHERE ${whereClauses.join(" AND ")}`;
         }
-        query += " ORDER BY FIELD(category, '2-Wheel', '3-Wheel', '4-Wheel', 'Other'), model ASC";
+        query += " ORDER BY FIELD(p.category, '2-Wheel', '3-Wheel', '4-Wheel', 'Other'), p.model ASC";
 
         const [rows] = await pool.execute(query, params);
         const products = Array.isArray(rows) ? rows.map(mapProductRow) : [];
@@ -9238,6 +9391,7 @@ async function handleAdminCreateProduct(req, res) {
         if (!authSession) {
             return;
         }
+        const adminBranch = getAdminBranchCity(authSession);
 
         const body = await readBody(req);
         const model = normalizeProductModel(body.model);
@@ -9304,7 +9458,7 @@ async function handleAdminCreateProduct(req, res) {
             }
         }
 
-        const product = await fetchProductById(pool, insertedProductId);
+        const product = await fetchProductByIdWithBranch(pool, insertedProductId, adminBranch);
         sendJson(res, 201, { success: true, product: product });
     } catch (error) {
         if (error && error.code === "ER_DUP_ENTRY") {
@@ -9321,6 +9475,7 @@ async function handleAdminUpdateProduct(req, res, productId) {
         if (!authSession) {
             return;
         }
+        const adminBranch = getAdminBranchCity(authSession);
 
         const id = Number(productId);
         if (!Number.isFinite(id) || id < 1) {
@@ -9400,38 +9555,79 @@ async function handleAdminUpdateProduct(req, res, productId) {
             params.push(normalizeOptionalBoolean(body.isActive, true) ? 1 : 0);
         }
 
-        if (Object.prototype.hasOwnProperty.call(body, "stockCount")) {
-            updates.push("stock_count = ?");
-            params.push(
-                normalizeProductStockCount(
-                    body.stockCount,
-                    currentProduct && currentProduct.isActive ? 1 : 0
-                )
+        const wantsStockUpdate = Object.prototype.hasOwnProperty.call(body, "stockCount");
+        const wantsColorUpdate = Object.prototype.hasOwnProperty.call(body, "colorVariants");
+        const shouldUpdateBranchInventory = wantsStockUpdate || wantsColorUpdate;
+        let branchInventoryUpdate = null;
+
+        if (shouldUpdateBranchInventory) {
+            if (!adminBranch) {
+                sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+                return;
+            }
+
+            const branchRow = await fetchBranchInventoryRow(pool, id, adminBranch);
+            const baseStockCount = normalizeProductStockCount(
+                branchRow ? branchRow.stock_count : currentProduct.stockCount,
+                currentProduct && currentProduct.isActive ? 1 : 0
             );
+            const baseColorVariants = normalizeProductColorVariants(
+                branchRow && branchRow.color_variants_json !== null && branchRow.color_variants_json !== undefined
+                    ? branchRow.color_variants_json
+                    : currentProduct.colorVariants
+            );
+            const nextStockCount = wantsStockUpdate
+                ? normalizeProductStockCount(body.stockCount, baseStockCount)
+                : baseStockCount;
+            const nextColorVariants = wantsColorUpdate ? body.colorVariants : baseColorVariants;
+
+            branchInventoryUpdate = {
+                stockCount: nextStockCount,
+                colorVariantsJson: serializeProductColorVariants(nextColorVariants)
+            };
         }
 
-        if (Object.prototype.hasOwnProperty.call(body, "colorVariants")) {
-            updates.push("color_variants_json = ?");
-            params.push(serializeProductColorVariants(body.colorVariants));
-        }
-
-        if (!updates.length) {
+        if (!updates.length && !branchInventoryUpdate) {
             sendJson(res, 400, { success: false, message: "No product fields provided for update." });
             return;
         }
 
-        params.push(id);
-        const [result] = await pool.execute(
-            `UPDATE products
-             SET ${updates.join(", ")},
-                 updated_at = NOW()
-             WHERE id = ?`,
-            params
-        );
+        let result = null;
+        if (updates.length) {
+            params.push(id);
+            [result] = await pool.execute(
+                `UPDATE products
+                 SET ${updates.join(", ")},
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                params
+            );
+        }
+
+        if (branchInventoryUpdate) {
+            await pool.execute(
+                `INSERT INTO product_branch_inventory (
+                    product_id,
+                    branch_city,
+                    stock_count,
+                    color_variants_json
+                ) VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    stock_count = VALUES(stock_count),
+                    color_variants_json = VALUES(color_variants_json),
+                    updated_at = NOW()`,
+                [
+                    id,
+                    adminBranch,
+                    branchInventoryUpdate.stockCount,
+                    branchInventoryUpdate.colorVariantsJson
+                ]
+            );
+        }
 
         let product = null;
         if (!result || Number(result.affectedRows || 0) < 1) {
-            product = await fetchProductById(pool, id);
+            product = await fetchProductByIdWithBranch(pool, id, adminBranch);
             if (!product) {
                 sendJson(res, 404, { success: false, message: "Product not found." });
                 return;
@@ -9440,7 +9636,7 @@ async function handleAdminUpdateProduct(req, res, productId) {
             return;
         }
 
-        product = await fetchProductById(pool, id);
+        product = await fetchProductByIdWithBranch(pool, id, adminBranch);
         sendJson(res, 200, { success: true, product: product });
     } catch (error) {
         if (error && error.code === "ER_DUP_ENTRY") {

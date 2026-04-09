@@ -1,7 +1,18 @@
 (function () {
     "use strict";
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
 
-    const PRODUCT_STORAGE_KEY = "ecodrive_product_catalog";
+    const branchCity = window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function"
+        ? window.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    const branchKey = normalizeBranchStorageKey(branchCity);
+    const PRODUCT_STORAGE_KEY = branchKey ? `ecodrive_product_catalog:${branchKey}` : "ecodrive_product_catalog";
     const MODEL_SPEC_STORAGE_KEY = "ecodrive_model_spec_catalog_v1";
     const CHECKOUT_SELECTION_KEYS = [
         "ecodrive_checkout_selection",

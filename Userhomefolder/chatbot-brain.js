@@ -20,7 +20,19 @@
         { model: "ECONO 800 MP", price: 60000, category: "3-Wheel", aliases: ["econo 800 mp"] }
     ];
 
-    var PRODUCT_STORAGE_KEY = "ecodrive_product_catalog";
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
+
+    var branchCity = global.EcodriveSession && typeof global.EcodriveSession.getCurrentUser === "function"
+        ? global.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    var branchKey = normalizeBranchStorageKey(branchCity);
+    var PRODUCT_STORAGE_KEY = branchKey ? "ecodrive_product_catalog:" + branchKey : "ecodrive_product_catalog";
     var BOOKING_KEYS = ["ecodrive_bookings", "ecodrive_orders", "orders"];
     var CURRENT_USER_KEY = "ecodrive_current_user_email";
     var LEGACY_CHAT_STORAGE_KEY = "ecodrive_chat_messages_v1";

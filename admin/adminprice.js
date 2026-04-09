@@ -1,5 +1,17 @@
 document.addEventListener("DOMContentLoaded", function () {
-    const storageKey = "ecodrive_product_catalog";
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
+
+    const branchCity = window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function"
+        ? window.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    const branchKey = normalizeBranchStorageKey(branchCity);
+    const storageKey = branchKey ? `ecodrive_product_catalog:${branchKey}` : "ecodrive_product_catalog";
     const apiBase = String(
         (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
             ? window.EcodriveSession.getApiBase()

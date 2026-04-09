@@ -10,6 +10,18 @@ document.addEventListener("DOMContentLoaded", function () {
     )
         .trim()
         .replace(/\/+$/, "");
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
+    const branchCity = window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function"
+        ? window.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    const branchKey = normalizeBranchStorageKey(branchCity);
+    const catalogStorageKey = branchKey ? `ecodrive_product_catalog:${branchKey}` : "ecodrive_product_catalog";
 
     const detailsEmpty = document.getElementById("detailsEmpty");
     const detailsContent = document.getElementById("detailsContent");
@@ -677,7 +689,10 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!key) {
             return "";
         }
-        const parsed = safeParse(localStorage.getItem("ecodrive_product_catalog"));
+        const scoped = safeParse(localStorage.getItem(catalogStorageKey));
+        const parsed = Array.isArray(scoped)
+            ? scoped
+            : safeParse(localStorage.getItem("ecodrive_product_catalog"));
         if (!Array.isArray(parsed)) {
             return "";
         }

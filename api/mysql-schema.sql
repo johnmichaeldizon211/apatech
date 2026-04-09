@@ -124,6 +124,23 @@ CREATE TABLE IF NOT EXISTS products (
   KEY idx_products_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS product_branch_inventory (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  product_id BIGINT UNSIGNED NOT NULL,
+  branch_city VARCHAR(40) NOT NULL,
+  stock_count INT UNSIGNED NOT NULL DEFAULT 0,
+  color_variants_json LONGTEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_product_branch_inventory (product_id, branch_city),
+  KEY idx_product_branch_city (branch_city),
+  CONSTRAINT fk_product_branch_inventory_product
+    FOREIGN KEY (product_id)
+    REFERENCES products(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 ALTER TABLE products
   MODIFY COLUMN image_url MEDIUMTEXT NULL;
 

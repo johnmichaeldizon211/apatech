@@ -1,8 +1,20 @@
 document.addEventListener("DOMContentLoaded", function () {
-    const storageKey = "ecodrive_product_catalog";
-    const colorStorageKey = "ecodrive_color_variant_availability_v1";
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
+
+    const branchCity = window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function"
+        ? window.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    const branchKey = normalizeBranchStorageKey(branchCity);
+    const storageKey = branchKey ? `ecodrive_product_catalog:${branchKey}` : "ecodrive_product_catalog";
+    const colorStorageKey = branchKey ? `ecodrive_color_variant_availability_v1:${branchKey}` : "ecodrive_color_variant_availability_v1";
     const specStorageKey = "ecodrive_model_spec_catalog_v1";
-    const inventoryStorageKey = "ecodrive_product_inventory_v1";
+    const inventoryStorageKey = branchKey ? `ecodrive_product_inventory_v1:${branchKey}` : "ecodrive_product_inventory_v1";
     const apiBase = String(
         (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function"
             ? window.EcodriveSession.getApiBase()

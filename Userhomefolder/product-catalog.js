@@ -1,7 +1,18 @@
 (function (global) {
     "use strict";
+    function normalizeBranchStorageKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
 
-    const STORAGE_KEY = "ecodrive_product_catalog";
+    const branchCity = global.EcodriveSession && typeof global.EcodriveSession.getCurrentUser === "function"
+        ? global.EcodriveSession.getCurrentUser().branchCity
+        : "";
+    const branchKey = normalizeBranchStorageKey(branchCity);
+    const STORAGE_KEY = branchKey ? `ecodrive_product_catalog:${branchKey}` : "ecodrive_product_catalog";
     const CHECKOUT_SELECTION_KEYS = [
         "ecodrive_checkout_selection",
         "ecodrive_selected_bike",
