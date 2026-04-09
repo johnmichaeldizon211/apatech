@@ -5822,7 +5822,14 @@ async function handleAdminUsers(req, res) {
             return;
         }
 
+        const adminBranch = getAdminBranchCity(authSession);
+        if (!adminBranch) {
+            sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+            return;
+        }
+
         const pool = await getDbPool();
+        await backfillMissingUserBranchCities(pool);
         let userRows = [];
         try {
             const [joinedRows] = await pool.execute(
@@ -5831,6 +5838,7 @@ async function handleAdminUsers(req, res) {
                     u.full_name,
                     u.email,
                     u.role,
+                    u.branch_city,
                     u.is_blocked,
                     u.created_at,
                     COALESCE(ct.mode, 'bot') AS chat_mode,
@@ -5839,7 +5847,10 @@ async function handleAdminUsers(req, res) {
                  LEFT JOIN chat_threads ct
                    ON ct.user_email = u.email
                  WHERE u.role = 'user'
+                   AND u.branch_city = ?
                  ORDER BY u.created_at DESC`
+                ,
+                [adminBranch]
             );
             userRows = Array.isArray(joinedRows) ? joinedRows : [];
         } catch (queryError) {
@@ -5849,11 +5860,15 @@ async function handleAdminUsers(req, res) {
                     full_name,
                     email,
                     role,
+                    branch_city,
                     is_blocked,
                     created_at
                  FROM users
                  WHERE role = 'user'
+                   AND branch_city = ?
                  ORDER BY created_at DESC`
+                ,
+                [adminBranch]
             );
             userRows = Array.isArray(fallbackRows)
                 ? fallbackRows.map((row) => ({
@@ -5872,7 +5887,9 @@ async function handleAdminUsers(req, res) {
                 SUM(CASE WHEN is_blocked = 1 THEN 1 ELSE 0 END) AS blockedUsers,
                 SUM(CASE WHEN created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN 1 ELSE 0 END) AS newUsersThisMonth
              FROM users
-             WHERE role = 'user'`
+             WHERE role = 'user'
+               AND branch_city = ?`,
+            [adminBranch]
         );
 
         const stats = statRows && statRows[0] ? statRows[0] : {};
@@ -5889,6 +5906,7 @@ async function handleAdminUsers(req, res) {
                 name: String(row.full_name || ""),
                 email: String(row.email || ""),
                 role: String(row.role || "user"),
+                branchCity: normalizeBranchCity(row.branch_city, { allowEmpty: true }),
                 status: Number(row.is_blocked) === 1 ? "blocked" : "active",
                 createdAt: row.created_at || null,
                 chatMode: normalizeChatMode(row.chat_mode),
@@ -6134,14 +6152,21 @@ async function handleBlockToggle(req, res, userId, action) {
             return;
         }
 
+        const adminBranch = getAdminBranchCity(authSession);
+        if (!adminBranch) {
+            sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+            return;
+        }
+
         const pool = await getDbPool();
+        await backfillMissingUserBranchCities(pool);
         const blockedValue = action === "block" ? 1 : 0;
 
         const [result] = await pool.execute(
             `UPDATE users
              SET is_blocked = ?, updated_at = NOW()
-             WHERE id = ? AND role = 'user'`,
-            [blockedValue, Number(userId)]
+             WHERE id = ? AND role = 'user' AND branch_city = ?`,
+            [blockedValue, Number(userId), adminBranch]
         );
 
         if (!result || Number(result.affectedRows || 0) < 1) {
