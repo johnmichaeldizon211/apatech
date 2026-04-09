@@ -1502,12 +1502,38 @@ function isDbConfigured() {
     return Boolean(mysql && DB_HOST && Number.isFinite(DB_PORT) && DB_PORT > 0 && DB_USER && DB_NAME);
 }
 
+function mapDbConnectionErrorMessage(error, fallbackMessage) {
+    const fallback = String(fallbackMessage || "Database operation failed.");
+    const raw = String((error && error.message) || "").trim();
+    if (!raw) {
+        return fallback;
+    }
+
+    if (/ER_ACCESS_DENIED_ERROR/i.test(raw)) {
+        return "Database login failed. Check DB_USER and DB_PASSWORD in Vercel.";
+    }
+    if (/ER_BAD_DB_ERROR|Unknown database/i.test(raw)) {
+        return "Database name is invalid. Check DB_NAME in Vercel.";
+    }
+    if (
+        /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|PROTOCOL_CONNECTION_LOST|server closed the connection|closed state/i.test(raw)
+    ) {
+        return "Database connection failed. Check DB_HOST, DB_PORT, DB_SSL, and DB_SSL_REJECT_UNAUTHORIZED in Vercel.";
+    }
+    return raw || fallback;
+}
+
 async function getDbPool() {
     if (!mysql) {
         throw new Error("Missing mysql2 package. Run: npm install mysql2");
     }
     if (!isDbConfigured()) {
         throw new Error("MySQL is not configured. Set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.");
+    }
+    if (IS_SERVERLESS_RUNTIME && isLocalHost(DB_HOST)) {
+        throw new Error(
+            "Database host cannot be localhost/127.0.0.1 on Vercel. Use a hosted MySQL database."
+        );
     }
     if (dbPool) {
         return dbPool;
@@ -5380,7 +5406,10 @@ async function handleSignupSendCode(req, res) {
         console.log(`[signup-otp] ${method}:${contact} requestId=${requestId} mode=${responsePayload.delivery.mode}${codeLog}`);
         sendJson(res, 200, responsePayload);
     } catch (error) {
-        sendJson(res, 500, { success: false, message: error.message || "Unable to send signup verification code." });
+        sendJson(res, 503, {
+            success: false,
+            message: mapDbConnectionErrorMessage(error, "Unable to send signup verification code.")
+        });
     }
 }
 
@@ -5677,7 +5706,10 @@ async function handleSignup(req, res) {
             return;
         }
 
-        sendJson(res, 500, { success: false, message: error.message || "Signup failed." });
+        sendJson(res, 503, {
+            success: false,
+            message: mapDbConnectionErrorMessage(error, "Signup failed.")
+        });
     }
 }
 
