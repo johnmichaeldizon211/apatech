@@ -32,6 +32,13 @@
     const shipMapStatus = document.getElementById("ship-map-status");
     const findAddressBtn = document.getElementById("find-address-btn");
     const useLocationBtn = document.getElementById("use-location-btn");
+    const mapEnabled = Boolean(
+        shipMapPanel
+        && shipMapFrame
+        && shipMapStatus
+        && findAddressBtn
+        && useLocationBtn
+    );
     const summaryModel = document.getElementById("summary-model");
     const summarySubtitle = document.getElementById("summary-subtitle");
     const summaryImage = document.getElementById("summary-image");
@@ -79,12 +86,7 @@
         !subtotalEl ||
         !shippingEl ||
         !totalEl ||
-        !confirmBtn ||
-        !shipMapPanel ||
-        !shipMapFrame ||
-        !shipMapStatus ||
-        !findAddressBtn ||
-        !useLocationBtn
+        !confirmBtn
     ) {
         return;
     }
@@ -1280,9 +1282,11 @@
         });
         shipAddressDisplayInput.value = PICKUP_SHOP_ADDRESS;
         shipAddressDisplayInput.placeholder = PICKUP_SHOP_ADDRESS;
-        setMapEnabled(true);
-        findAddressBtn.textContent = "Open Shop Map";
-        useLocationBtn.disabled = true;
+        if (mapEnabled) {
+            setMapEnabled(true);
+            findAddressBtn.textContent = "Open Shop Map";
+            useLocationBtn.disabled = true;
+        }
         setShippingCoords(pickupCoords.lat, pickupCoords.lng);
         renderMapFrame(pickupCoords.lat, pickupCoords.lng);
         lastMappedAddressToken = PICKUP_SHOP_ADDRESS.toLowerCase();
@@ -1329,6 +1333,9 @@
     }
 
     async function resolvePickupCoordinates() {
+        if (!mapEnabled) {
+            return null;
+        }
         if (pickupCoordsResolved) {
             return pickupCoords;
         }
@@ -1356,15 +1363,24 @@
     }
 
     function renderMapFrame(lat, lng) {
+        if (!mapEnabled) {
+            return;
+        }
         shipMapFrame.src = getMapEmbedUrl(lat, lng);
     }
 
     function setMapStatus(message, isError) {
+        if (!mapEnabled) {
+            return;
+        }
         shipMapStatus.textContent = message || "";
         shipMapStatus.classList.toggle("error", Boolean(isError));
     }
 
     function setMapEnabled(enabled) {
+        if (!mapEnabled) {
+            return;
+        }
         shipMapPanel.classList.toggle("disabled", !enabled);
         findAddressBtn.disabled = !enabled;
         useLocationBtn.disabled = !enabled;
@@ -1386,6 +1402,9 @@
     }
 
     function updateMapFrame(lat, lng, statusMessage) {
+        if (!mapEnabled) {
+            return false;
+        }
         const nextLat = Number(lat);
         const nextLng = Number(lng);
         if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
@@ -1408,6 +1427,9 @@
     }
 
     function markAddressAsChanged() {
+        if (!mapEnabled) {
+            return;
+        }
         const currentToken = composeDeliveryAddress().toLowerCase();
         if (currentToken === lastMappedAddressToken) {
             return;
@@ -1423,6 +1445,9 @@
     }
 
     async function geocodeAddress(address, options) {
+        if (!mapEnabled) {
+            return null;
+        }
         const trimmed = String(address || "").trim();
         const silent = options && options.silent === true;
         if (!trimmed) {
@@ -1455,6 +1480,9 @@
     }
 
     async function reverseGeocode(lat, lng) {
+        if (!mapEnabled) {
+            return null;
+        }
         const params = new URLSearchParams({
             format: "jsonv2",
             lat: String(lat),
@@ -1511,6 +1539,9 @@
     }
 
     function scheduleAddressMapLookup() {
+        if (!mapEnabled) {
+            return;
+        }
         if (addressDebounceTimer) {
             clearTimeout(addressDebounceTimer);
         }
@@ -1549,9 +1580,11 @@
             shipProvinceInput.value = ALLOWED_PROVINCE;
             shipAddressDisplayInput.readOnly = true;
             shipAddressDisplayInput.placeholder = "Complete address will appear here";
-            setMapEnabled(true);
-            findAddressBtn.textContent = "Find on Map";
-            useLocationBtn.disabled = false;
+            if (mapEnabled) {
+                setMapEnabled(true);
+                findAddressBtn.textContent = "Find on Map";
+                useLocationBtn.disabled = false;
+            }
 
             if (normalizeAddressPart(shipStreetInput.value) === PICKUP_SHOP_ADDRESS) {
                 if (rememberedDeliveryAddressParts && hasCompleteDeliveryAddressParts(rememberedDeliveryAddressParts)) {
@@ -1598,15 +1631,17 @@
             }
             const composedAddress = updateDeliveryAddressPreview();
 
-            if (!shippingCoords && rememberedDeliveryCoords) {
-                updateMapFrame(rememberedDeliveryCoords.lat, rememberedDeliveryCoords.lng, "Delivery location restored.");
-            } else if (!shippingCoords) {
-                setMapStatus(
-                    composedAddress
-                        ? "Map preview updates when you change the address."
-                        : "Complete delivery address fields, then click Find on Map.",
-                    false
-                );
+            if (mapEnabled) {
+                if (!shippingCoords && rememberedDeliveryCoords) {
+                    updateMapFrame(rememberedDeliveryCoords.lat, rememberedDeliveryCoords.lng, "Delivery location restored.");
+                } else if (!shippingCoords) {
+                    setMapStatus(
+                        composedAddress
+                            ? "Map preview updates when you change the address."
+                            : "Complete delivery address fields, then click Find on Map.",
+                        false
+                    );
+                }
             }
             return;
         }
@@ -1635,8 +1670,10 @@
         shipAddressDisplayInput.readOnly = true;
         shippingCoords = null;
         lastMappedAddressToken = "";
-        setMapEnabled(false);
-        findAddressBtn.textContent = "Find on Map";
+        if (mapEnabled) {
+            setMapEnabled(false);
+            findAddressBtn.textContent = "Find on Map";
+        }
 
         if (selectedService === "Installment") {
             shipAddressDisplayInput.placeholder = "Installment flow will continue";
@@ -1911,6 +1948,11 @@
         const shippingAddress = selectedService === "Delivery"
             ? composeDeliveryAddress(shippingAddressParts)
             : (selectedService === "Pick Up" ? PICKUP_SHOP_ADDRESS : "");
+        const pickupBranchCity = selectedService === "Pick Up"
+            ? resolveAllowedCityName(
+                (rememberedDeliveryAddressParts && rememberedDeliveryAddressParts.city) || shipCityInput.value
+            )
+            : "";
 
         return {
             orderId: orderId,
@@ -1948,6 +1990,7 @@
             } : null,
             shippingCoordinates: hasShippingCoordinates ? { lat: shippingCoords.lat, lng: shippingCoords.lng } : null,
             shippingMapEmbedUrl: hasShippingCoordinates ? getMapEmbedUrl(shippingCoords.lat, shippingCoords.lng) : "",
+            branchCity: pickupBranchCity || "",
             userEmail: getCurrentUserEmail(),
             createdAt: new Date().toISOString()
         };
@@ -2149,138 +2192,140 @@
         markAddressAsChanged();
     });
 
-    findAddressBtn.addEventListener("click", async function () {
-        if (selectedService === "Pick Up") {
-            applyPickupLocationState("Pick up location pinned to Ecodrive shop.");
-            window.open(getMapPageUrl(pickupCoords.lat, pickupCoords.lng), "_blank", "noopener");
-            void resolvePickupCoordinates().then(function (coords) {
-                if (coords && selectedService === "Pick Up") {
-                    applyPickupLocationState("Pick up location pinned to Ecodrive shop.");
-                }
-            });
-            return;
-        }
+    if (mapEnabled) {
+        findAddressBtn.addEventListener("click", async function () {
+            if (selectedService === "Pick Up") {
+                applyPickupLocationState("Pick up location pinned to Ecodrive shop.");
+                window.open(getMapPageUrl(pickupCoords.lat, pickupCoords.lng), "_blank", "noopener");
+                void resolvePickupCoordinates().then(function (coords) {
+                    if (coords && selectedService === "Pick Up") {
+                        applyPickupLocationState("Pick up location pinned to Ecodrive shop.");
+                    }
+                });
+                return;
+            }
 
-        if (selectedService !== "Delivery") {
-            return;
-        }
+            if (selectedService !== "Delivery") {
+                return;
+            }
 
-        const addressParts = getDeliveryAddressParts();
-        if (!normalizeAddressPart(addressParts.street)) {
-            setMapStatus("Enter your House / Street first.", true);
-            shipStreetInput.focus();
-            return;
-        }
-        if (!normalizeAddressPart(addressParts.barangay)) {
-            setMapStatus("Enter your Barangay first.", true);
-            shipBarangayInput.focus();
-            return;
-        }
-        if (!normalizeAddressPart(addressParts.city)) {
-            setMapStatus("Enter your City / Municipality first.", true);
-            shipCityInput.focus();
-            return;
-        }
-        if (!resolveAllowedCityName(addressParts.city)) {
-            setMapStatus("City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.", true);
-            shipCityInput.focus();
-            return;
-        }
-        if (normalizeProvinceName(addressParts.province) !== ALLOWED_PROVINCE) {
-            setMapStatus("Province is restricted to Bulacan.", true);
-            shipProvinceInput.focus();
-            return;
-        }
+            const addressParts = getDeliveryAddressParts();
+            if (!normalizeAddressPart(addressParts.street)) {
+                setMapStatus("Enter your House / Street first.", true);
+                shipStreetInput.focus();
+                return;
+            }
+            if (!normalizeAddressPart(addressParts.barangay)) {
+                setMapStatus("Enter your Barangay first.", true);
+                shipBarangayInput.focus();
+                return;
+            }
+            if (!normalizeAddressPart(addressParts.city)) {
+                setMapStatus("Enter your City / Municipality first.", true);
+                shipCityInput.focus();
+                return;
+            }
+            if (!resolveAllowedCityName(addressParts.city)) {
+                setMapStatus("City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.", true);
+                shipCityInput.focus();
+                return;
+            }
+            if (normalizeProvinceName(addressParts.province) !== ALLOWED_PROVINCE) {
+                setMapStatus("Province is restricted to Bulacan.", true);
+                shipProvinceInput.focus();
+                return;
+            }
 
-        const address = composeDeliveryAddress(addressParts);
-        updateDeliveryAddressPreview();
-        await geocodeAddress(address, { silent: false });
-    });
+            const address = composeDeliveryAddress(addressParts);
+            updateDeliveryAddressPreview();
+            await geocodeAddress(address, { silent: false });
+        });
 
-    useLocationBtn.addEventListener("click", function () {
-        if (selectedService !== "Delivery") {
-            return;
-        }
+        useLocationBtn.addEventListener("click", function () {
+            if (selectedService !== "Delivery") {
+                return;
+            }
 
-        if (!navigator.geolocation) {
-            setMapStatus("Geolocation is not supported in this browser.", true);
-            return;
-        }
+            if (!navigator.geolocation) {
+                setMapStatus("Geolocation is not supported in this browser.", true);
+                return;
+            }
 
-        setMapStatus("Getting your current location...", false);
-        navigator.geolocation.getCurrentPosition(
-            async function (position) {
-                const lat = Number(position.coords.latitude);
-                const lng = Number(position.coords.longitude);
-                updateMapFrame(lat, lng, "Current location pinned on map.");
+            setMapStatus("Getting your current location...", false);
+            navigator.geolocation.getCurrentPosition(
+                async function (position) {
+                    const lat = Number(position.coords.latitude);
+                    const lng = Number(position.coords.longitude);
+                    updateMapFrame(lat, lng, "Current location pinned on map.");
 
-                try {
-                    const resolvedAddress = await reverseGeocode(lat, lng);
-                    if (resolvedAddress && typeof resolvedAddress === "object") {
-                        const fallbackParts = parseAddressIntoParts(resolvedAddress.displayName || "");
-                        const nextParts = {
-                            street: resolvedAddress.street,
-                            barangay: resolvedAddress.barangay,
-                            city: resolvedAddress.city,
-                            province: resolvedAddress.province
-                        };
+                    try {
+                        const resolvedAddress = await reverseGeocode(lat, lng);
+                        if (resolvedAddress && typeof resolvedAddress === "object") {
+                            const fallbackParts = parseAddressIntoParts(resolvedAddress.displayName || "");
+                            const nextParts = {
+                                street: resolvedAddress.street,
+                                barangay: resolvedAddress.barangay,
+                                city: resolvedAddress.city,
+                                province: resolvedAddress.province
+                            };
 
-                        const streetValue = normalizeAddressPart(nextParts.street || fallbackParts.street || "");
-                        const canonicalCity = resolveAllowedCityName(nextParts.city || fallbackParts.city || "");
-                        const candidateBarangay = normalizeAddressPart(nextParts.barangay || fallbackParts.barangay || "");
-                        shipStreetInput.value = streetValue;
-                        shipProvinceInput.value = ALLOWED_PROVINCE;
+                            const streetValue = normalizeAddressPart(nextParts.street || fallbackParts.street || "");
+                            const canonicalCity = resolveAllowedCityName(nextParts.city || fallbackParts.city || "");
+                            const candidateBarangay = normalizeAddressPart(nextParts.barangay || fallbackParts.barangay || "");
+                            shipStreetInput.value = streetValue;
+                            shipProvinceInput.value = ALLOWED_PROVINCE;
 
-                        if (!canonicalCity) {
-                            shipCityInput.value = "";
-                            renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
-                            shipBarangayInput.disabled = true;
-                            updateDeliveryAddressPreview();
+                            if (!canonicalCity) {
+                                shipCityInput.value = "";
+                                renderSelectValues(shipBarangayInput, "Select barangay", [], "", { allowBlank: true });
+                                shipBarangayInput.disabled = true;
+                                updateDeliveryAddressPreview();
+                                setMapStatus(
+                                    "Location pinned. Service area is limited to selected Bulacan cities. Please choose city and barangay manually.",
+                                    true
+                                );
+                                return;
+                            }
+
+                            shipCityInput.value = canonicalCity;
+                            const selectedBarangay = await syncBarangayOptionsByCity(canonicalCity, candidateBarangay);
+                            if (!selectedBarangay) {
+                                setMapStatus(
+                                    "Location pinned. Please select the exact barangay within " + canonicalCity + ".",
+                                    false
+                                );
+                            }
+
+                            const composedAddress = updateDeliveryAddressPreview();
+                            rememberedDeliveryAddressParts = getDeliveryAddressParts();
+                            rememberedDeliveryAddress = composedAddress || normalizeAddressPart(resolvedAddress.displayName);
+                            lastMappedAddressToken = (composedAddress || normalizeAddressPart(resolvedAddress.displayName)).toLowerCase();
                             setMapStatus(
-                                "Location pinned. Service area is limited to selected Bulacan cities. Please choose city and barangay manually.",
-                                true
-                            );
-                            return;
-                        }
-
-                        shipCityInput.value = canonicalCity;
-                        const selectedBarangay = await syncBarangayOptionsByCity(canonicalCity, candidateBarangay);
-                        if (!selectedBarangay) {
-                            setMapStatus(
-                                "Location pinned. Please select the exact barangay within " + canonicalCity + ".",
+                                hasCompleteDeliveryAddressParts()
+                                    ? "Current location and address loaded."
+                                    : "Location pinned. Complete missing address fields if needed.",
                                 false
                             );
                         }
-
-                        const composedAddress = updateDeliveryAddressPreview();
-                        rememberedDeliveryAddressParts = getDeliveryAddressParts();
-                        rememberedDeliveryAddress = composedAddress || normalizeAddressPart(resolvedAddress.displayName);
-                        lastMappedAddressToken = (composedAddress || normalizeAddressPart(resolvedAddress.displayName)).toLowerCase();
-                        setMapStatus(
-                            hasCompleteDeliveryAddressParts()
-                                ? "Current location and address loaded."
-                                : "Location pinned. Complete missing address fields if needed.",
-                            false
-                        );
+                    } catch (_error) {
+                        setMapStatus("Location pinned, but address lookup is unavailable.", false);
                     }
-                } catch (_error) {
-                    setMapStatus("Location pinned, but address lookup is unavailable.", false);
+                },
+                function (error) {
+                    if (error && error.code === error.PERMISSION_DENIED) {
+                        setMapStatus("Location access denied. Enable location permission to use this feature.", true);
+                        return;
+                    }
+                    setMapStatus("Unable to get your current location right now.", true);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
                 }
-            },
-            function (error) {
-                if (error && error.code === error.PERMISSION_DENIED) {
-                    setMapStatus("Location access denied. Enable location permission to use this feature.", true);
-                    return;
-                }
-                setMapStatus("Unable to get your current location right now.", true);
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
-        );
-    });
+            );
+        });
+    }
 
     confirmBtn.addEventListener("click", async function () {
         if (bookingSubmitInFlight) {
@@ -2301,7 +2346,7 @@
                 return;
             }
 
-            if (selectedService === "Delivery" && !shippingCoords) {
+            if (selectedService === "Delivery" && mapEnabled && !shippingCoords) {
                 const resolved = await geocodeAddress(composeDeliveryAddress(), { silent: false });
                 if (!resolved) {
                     showError(shipStreetInput, "Please select a valid shipping location from the map.");
@@ -2345,7 +2390,9 @@
         }
         shipProvinceInput.value = ALLOWED_PROVINCE;
 
-        renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
+        if (mapEnabled) {
+            renderMapFrame(DEFAULT_MAP_COORDS.lat, DEFAULT_MAP_COORDS.lng);
+        }
         updateDeliveryAddressPreview();
         if (hasCompleteDeliveryAddressParts()) {
             void geocodeAddress(composeDeliveryAddress(), { silent: true });

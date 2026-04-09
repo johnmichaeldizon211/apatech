@@ -88,7 +88,10 @@
 
     function isExternalApiFrontendHost(hostnameInput) {
         var host = String(hostnameInput || "").trim().toLowerCase();
-        return EXTERNAL_API_FRONTEND_HOSTS[host] === true;
+        if (EXTERNAL_API_FRONTEND_HOSTS[host] === true) {
+            return true;
+        }
+        return host === "infinityfreeapp.com" || host.endsWith(".infinityfreeapp.com");
     }
 
     function getHostFromApiBase(baseInput) {

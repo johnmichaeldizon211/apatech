@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(190) NOT NULL,
   phone VARCHAR(20) NOT NULL,
   address VARCHAR(255) NOT NULL,
+  branch_city VARCHAR(40) NULL,
   avatar_data_url MEDIUMTEXT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
@@ -22,6 +23,12 @@ CREATE TABLE IF NOT EXISTS users (
   KEY idx_users_role_blocked (role, is_blocked),
   KEY idx_users_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE users
+  ADD COLUMN branch_city VARCHAR(40) NULL AFTER address;
+
+ALTER TABLE users
+  ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address;
 
 CREATE TABLE IF NOT EXISTS bookings (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -39,6 +46,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_method VARCHAR(80) NOT NULL,
   payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation',
   service_type VARCHAR(40) NOT NULL,
+  branch_city VARCHAR(40) NULL,
   schedule_date DATE NULL,
   schedule_time TIME NULL,
   status VARCHAR(80) NOT NULL DEFAULT 'Pending review',
@@ -72,6 +80,9 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 ALTER TABLE bookings
   ADD COLUMN schedule_date DATE NULL AFTER service_type;
+
+ALTER TABLE bookings
+  ADD COLUMN branch_city VARCHAR(40) NULL AFTER service_type;
 
 ALTER TABLE bookings
   ADD COLUMN bike_color VARCHAR(64) NULL AFTER model;

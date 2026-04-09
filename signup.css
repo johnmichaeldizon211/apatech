@@ -134,10 +134,44 @@ form input {
     background: #fff;
 }
 
+form select {
+    width: 100%;
+    padding: 10px 12px;
+    margin-top: 4px;
+    border: 1px solid #bcd1ec;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 14px;
+    color: #1b2436;
+    background: #fff;
+}
+
 form input:focus {
     outline: none;
     border-color: #6aa3ff;
     box-shadow: 0 0 0 3px rgba(106, 163, 255, 0.2);
+}
+
+form select:focus {
+    outline: none;
+    border-color: #6aa3ff;
+    box-shadow: 0 0 0 3px rgba(106, 163, 255, 0.2);
+}
+
+form select:disabled {
+    background: #f3f5fb;
+    color: #7a879f;
+}
+
+.address-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.address-field {
+    display: flex;
+    flex-direction: column;
 }
 
 .note {
@@ -340,6 +374,11 @@ input.invalid {
     box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.06);
 }
 
+select.invalid {
+    border-color: #d93025;
+    box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.06);
+}
+
 .input-with-toggle {
     position: relative;
 }
@@ -417,6 +456,10 @@ input.invalid {
 }
 
 @media (max-width: 600px) {
+    .address-grid {
+        grid-template-columns: 1fr;
+    }
+
     .panel {
         padding: 16px;
         border-radius: 18px;

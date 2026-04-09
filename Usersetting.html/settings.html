@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="settings.css?v=20260309-chatbot-pos">
   <link rel="stylesheet" href="../Userhomefolder/userhome-theme.css?v=20260310a">
-  <script src="../session.js" defer></script>
+  <script src="../session.js?v=20260409" defer></script>
   <script src="../Userhomefolder/chatbot-brain.js?v=20260304g" defer></script>
   <script src="settings.js?v=20260305a" defer></script>
 </head>
@@ -75,9 +75,27 @@
               <input id="phone" name="phone" type="tel" placeholder="09XXXXXXXXX" autocomplete="tel" aria-describedby="phoneError">
               <div class="field-error" id="phoneError" aria-live="polite"></div>
 
-              <label for="address">Address</label>
-              <input id="address" name="address" type="text" placeholder="Poblacion, Baliwag Bulacan" autocomplete="street-address" aria-describedby="addressError">
-              <div class="field-error" id="addressError" aria-live="polite"></div>
+              <label for="street">House / Street</label>
+              <input id="street" name="street" type="text" placeholder="House / Street" autocomplete="address-line1" aria-describedby="streetError">
+              <div class="field-error" id="streetError" aria-live="polite"></div>
+
+              <div class="address-grid">
+                <div class="address-field">
+                  <label for="province">Province</label>
+                  <select id="province" name="province" aria-describedby="provinceError"></select>
+                  <div class="field-error" id="provinceError" aria-live="polite"></div>
+                </div>
+                <div class="address-field">
+                  <label for="city">City / Municipality</label>
+                  <select id="city" name="city" aria-describedby="cityError"></select>
+                  <div class="field-error" id="cityError" aria-live="polite"></div>
+                </div>
+                <div class="address-field">
+                  <label for="barangay">Barangay</label>
+                  <select id="barangay" name="barangay" aria-describedby="barangayError"></select>
+                  <div class="field-error" id="barangayError" aria-live="polite"></div>
+                </div>
+              </div>
 
               <div class="actions">
                 <button type="submit" class="save-btn">Save Changes</button>
@@ -154,6 +172,7 @@
   </div>
 </body>
 </html>
+
 
 
 

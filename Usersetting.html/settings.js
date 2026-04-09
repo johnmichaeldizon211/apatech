@@ -28,14 +28,20 @@
     fullName: document.getElementById("fullName"),
     email: document.getElementById("email"),
     phone: document.getElementById("phone"),
-    address: document.getElementById("address")
+    street: document.getElementById("street"),
+    province: document.getElementById("province"),
+    city: document.getElementById("city"),
+    barangay: document.getElementById("barangay")
   };
 
   const errors = {
     fullName: document.getElementById("fullNameError"),
     email: document.getElementById("emailError"),
     phone: document.getElementById("phoneError"),
-    address: document.getElementById("addressError")
+    street: document.getElementById("streetError"),
+    province: document.getElementById("provinceError"),
+    city: document.getElementById("cityError"),
+    barangay: document.getElementById("barangayError")
   };
 
   const securityFields = {
@@ -71,6 +77,39 @@
   )
     .trim()
     .replace(/\/+$/, "");
+  const ALLOWED_PROVINCE = "Bulacan";
+  const ALLOWED_CITY_CONFIG = [
+    { label: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
+    { label: "San Ildefonso", aliases: [] },
+    { label: "San Rafael", aliases: [] },
+    { label: "Pulilan", aliases: ["Pullilan"] },
+    { label: "Bustos", aliases: [] }
+  ];
+  const ALLOWED_CITY_LABELS = ALLOWED_CITY_CONFIG.map((item) => String(item.label || "").trim()).filter(Boolean);
+  const CITY_ALIAS_TO_CANONICAL = ALLOWED_CITY_CONFIG.reduce((map, entry) => {
+    const canonical = String(entry.label || "").trim();
+    if (!canonical) {
+      return map;
+    }
+    const tokens = [canonical].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+    tokens.forEach((token) => {
+      const normalized = String(token || "").trim().toLowerCase();
+      if (normalized) {
+        map.set(normalized, canonical);
+      }
+    });
+    return map;
+  }, new Map());
+  const BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
+  const PSGC_API_BASE = "https://psgc.cloud/api/v2";
+  const PSGC_TIMEOUT_MS = 15000;
+  const FALLBACK_BARANGAYS_BY_CITY = {
+    "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],
+    "San Ildefonso": ["Akle", "Anyatam", "Bubulong Munti", "Garlang", "Malipampang", "Sapang Putik", "Umpucan"],
+    "San Rafael": ["Banca-banca", "Caingin", "Lico", "Maasim", "Poblacion", "Talacsan", "Tukod"],
+    "Pulilan": ["Balatong A", "Balatong B", "Cutcot", "Lumbac", "Longos", "Poblacion", "Santa Peregrina"],
+    "Bustos": ["Bonga Mayor", "Buisan", "Camachile", "Cambaog", "Poblacion", "Tibagan", "Talampas"]
+  };
   const defaultAvatarSrc = avatarImage.getAttribute("src");
   const defaultTopProfileSrc = topProfileImage ? topProfileImage.getAttribute("src") : "";
   let activeProfileKey = getProfileStorageKey(getCurrentUserEmail());
@@ -79,11 +118,20 @@
   let orderRefreshInFlight = false;
   let latestRenderedOrders = [];
   let receiptPdfLibPromise = null;
+  let psgcCityRowsByCanonical = {};
+  let barangayCacheByCity = {};
 
   if (!ensureAuthenticatedUser()) {
     return;
   }
 
+  void initializeLocationSelectors();
+  fields.city.addEventListener("change", () => {
+    void syncBarangayOptionsByCity(fields.city.value, "");
+  });
+  fields.province.addEventListener("change", () => {
+    fields.province.value = ALLOWED_PROVINCE;
+  });
   loadSavedData();
   void hydrateProfileFromApi();
   void refreshOrderStatus(true);
@@ -106,8 +154,9 @@
       fullName: fields.fullName.value.trim(),
       email: fields.email.value.trim(),
       phone: fields.phone.value.trim().replace(/[\s-]/g, ""),
-      address: fields.address.value.trim()
+      addressParts: getAddressPartsFromFields()
     };
+    data.address = buildAddressFromParts(data.addressParts);
 
     const isValid = validate(data);
     if (!isValid) {
@@ -120,6 +169,7 @@
       email: data.email,
       phone: data.phone,
       address: data.address,
+      addressParts: data.addressParts,
       updatedAt: new Date().toISOString()
     };
 
@@ -198,6 +248,331 @@
 
   function getApiUrl(path) {
     return API_BASE ? `${API_BASE}${path}` : path;
+  }
+
+  function normalizeAddressPart(value) {
+    return String(value || "").trim().replace(/\s+/g, " ");
+  }
+
+  function sortUniqueTextList(listInput) {
+    const values = Array.isArray(listInput) ? listInput : [];
+    const unique = Array.from(new Set(values.map((item) => normalizeAddressPart(item)).filter(Boolean)));
+    return unique.sort((a, b) => String(a).localeCompare(String(b), "en", { sensitivity: "base" }));
+  }
+
+  function resolveAllowedCityName(value) {
+    const cleaned = normalizeAddressPart(value);
+    if (!cleaned) {
+      return "";
+    }
+    return CITY_ALIAS_TO_CANONICAL.get(cleaned.toLowerCase()) || "";
+  }
+
+  function normalizeProvinceName(value) {
+    const cleaned = normalizeAddressPart(value);
+    return cleaned.toLowerCase() === ALLOWED_PROVINCE.toLowerCase()
+      ? ALLOWED_PROVINCE
+      : "";
+  }
+
+  function parseLocationApiRows(payload) {
+    const list = Array.isArray(payload)
+      ? payload
+      : (payload && Array.isArray(payload.data) ? payload.data : []);
+    return list
+      .map((row) => {
+        if (!row || typeof row !== "object") {
+          return null;
+        }
+        const name = normalizeAddressPart(row.name || row.city || row.municipality || row.barangay);
+        const code = normalizeAddressPart(row.code || row.psgc_code || row.id || name);
+        if (!name) {
+          return null;
+        }
+        return { name, code: code || name };
+      })
+      .filter(Boolean);
+  }
+
+  async function fetchPsgcRows(url) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => {
+      controller.abort();
+    }, PSGC_TIMEOUT_MS) : null;
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        signal: controller ? controller.signal : undefined
+      });
+      if (!response.ok) {
+        return [];
+      }
+      const payload = await response.json().catch(() => []);
+      return parseLocationApiRows(payload);
+    } catch (_error) {
+      return [];
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  function readBarangayCache() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(BARANGAY_CACHE_KEY));
+      if (!raw || typeof raw !== "object") {
+        return {};
+      }
+      const next = {};
+      Object.keys(raw).forEach((cityName) => {
+        const canonical = resolveAllowedCityName(cityName);
+        if (!canonical) {
+          return;
+        }
+        const list = sortUniqueTextList(raw[cityName]);
+        if (list.length) {
+          next[canonical] = list;
+        }
+      });
+      return next;
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function saveBarangayCache(cacheInput) {
+    const cache = cacheInput && typeof cacheInput === "object" ? cacheInput : {};
+    const payload = {};
+    Object.keys(cache).forEach((cityName) => {
+      const canonical = resolveAllowedCityName(cityName);
+      if (!canonical) {
+        return;
+      }
+      const list = sortUniqueTextList(cache[cityName]);
+      if (list.length) {
+        payload[canonical] = list;
+      }
+    });
+    localStorage.setItem(BARANGAY_CACHE_KEY, JSON.stringify(payload));
+  }
+
+  function renderSelectValues(selectEl, placeholder, values, selectedValue, opts) {
+    if (!(selectEl instanceof HTMLSelectElement)) {
+      return "";
+    }
+    const options = opts && typeof opts === "object" ? opts : {};
+    const allowBlank = options.allowBlank !== false;
+    const selected = normalizeAddressPart(selectedValue);
+    const sortedValues = sortUniqueTextList(values);
+    selectEl.innerHTML = "";
+
+    if (allowBlank) {
+      const placeholderOption = document.createElement("option");
+      placeholderOption.value = "";
+      placeholderOption.textContent = placeholder;
+      selectEl.appendChild(placeholderOption);
+    }
+
+    sortedValues.forEach((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      selectEl.appendChild(option);
+    });
+
+    if (selected && sortedValues.includes(selected)) {
+      selectEl.value = selected;
+      return selected;
+    }
+    selectEl.value = allowBlank ? "" : (sortedValues[0] || "");
+    return selectEl.value;
+  }
+
+  async function preloadAllowedBulacanCities() {
+    if (Object.keys(psgcCityRowsByCanonical).length) {
+      return psgcCityRowsByCanonical;
+    }
+    const provinces = await fetchPsgcRows(PSGC_API_BASE + "/provinces");
+    const bulacan = provinces.find((row) => normalizeAddressPart(row.name).toLowerCase() === ALLOWED_PROVINCE.toLowerCase());
+    if (!bulacan) {
+      return psgcCityRowsByCanonical;
+    }
+    const cityRows = await fetchPsgcRows(
+      PSGC_API_BASE + "/provinces/" + encodeURIComponent(bulacan.code) + "/cities-municipalities"
+    );
+    cityRows.forEach((row) => {
+      const canonical = resolveAllowedCityName(row.name);
+      if (canonical && !psgcCityRowsByCanonical[canonical]) {
+        psgcCityRowsByCanonical[canonical] = row;
+      }
+    });
+    return psgcCityRowsByCanonical;
+  }
+
+  async function fetchBarangaysForAllowedCity(cityName) {
+    const canonicalCity = resolveAllowedCityName(cityName);
+    if (!canonicalCity) {
+      return [];
+    }
+    if (Array.isArray(barangayCacheByCity[canonicalCity]) && barangayCacheByCity[canonicalCity].length) {
+      return barangayCacheByCity[canonicalCity];
+    }
+    await preloadAllowedBulacanCities();
+    const cityRow = psgcCityRowsByCanonical[canonicalCity];
+    let rows = [];
+    if (cityRow && cityRow.code) {
+      rows = await fetchPsgcRows(
+        PSGC_API_BASE + "/cities-municipalities/" + encodeURIComponent(cityRow.code) + "/barangays"
+      );
+    }
+    const names = sortUniqueTextList(rows.map((row) => row.name));
+    if (names.length) {
+      barangayCacheByCity[canonicalCity] = names;
+      saveBarangayCache(barangayCacheByCity);
+      return names;
+    }
+    const fallback = sortUniqueTextList(FALLBACK_BARANGAYS_BY_CITY[canonicalCity] || []);
+    if (fallback.length) {
+      barangayCacheByCity[canonicalCity] = fallback;
+      return fallback;
+    }
+    return [];
+  }
+
+  async function syncBarangayOptionsByCity(cityValue, preferredBarangay) {
+    const canonicalCity = resolveAllowedCityName(cityValue);
+    if (!canonicalCity) {
+      renderSelectValues(fields.barangay, "Select barangay", [], "", { allowBlank: true });
+      fields.barangay.disabled = true;
+      return "";
+    }
+    fields.city.value = canonicalCity;
+    fields.barangay.disabled = true;
+    renderSelectValues(fields.barangay, "Loading barangays...", [], "", { allowBlank: true });
+    const rows = await fetchBarangaysForAllowedCity(canonicalCity);
+    const selected = renderSelectValues(
+      fields.barangay,
+      rows.length ? "Select barangay" : "No barangays available",
+      rows,
+      preferredBarangay,
+      { allowBlank: true }
+    );
+    fields.barangay.disabled = rows.length < 1;
+    return selected;
+  }
+
+  async function initializeLocationSelectors() {
+    barangayCacheByCity = readBarangayCache();
+    renderSelectValues(
+      fields.city,
+      "Select city / municipality",
+      ALLOWED_CITY_LABELS,
+      fields.city.value,
+      { allowBlank: true }
+    );
+    fields.province.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = ALLOWED_PROVINCE;
+    option.textContent = ALLOWED_PROVINCE;
+    fields.province.appendChild(option);
+    fields.province.value = ALLOWED_PROVINCE;
+    fields.province.disabled = true;
+
+    const seededCity = resolveAllowedCityName(fields.city.value);
+    if (seededCity) {
+      await syncBarangayOptionsByCity(seededCity, fields.barangay.value);
+    } else {
+      renderSelectValues(fields.barangay, "Select barangay", [], "", { allowBlank: true });
+      fields.barangay.disabled = true;
+    }
+  }
+
+  function parseAddressIntoParts(address) {
+    const normalizedAddress = normalizeAddressPart(address);
+    if (!normalizedAddress) {
+      return { street: "", barangay: "", city: "", province: "" };
+    }
+    const segments = normalizedAddress
+      .split(",")
+      .map((part) => normalizeAddressPart(part))
+      .filter(Boolean);
+    if (segments.length >= 4) {
+      return {
+        street: segments.slice(0, segments.length - 3).join(", "),
+        barangay: segments[segments.length - 3],
+        city: segments[segments.length - 2],
+        province: segments[segments.length - 1]
+      };
+    }
+    if (segments.length === 3) {
+      return {
+        street: segments[0],
+        barangay: segments[1],
+        city: segments[2],
+        province: ""
+      };
+    }
+    if (segments.length === 2) {
+      return {
+        street: segments[0],
+        barangay: segments[1],
+        city: "",
+        province: ""
+      };
+    }
+    return {
+      street: normalizedAddress,
+      barangay: "",
+      city: "",
+      province: ""
+    };
+  }
+
+  function buildAddressFromParts(partsInput) {
+    const parts = partsInput && typeof partsInput === "object" ? partsInput : {};
+    const street = normalizeAddressPart(parts.street);
+    const barangay = normalizeAddressPart(parts.barangay);
+    const city = normalizeAddressPart(parts.city);
+    const province = normalizeAddressPart(parts.province || ALLOWED_PROVINCE);
+    return [street, barangay, city, province].filter(Boolean).join(", ");
+  }
+
+  function getAddressPartsFromFields() {
+    return {
+      street: normalizeAddressPart(fields.street.value),
+      barangay: normalizeAddressPart(fields.barangay.value),
+      city: resolveAllowedCityName(fields.city.value),
+      province: normalizeProvinceName(fields.province.value || ALLOWED_PROVINCE)
+    };
+  }
+
+  function setAddressFieldsFromString(address, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const overwrite = opts.overwrite === true;
+    const parsed = parseAddressIntoParts(address);
+    const canonicalCity = resolveAllowedCityName(parsed.city);
+    const streetValue = parsed.street || "";
+    const barangayValue = parsed.barangay || "";
+
+    if (streetValue && (overwrite || !fields.street.value)) {
+      fields.street.value = streetValue;
+    }
+    if (canonicalCity && (overwrite || !fields.city.value)) {
+      fields.city.value = canonicalCity;
+    }
+    if (overwrite || !fields.province.value) {
+      fields.province.value = ALLOWED_PROVINCE;
+    }
+
+    if (canonicalCity) {
+      const preferredBarangay = (overwrite || !fields.barangay.value) ? barangayValue : fields.barangay.value;
+      void syncBarangayOptionsByCity(canonicalCity, preferredBarangay);
+    } else {
+      renderSelectValues(fields.barangay, "Select barangay", [], "", { allowBlank: true });
+      fields.barangay.disabled = true;
+    }
   }
 
   function isOrderSectionActive() {
@@ -631,10 +1006,13 @@
 
   function bindProfileLiveValidation() {
     Object.keys(fields).forEach((key) => {
-      fields[key].addEventListener("input", () => {
-        fields[key].classList.remove("input-invalid");
+      const el = fields[key];
+      const handler = () => {
+        el.classList.remove("input-invalid");
         errors[key].textContent = "";
-      });
+      };
+      el.addEventListener("input", handler);
+      el.addEventListener("change", handler);
     });
   }
 
@@ -730,8 +1108,25 @@
       valid = false;
     }
 
-    if (data.address.length < 5) {
-      showError("address", "Enter a complete address.");
+    const street = normalizeAddressPart(data.addressParts && data.addressParts.street);
+    const barangay = normalizeAddressPart(data.addressParts && data.addressParts.barangay);
+    const city = resolveAllowedCityName(data.addressParts && data.addressParts.city);
+    const province = normalizeProvinceName((data.addressParts && data.addressParts.province) || ALLOWED_PROVINCE);
+
+    if (!street) {
+      showError("street", "House / Street is required.");
+      valid = false;
+    }
+    if (!barangay) {
+      showError("barangay", "Barangay is required.");
+      valid = false;
+    }
+    if (!city) {
+      showError("city", "City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos.");
+      valid = false;
+    }
+    if (!province) {
+      showError("province", "Province must be Bulacan.");
       valid = false;
     }
 
@@ -860,7 +1255,7 @@
       fields.phone.value = saved.phone;
     }
     if (saved.address) {
-      fields.address.value = saved.address;
+      setAddressFieldsFromString(saved.address, { overwrite: false });
     }
     if (saved.avatar) {
       avatarImage.src = saved.avatar;
@@ -877,8 +1272,8 @@
       if (!fields.phone.value) {
         fields.phone.value = currentUser.phone || "";
       }
-      if (!fields.address.value) {
-        fields.address.value = currentUser.address || "";
+      if (!fields.street.value && !fields.city.value && !fields.barangay.value) {
+        setAddressFieldsFromString(currentUser.address || "", { overwrite: false });
       }
       if (!saved.avatar && currentUser.avatar) {
         avatarImage.src = currentUser.avatar;
@@ -914,7 +1309,7 @@
         fullName: profile.fullName || fields.fullName.value || existing.fullName || "",
         email: String(profile.email || currentEmail).trim().toLowerCase(),
         phone: profile.phone || fields.phone.value || existing.phone || "",
-        address: profile.address || fields.address.value || existing.address || "",
+        address: profile.address || existing.address || "",
         avatar: typeof profile.avatar === "string" ? profile.avatar : (existing.avatar || ""),
         updatedAt: new Date().toISOString()
       };
@@ -922,7 +1317,9 @@
       fields.fullName.value = merged.fullName;
       fields.email.value = merged.email;
       fields.phone.value = merged.phone;
-      fields.address.value = merged.address;
+      if (merged.address) {
+        setAddressFieldsFromString(merged.address, { overwrite: false });
+      }
       if (merged.avatar) {
         avatarImage.src = merged.avatar;
       }
@@ -1008,10 +1405,11 @@
       fullName: fields.fullName.value.trim(),
       email: fields.email.value.trim() || currentEmail,
       phone: fields.phone.value.trim().replace(/[\s-]/g, ""),
-      address: fields.address.value.trim(),
+      addressParts: getAddressPartsFromFields(),
       avatar: typeof avatarValue === "string" ? avatarValue : "",
       currentEmail: currentEmail
     };
+    payload.address = buildAddressFromParts(payload.addressParts);
 
     if (!payload.fullName || !payload.phone || !payload.address) {
       return;

@@ -83,7 +83,8 @@ const SESSION_TTL_MS = (
     : 24 * 60 * 60 * 1000;
 const AUTH_SESSION_SECRET = resolveAuthSessionSecret();
 const ALLOW_DEMO_OTP = String(process.env.ALLOW_DEMO_OTP || "").trim().toLowerCase() === "true";
-const DEMO_OTP_ENABLED = ALLOW_DEMO_OTP && !IS_PRODUCTION;
+// Allow demo OTP in non-production by default so local/dev can proceed without SMTP.
+const DEMO_OTP_ENABLED = !IS_PRODUCTION;
 const CORS_ALLOWED_ORIGINS = buildAllowedCorsOrigins(String(process.env.CORS_ALLOWED_ORIGINS || ""));
 const RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 const LOGIN_RATE_LIMIT_MAX = parsePositiveInt(process.env.LOGIN_RATE_LIMIT_MAX, 10);
@@ -647,6 +648,7 @@ function verifySignedAuthToken(tokenInput) {
         role: normalizeUserRole(payload.role || payload.rl),
         email: normalizeEmail(payload.email || payload.em),
         name: String(payload.name || payload.nm || "").trim(),
+        branchCity: normalizeBranchCity(payload.branchCity || payload.bc, { allowEmpty: true }),
         createdAt: createdAt,
         expiresAt: expiresAt
     };
@@ -1009,21 +1011,63 @@ function isValidAdminLoginId(value) {
     return /^[a-z0-9._@+\-]+$/.test(normalized);
 }
 
-function sanitizeAdminCredentials(rawInput) {
+const DEFAULT_ADMIN_BRANCH_CITY = "City of Baliwag";
+
+function normalizeBranchCity(value, options) {
+    const canonical = resolveAllowedBookingCityName(value);
+    if (canonical) {
+        return canonical;
+    }
+    const opts = options && typeof options === "object" ? options : {};
+    if (opts.allowEmpty) {
+        return "";
+    }
+    const fallbackValue = opts.fallback || DEFAULT_ADMIN_BRANCH_CITY;
+    const fallback = resolveAllowedBookingCityName(fallbackValue);
+    return fallback || fallbackValue;
+}
+
+function sanitizeAdminEntry(rawInput) {
     const raw = rawInput && typeof rawInput === "object" ? rawInput : {};
     const loginId = normalizeAdminLoginId(raw.loginId || raw.username || raw.email);
     const passwordHash = String(raw.passwordHash || "").trim();
     if (!isValidAdminLoginId(loginId) || !passwordHash) {
         return null;
     }
+    const branchCity = normalizeBranchCity(raw.branchCity || raw.branch_city);
     return {
         loginId: loginId,
         passwordHash: passwordHash,
+        branchCity: branchCity,
         updatedAt: String(raw.updatedAt || new Date().toISOString())
     };
 }
 
-function createDefaultAdminCredentials() {
+function sanitizeAdminCredentialsPayload(rawInput) {
+    const raw = rawInput && typeof rawInput === "object" ? rawInput : {};
+    if (Array.isArray(raw.admins)) {
+        const admins = raw.admins.map(sanitizeAdminEntry).filter(Boolean);
+        return {
+            admins: admins,
+            updatedAt: String(raw.updatedAt || new Date().toISOString())
+        };
+    }
+
+    if (raw.loginId || raw.passwordHash) {
+        const entry = sanitizeAdminEntry(raw);
+        return {
+            admins: entry ? [entry] : [],
+            updatedAt: String(raw.updatedAt || new Date().toISOString())
+        };
+    }
+
+    return {
+        admins: [],
+        updatedAt: String(raw.updatedAt || new Date().toISOString())
+    };
+}
+
+function createDefaultAdminEntry() {
     const loginId = normalizeAdminLoginId(DEFAULT_ADMIN_LOGIN_ID);
     const password = String(DEFAULT_ADMIN_PASSWORD || "");
     if (!isValidAdminLoginId(loginId) || !password) {
@@ -1033,6 +1077,7 @@ function createDefaultAdminCredentials() {
     return {
         loginId: loginId,
         passwordHash: hashPassword(password),
+        branchCity: normalizeBranchCity(DEFAULT_ADMIN_BRANCH_CITY),
         updatedAt: new Date().toISOString()
     };
 }
@@ -1045,26 +1090,26 @@ function readAdminCredentialsFromDisk() {
     try {
         const raw = fs.readFileSync(ADMIN_CREDENTIALS_PATH, "utf8");
         const parsed = raw ? JSON.parse(raw) : {};
-        return sanitizeAdminCredentials(parsed);
+        return sanitizeAdminCredentialsPayload(parsed);
     } catch (_error) {
         return null;
     }
 }
 
 function writeAdminCredentialsToDisk(credentialsInput) {
-    const credentials = sanitizeAdminCredentials(credentialsInput);
-    if (!credentials) {
+    const payload = sanitizeAdminCredentialsPayload(credentialsInput);
+    if (!payload) {
         throw new Error("Invalid admin credentials payload.");
     }
 
     fs.writeFileSync(
         ADMIN_CREDENTIALS_PATH,
-        JSON.stringify(credentials, null, 2) + "\n",
+        JSON.stringify(payload, null, 2) + "\n",
         "utf8"
     );
 }
 
-function getAdminCredentials() {
+function getAdminAccounts() {
     if (adminCredentialsCache) {
         return adminCredentialsCache;
     }
@@ -1075,10 +1120,15 @@ function getAdminCredentials() {
         return adminCredentialsCache;
     }
 
-    const fallback = createDefaultAdminCredentials();
-    if (!fallback) {
+    const fallbackEntry = createDefaultAdminEntry();
+    if (!fallbackEntry) {
         return null;
     }
+
+    const fallback = {
+        admins: [fallbackEntry],
+        updatedAt: new Date().toISOString()
+    };
 
     adminCredentialsCache = fallback;
     if (!fs.existsSync(ADMIN_CREDENTIALS_PATH)) {
@@ -1091,30 +1141,66 @@ function getAdminCredentials() {
     return adminCredentialsCache;
 }
 
-function saveAdminCredentials(updatesInput) {
-    const current = getAdminCredentials();
-    if (!current) {
+function findAdminAccount(loginIdInput) {
+    const loginId = normalizeAdminLoginId(loginIdInput);
+    if (!loginId) {
+        return null;
+    }
+    const payload = getAdminAccounts();
+    const list = payload && Array.isArray(payload.admins) ? payload.admins : [];
+    return list.find((admin) => admin && admin.loginId === loginId) || null;
+}
+
+function updateAdminAccount(loginIdInput, updatesInput) {
+    const payload = getAdminAccounts();
+    if (!payload || !Array.isArray(payload.admins)) {
         throw new Error("Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or create admin-credentials.json.");
     }
+    const loginId = normalizeAdminLoginId(loginIdInput);
+    if (!loginId) {
+        throw new Error("Invalid admin login id.");
+    }
     const updates = updatesInput && typeof updatesInput === "object" ? updatesInput : {};
+    const nextLoginId = Object.prototype.hasOwnProperty.call(updates, "loginId")
+        ? normalizeAdminLoginId(updates.loginId)
+        : loginId;
+    if (!isValidAdminLoginId(nextLoginId)) {
+        throw new Error("Invalid admin login id.");
+    }
+
+    const existingIndex = payload.admins.findIndex((admin) => admin && admin.loginId === loginId);
+    if (existingIndex < 0) {
+        throw new Error("Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD or create admin-credentials.json.");
+    }
+
+    const duplicate = payload.admins.find((admin, idx) => idx !== existingIndex && admin && admin.loginId === nextLoginId);
+    if (duplicate) {
+        throw new Error("Admin login id is already in use.");
+    }
+
+    const current = payload.admins[existingIndex];
     const candidate = {
-        loginId: Object.prototype.hasOwnProperty.call(updates, "loginId")
-            ? normalizeAdminLoginId(updates.loginId)
-            : current.loginId,
+        loginId: nextLoginId,
         passwordHash: Object.prototype.hasOwnProperty.call(updates, "passwordHash")
             ? String(updates.passwordHash || "").trim()
             : current.passwordHash,
+        branchCity: normalizeBranchCity(
+            Object.prototype.hasOwnProperty.call(updates, "branchCity")
+                ? updates.branchCity
+                : current.branchCity
+        ),
         updatedAt: new Date().toISOString()
     };
-
-    const sanitized = sanitizeAdminCredentials(candidate);
+    const sanitized = sanitizeAdminEntry(candidate);
     if (!sanitized) {
         throw new Error("Invalid admin credentials.");
     }
 
-    writeAdminCredentialsToDisk(sanitized);
-    adminCredentialsCache = sanitized;
-    return adminCredentialsCache;
+    payload.admins[existingIndex] = sanitized;
+    payload.updatedAt = new Date().toISOString();
+    writeAdminCredentialsToDisk(payload);
+    adminCredentialsCache = payload;
+    return sanitized;
 }
 
 function normalizeContact(method, value) {
@@ -1288,12 +1374,14 @@ function createAuthSession(userInput) {
     const user = userInput && typeof userInput === "object" ? userInput : {};
     const now = Date.now();
     const expiresAt = now + SESSION_TTL_MS;
+    const branchCity = normalizeBranchCity(user.branchCity, { allowEmpty: true });
     const payload = {
         v: 1,
         uid: Number(user.id || 0),
         role: normalizeUserRole(user.role),
         email: normalizeEmail(user.email),
         name: String(user.name || "").trim(),
+        bc: branchCity,
         iat: now,
         exp: expiresAt,
         nonce: crypto.randomBytes(12).toString("hex")
@@ -1306,6 +1394,7 @@ function createAuthSession(userInput) {
         role: normalizeUserRole(payload.role),
         email: normalizeEmail(payload.email),
         name: String(payload.name || "").trim(),
+        branchCity: normalizeBranchCity(payload.bc, { allowEmpty: true }),
         createdAt: now,
         expiresAt: expiresAt
     };
@@ -1435,6 +1524,7 @@ async function ensureDbSchema() {
                 email VARCHAR(190) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
                 address VARCHAR(255) NOT NULL,
+                branch_city VARCHAR(40) NULL,
                 avatar_data_url MEDIUMTEXT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
@@ -1449,6 +1539,14 @@ async function ensureDbSchema() {
                 KEY idx_users_created_at (created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
         );
+
+        try {
+            await pool.execute(
+                "ALTER TABLE users ADD COLUMN branch_city VARCHAR(40) NULL AFTER address"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add users.branch_city automatically:", alterError.message || alterError);
+        }
 
         try {
             await pool.execute(
@@ -1475,6 +1573,7 @@ async function ensureDbSchema() {
                 payment_method VARCHAR(80) NOT NULL,
                 payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation',
                 service_type VARCHAR(40) NOT NULL,
+                branch_city VARCHAR(40) NULL,
                 schedule_date DATE NULL,
                 schedule_time TIME NULL,
                 status VARCHAR(80) NOT NULL DEFAULT 'Pending review',
@@ -1511,6 +1610,14 @@ async function ensureDbSchema() {
             );
         } catch (alterError) {
             console.warn("[db-schema] Unable to add bookings.schedule_date automatically:", alterError.message || alterError);
+        }
+
+        try {
+            await pool.execute(
+                "ALTER TABLE bookings ADD COLUMN branch_city VARCHAR(40) NULL AFTER service_type"
+            );
+        } catch (alterError) {
+            console.warn("[db-schema] Unable to add bookings.branch_city automatically:", alterError.message || alterError);
         }
 
         try {
@@ -3253,6 +3360,74 @@ function normalizeShippingAddressPartsInput(value) {
     };
 }
 
+function normalizeUserAddressPartsInput(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+        street: normalizeText(source.street || source.house || source.streetAddress),
+        barangay: normalizeText(source.barangay || source.brgy),
+        city: normalizeText(source.city || source.cityMunicipality || source.municipality),
+        province: normalizeText(source.province || source.region)
+    };
+}
+
+function mergeUserAddressParts(partsInput, addressInput) {
+    const explicit = normalizeUserAddressPartsInput(partsInput);
+    const parsed = parseAddressPartsFromShippingAddress(addressInput);
+    return {
+        street: explicit.street || parsed.street,
+        barangay: explicit.barangay || parsed.barangay,
+        city: explicit.city || parsed.city,
+        province: explicit.province || parsed.province
+    };
+}
+
+function composeUserAddressFromParts(partsInput) {
+    const parts = partsInput && typeof partsInput === "object" ? partsInput : {};
+    const street = normalizeText(parts.street);
+    const barangay = normalizeText(parts.barangay);
+    const city = normalizeText(parts.city);
+    const province = normalizeText(parts.province);
+    return [street, barangay, city, province].filter(Boolean).join(", ").slice(0, 255);
+}
+
+function validateUserAddressParts(partsInput, addressInput) {
+    const merged = mergeUserAddressParts(partsInput, addressInput);
+    const street = normalizeText(merged.street);
+    const barangay = normalizeText(merged.barangay);
+    const city = resolveAllowedBookingCityName(merged.city);
+    const providedProvince = normalizeText(merged.province);
+    let province = normalizeBookingProvinceName(providedProvince);
+    if (!province && !providedProvince) {
+        province = BOOKING_ALLOWED_PROVINCE;
+    }
+
+    if (!street) {
+        return { error: "House / Street is required." };
+    }
+    if (!barangay) {
+        return { error: "Barangay is required." };
+    }
+    if (!city) {
+        return { error: "City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos." };
+    }
+    if (!province) {
+        return { error: "Province must be Bulacan." };
+    }
+
+    const parts = {
+        street: street,
+        barangay: barangay,
+        city: city,
+        province: province
+    };
+    return {
+        parts: parts,
+        address: composeUserAddressFromParts(parts),
+        branchCity: city,
+        error: ""
+    };
+}
+
 function validateDeliveryServiceArea(shippingAddressPartsInput, shippingAddressInput) {
     const explicitParts = normalizeShippingAddressPartsInput(shippingAddressPartsInput);
     const parsedParts = parseAddressPartsFromShippingAddress(shippingAddressInput);
@@ -3279,6 +3454,177 @@ function validateDeliveryServiceArea(shippingAddressPartsInput, shippingAddressI
         city: canonicalCity,
         province: canonicalProvince
     };
+}
+
+function getAdminBranchCity(authSession) {
+    const raw = authSession && authSession.branchCity ? authSession.branchCity : "";
+    return resolveAllowedBookingCityName(raw);
+}
+
+function extractInstallmentCityFromPayload(payloadInput) {
+    const payload = payloadInput && typeof payloadInput === "object" ? payloadInput : null;
+    if (!payload) {
+        return "";
+    }
+    return resolveAllowedBookingCityName(
+        payload.city
+        || payload.cityMunicipality
+        || payload.municipality
+        || payload.city_name
+        || payload.addressCity
+    );
+}
+
+function resolveBranchCityFromBookingRow(rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    const existing = resolveAllowedBookingCityName(row.branch_city || row.branchCity);
+    if (existing) {
+        return existing;
+    }
+
+    const serviceType = normalizeServiceType(row.service_type || row.service || "");
+    let installmentCity = "";
+    if (row.installment_payload) {
+        try {
+            installmentCity = extractInstallmentCityFromPayload(JSON.parse(row.installment_payload));
+        } catch (_error) {
+            installmentCity = "";
+        }
+    }
+    if (!installmentCity && row.installment && typeof row.installment === "object") {
+        installmentCity = extractInstallmentCityFromPayload(row.installment);
+    }
+    if (installmentCity) {
+        return installmentCity;
+    }
+
+    const parsed = parseAddressPartsFromShippingAddress(row.shipping_address || row.shippingAddress || "");
+    const shippingCity = resolveAllowedBookingCityName(parsed.city);
+    if (shippingCity) {
+        return shippingCity;
+    }
+
+    if (serviceType === "Pick Up") {
+        return normalizeBranchCity(DEFAULT_ADMIN_BRANCH_CITY);
+    }
+
+    return "";
+}
+
+async function ensureBookingBranchCity(db, rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    const branchCity = resolveBranchCityFromBookingRow(row);
+    if (!branchCity) {
+        return "";
+    }
+    const existing = resolveAllowedBookingCityName(row.branch_city || row.branchCity);
+    if (existing && existing === branchCity) {
+        return branchCity;
+    }
+    const id = Number(row.id || 0);
+    const orderId = normalizeOrderId(row.order_id || row.orderId, false);
+    if (!db || typeof db.execute !== "function") {
+        return branchCity;
+    }
+    if (Number.isFinite(id) && id > 0) {
+        await db.execute(
+            "UPDATE bookings SET branch_city = ?, updated_at = NOW() WHERE id = ?",
+            [branchCity, id]
+        );
+    } else if (orderId) {
+        await db.execute(
+            "UPDATE bookings SET branch_city = ?, updated_at = NOW() WHERE order_id = ?",
+            [branchCity, orderId]
+        );
+    }
+    row.branch_city = branchCity;
+    return branchCity;
+}
+
+async function backfillMissingBranchCities(db) {
+    if (!db || typeof db.execute !== "function") {
+        return;
+    }
+    const [rows] = await db.execute(
+        `SELECT id, order_id, service_type, shipping_address, installment_payload, branch_city
+         FROM bookings
+         WHERE branch_city IS NULL OR branch_city = ''`
+    );
+    if (!Array.isArray(rows) || !rows.length) {
+        return;
+    }
+    for (const row of rows) {
+        await ensureBookingBranchCity(db, row);
+    }
+}
+
+function resolveBranchCityFromUserRow(rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    const existing = resolveAllowedBookingCityName(row.branch_city || row.branchCity);
+    if (existing) {
+        return existing;
+    }
+    const parsed = parseAddressPartsFromShippingAddress(row.address || "");
+    const city = resolveAllowedBookingCityName(parsed.city);
+    return city || "";
+}
+
+async function ensureUserBranchCity(db, rowInput) {
+    const row = rowInput && typeof rowInput === "object" ? rowInput : {};
+    const branchCity = resolveBranchCityFromUserRow(row);
+    if (!branchCity) {
+        return "";
+    }
+    const existing = resolveAllowedBookingCityName(row.branch_city || row.branchCity);
+    if (existing && existing === branchCity) {
+        return branchCity;
+    }
+    const id = Number(row.id || 0);
+    if (!db || typeof db.execute !== "function" || !Number.isFinite(id) || id <= 0) {
+        return branchCity;
+    }
+    await db.execute(
+        "UPDATE users SET branch_city = ?, updated_at = NOW() WHERE id = ?",
+        [branchCity, id]
+    );
+    row.branch_city = branchCity;
+    return branchCity;
+}
+
+async function backfillMissingUserBranchCities(db) {
+    if (!db || typeof db.execute !== "function") {
+        return;
+    }
+    const [rows] = await db.execute(
+        `SELECT id, address, branch_city
+         FROM users
+         WHERE role = 'user'
+           AND (branch_city IS NULL OR branch_city = '')`
+    );
+    if (!Array.isArray(rows) || !rows.length) {
+        return;
+    }
+    for (const row of rows) {
+        await ensureUserBranchCity(db, row);
+    }
+}
+
+async function requireAdminBranchAccess(db, authSession, row, res) {
+    const adminBranch = getAdminBranchCity(authSession);
+    if (!adminBranch) {
+        sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+        return false;
+    }
+    const bookingBranch = await ensureBookingBranchCity(db, row);
+    if (!bookingBranch) {
+        sendJson(res, 403, { success: false, message: "Booking branch is not available." });
+        return false;
+    }
+    if (bookingBranch !== adminBranch) {
+        sendJson(res, 403, { success: false, message: "You do not have access to this booking." });
+        return false;
+    }
+    return true;
 }
 
 function normalizeInstallmentEmploymentType(value) {
@@ -4533,6 +4879,7 @@ function mapBookingRow(row, options) {
             getDefaultPaymentStatus(row.payment_method, row.service_type)
         ),
         service: String(row.service_type || ""),
+        branchCity: String(row.branch_city || ""),
         status: String(row.status || ""),
         fulfillmentStatus: String(row.fulfillment_status || ""),
         trackingEta: String(row.tracking_eta || ""),
@@ -5141,7 +5488,12 @@ async function handleSignup(req, res) {
         const fullName = buildFullName(firstName, middleInitial, lastName);
         const email = normalizeEmail(body.email);
         const phone = normalizeMobile(body.phone);
-        const address = normalizeNamePart(body.address);
+        const addressCheck = validateUserAddressParts(
+            body.addressParts || body.address_parts,
+            body.address
+        );
+        const address = addressCheck.address;
+        const branchCity = addressCheck.branchCity;
         const password = String(body.password || "");
         const verificationRequestId = String(body.verificationRequestId || "").trim();
         const verificationMethod = String(body.verificationMethod || "").trim().toLowerCase();
@@ -5162,8 +5514,8 @@ async function handleSignup(req, res) {
             sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
             return;
         }
-        if (address.length < 5) {
-            sendJson(res, 400, { success: false, message: "Please enter a complete address." });
+        if (addressCheck.error) {
+            sendJson(res, 400, { success: false, message: addressCheck.error });
             return;
         }
         if (!isStrongPassword(password)) {
@@ -5241,11 +5593,12 @@ async function handleSignup(req, res) {
                 email,
                 phone,
                 address,
+                branch_city,
                 password_hash,
                 role,
                 is_blocked
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'user', 0)
         `;
 
         const values = [
@@ -5256,6 +5609,7 @@ async function handleSignup(req, res) {
             email,
             phone,
             address,
+            branchCity,
             passwordHash
         ];
 
@@ -5276,6 +5630,7 @@ async function handleSignup(req, res) {
             email: email,
             phone: phone,
             address: address,
+            branchCity: branchCity,
             role: "user",
             status: "active"
         };
@@ -5311,18 +5666,20 @@ async function handleLogin(req, res) {
             return;
         }
 
-        const adminCredentials = getAdminCredentials();
+        const adminAccounts = getAdminAccounts();
+        const adminAccount = findAdminAccount(loginId);
         if (!enforceRateLimit(req, res, "login", loginId, LOGIN_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
             return;
         }
-        if (adminCredentials && loginId === adminCredentials.loginId) {
-            if (verifyPassword(password, adminCredentials.passwordHash)) {
+        if (adminAccount) {
+            if (verifyPassword(password, adminAccount.passwordHash)) {
                 const adminUser = {
                     id: 0,
                     name: "Admin",
-                    email: adminCredentials.loginId,
+                    email: adminAccount.loginId,
                     role: "admin",
-                    status: "active"
+                    status: "active",
+                    branchCity: adminAccount.branchCity
                 };
                 const authSession = createAuthSession(adminUser);
                 sendJson(res, 200, {
@@ -5338,7 +5695,8 @@ async function handleLogin(req, res) {
         }
 
         if (!isValidEmail(loginId)) {
-            if (!adminCredentials) {
+            const hasAdminAccounts = adminAccounts && Array.isArray(adminAccounts.admins) && adminAccounts.admins.length > 0;
+            if (!hasAdminAccounts) {
                 sendJson(res, 503, {
                     success: false,
                     message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
@@ -5352,7 +5710,7 @@ async function handleLogin(req, res) {
 
         const pool = await getDbPool();
         const [rows] = await pool.execute(
-            `SELECT id, first_name, middle_initial, last_name, full_name, email, phone, address, password_hash, role, is_blocked
+            `SELECT id, first_name, middle_initial, last_name, full_name, email, phone, address, branch_city, password_hash, role, is_blocked
              FROM users
              WHERE email = ?
              LIMIT 1`,
@@ -5390,6 +5748,7 @@ async function handleLogin(req, res) {
             email: String(user.email || ""),
             phone: String(user.phone || ""),
             address: String(user.address || ""),
+            branchCity: String(user.branch_city || ""),
             role: String(user.role || "user"),
             status: Number(user.is_blocked) === 1 ? "blocked" : "active"
         };
@@ -5418,7 +5777,8 @@ async function handleAuthMe(req, res) {
             name: String(session.name || ""),
             email: String(session.email || ""),
             role: normalizeUserRole(session.role),
-            status: "active"
+            status: "active",
+            branchCity: normalizeBranchCity(session.branchCity, { allowEmpty: true })
         },
         ...getAuthResponse(session)
     });
@@ -5523,7 +5883,15 @@ async function handleAdminDashboard(_req, res) {
             return;
         }
 
+        const adminBranch = getAdminBranchCity(authSession);
+        if (!adminBranch) {
+            sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+            return;
+        }
+
         const pool = await getDbPool();
+        await backfillMissingBranchCities(pool);
+        await backfillMissingUserBranchCities(pool);
 
         const [bookingStatsRows] = await pool.execute(
             `SELECT
@@ -5604,13 +5972,17 @@ async function handleAdminDashboard(_req, res) {
                         ELSE 0
                     END
                 ), 0) AS successfulBookings
-             FROM bookings`
+             FROM bookings
+             WHERE branch_city = ?`,
+            [adminBranch]
         );
 
         const [userStatsRows] = await pool.execute(
             `SELECT COUNT(*) AS totalUsers
              FROM users
-             WHERE role = 'user'`
+             WHERE role = 'user'
+               AND branch_city = ?`,
+            [adminBranch]
         );
 
         const [monthlyRows] = await pool.execute(
@@ -5671,9 +6043,11 @@ async function handleAdminDashboard(_req, res) {
                     END
                 ), 0) AS pending
              FROM bookings
-             WHERE created_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 11 MONTH), '%Y-%m-01')
+             WHERE branch_city = ?
+               AND created_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 11 MONTH), '%Y-%m-01')
              GROUP BY month_key
-             ORDER BY month_key ASC`
+             ORDER BY month_key ASC`,
+            [adminBranch]
         );
 
         const bookingStats = bookingStatsRows && bookingStatsRows[0] ? bookingStatsRows[0] : {};
@@ -6218,8 +6592,8 @@ async function handleAdminSettingsGet(req, res) {
             return;
         }
 
-        const adminCredentials = getAdminCredentials();
-        if (!adminCredentials) {
+        const adminAccount = findAdminAccount(authSession.email);
+        if (!adminAccount) {
             sendJson(res, 503, {
                 success: false,
                 message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
@@ -6229,8 +6603,9 @@ async function handleAdminSettingsGet(req, res) {
         sendJson(res, 200, {
             success: true,
             settings: {
-                loginId: adminCredentials.loginId,
-                updatedAt: adminCredentials.updatedAt
+                loginId: adminAccount.loginId,
+                branchCity: adminAccount.branchCity,
+                updatedAt: adminAccount.updatedAt
             }
         });
     } catch (error) {
@@ -6263,33 +6638,35 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
             return;
         }
 
-        const adminCredentials = getAdminCredentials();
-        if (!adminCredentials) {
+        const adminAccount = findAdminAccount(authSession.email);
+        if (!adminAccount) {
             sendJson(res, 503, {
                 success: false,
                 message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
             });
             return;
         }
-        if (!verifyPassword(currentPassword, adminCredentials.passwordHash)) {
+        if (!verifyPassword(currentPassword, adminAccount.passwordHash)) {
             sendJson(res, 401, { success: false, message: "Current password is incorrect." });
             return;
         }
 
-        const updatedCredentials = saveAdminCredentials({ loginId: nextLoginId });
+        const updatedCredentials = updateAdminAccount(adminAccount.loginId, { loginId: nextLoginId });
         const refreshedAuthSession = createAuthSession({
             id: authSession.userId,
             role: authSession.role,
             email: updatedCredentials.loginId,
-            name: authSession.name || "Admin"
+            name: authSession.name || "Admin",
+            branchCity: updatedCredentials.branchCity
         });
 
-        const isChanged = updatedCredentials.loginId !== adminCredentials.loginId;
+        const isChanged = updatedCredentials.loginId !== adminAccount.loginId;
         sendJson(res, 200, {
             success: true,
             message: isChanged ? "Admin login updated successfully." : "Admin login is already up to date.",
             settings: {
                 loginId: updatedCredentials.loginId,
+                branchCity: updatedCredentials.branchCity,
                 updatedAt: updatedCredentials.updatedAt
             },
             user: {
@@ -6297,7 +6674,8 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
                 name: String(authSession.name || "Admin"),
                 email: updatedCredentials.loginId,
                 role: normalizeUserRole(authSession.role),
-                status: "active"
+                status: "active",
+                branchCity: updatedCredentials.branchCity
             },
             ...getAuthResponse(refreshedAuthSession)
         });
@@ -6326,24 +6704,24 @@ async function handleAdminSettingsUpdatePassword(req, res) {
             return;
         }
 
-        const adminCredentials = getAdminCredentials();
-        if (!adminCredentials) {
+        const adminAccount = findAdminAccount(authSession.email);
+        if (!adminAccount) {
             sendJson(res, 503, {
                 success: false,
                 message: "Admin credentials are not initialized. Set ADMIN_LOGIN_ID and ADMIN_PASSWORD first."
             });
             return;
         }
-        if (!verifyPassword(currentPassword, adminCredentials.passwordHash)) {
+        if (!verifyPassword(currentPassword, adminAccount.passwordHash)) {
             sendJson(res, 401, { success: false, message: "Current password is incorrect." });
             return;
         }
-        if (verifyPassword(newPassword, adminCredentials.passwordHash)) {
+        if (verifyPassword(newPassword, adminAccount.passwordHash)) {
             sendJson(res, 400, { success: false, message: "New password must be different from current password." });
             return;
         }
 
-        saveAdminCredentials({
+        updateAdminAccount(adminAccount.loginId, {
             passwordHash: hashPassword(newPassword)
         });
 
@@ -6414,7 +6792,12 @@ async function handleProfileSettingsSave(req, res) {
         const fullName = normalizeText(body.fullName);
         const email = normalizeEmail(body.email);
         const phone = normalizeMobile(body.phone);
-        const address = normalizeText(body.address);
+        const addressCheck = validateUserAddressParts(
+            body.addressParts || body.address_parts,
+            body.address
+        );
+        const address = addressCheck.address;
+        const branchCity = addressCheck.branchCity;
         const avatar = typeof body.avatar === "string" ? body.avatar.trim() : "";
         const currentEmail = normalizeEmail(body.currentEmail);
         const lookupEmail = isValidEmail(currentEmail) ? currentEmail : email;
@@ -6432,8 +6815,8 @@ async function handleProfileSettingsSave(req, res) {
             sendJson(res, 400, { success: false, message: "Use 09XXXXXXXXX or +639XXXXXXXXX." });
             return;
         }
-        if (address.length < 5) {
-            sendJson(res, 400, { success: false, message: "Please enter a complete address." });
+        if (addressCheck.error) {
+            sendJson(res, 400, { success: false, message: addressCheck.error });
             return;
         }
         if (!isValidEmail(lookupEmail)) {
@@ -6452,11 +6835,12 @@ async function handleProfileSettingsSave(req, res) {
                  email = ?,
                  phone = ?,
                  address = ?,
+                 branch_city = ?,
                  avatar_data_url = ?,
                  updated_at = NOW()
              WHERE email = ?
              LIMIT 1`,
-            [fullName, email, phone, address, avatar || null, lookupEmail]
+            [fullName, email, phone, address, branchCity, avatar || null, lookupEmail]
         );
 
         if (!result || Number(result.affectedRows || 0) < 1) {
@@ -6479,7 +6863,8 @@ async function handleProfileSettingsSave(req, res) {
                 id: authSession.userId,
                 role: authSession.role,
                 email: email,
-                name: fullName
+                name: fullName,
+                branchCity: branchCity
             });
         }
 
@@ -6615,6 +7000,10 @@ async function prepareBookingForInsert(bodyInput, options) {
     const bikeColor = normalizeText(body.bikeColor || body.color || body.selectedColor || body.bike_color).slice(0, 64);
     const bikeImage = normalizeProductImage(body.bikeImage || body.image || body.img);
     const serviceType = normalizeServiceType(body.service);
+    const branchCityHint = resolveAllowedBookingCityName(
+        body.branchCity || body.branch_city || body.pickupCity || body.city
+    );
+    let branchCity = branchCityHint;
     const forcedPaymentMethod = normalizeWalletPaymentMethod(opts.paymentMethod || "");
     const paymentMethod = (
         forcedPaymentMethod
@@ -6681,6 +7070,7 @@ async function prepareBookingForInsert(bodyInput, options) {
             }
             nextInstallment.province = canonicalInstallmentProvince;
             nextInstallment.city = canonicalInstallmentCity;
+            branchCity = canonicalInstallmentCity || branchCity;
             const nowIso = new Date().toISOString();
             nextInstallment.paymentHistory = [];
             nextInstallment.paidInstallments = 0;
@@ -6756,6 +7146,7 @@ async function prepareBookingForInsert(bodyInput, options) {
 
     if (serviceType === "Delivery") {
         const normalizedParts = validateDeliveryServiceArea(shippingAddressPartsInput, shippingAddress);
+        branchCity = normalizedParts.city || branchCity;
         if (!shippingAddress) {
             shippingAddress = [
                 normalizedParts.street,
@@ -6763,6 +7154,12 @@ async function prepareBookingForInsert(bodyInput, options) {
                 normalizedParts.city,
                 normalizedParts.province
             ].filter(Boolean).join(", ").slice(0, 255);
+        }
+    }
+
+    if (serviceType === "Pick Up") {
+        if (!branchCity) {
+            branchCity = normalizeBranchCity(DEFAULT_ADMIN_BRANCH_CITY);
         }
     }
 
@@ -6835,6 +7232,7 @@ async function prepareBookingForInsert(bodyInput, options) {
         paymentMethod: paymentMethod,
         paymentStatus: paymentStatus,
         serviceType: serviceType,
+        branchCity: branchCity || null,
         scheduleDate: scheduleDate,
         scheduleTime: scheduleTime,
         status: status,
@@ -6878,6 +7276,7 @@ async function insertPreparedBooking(db, preparedInput) {
             payment_method,
             payment_status,
             service_type,
+            branch_city,
             schedule_date,
             schedule_time,
             status,
@@ -6912,6 +7311,7 @@ async function insertPreparedBooking(db, preparedInput) {
             prepared.paymentMethod || "CASH ON DELIVERY",
             normalizePaymentStatus(prepared.paymentStatus, "awaiting_payment_confirmation"),
             prepared.serviceType || "Delivery",
+            prepared.branchCity || null,
             prepared.scheduleDate || null,
             prepared.scheduleTime || null,
             prepared.status || "Pending review",
@@ -7092,7 +7492,12 @@ async function handleCancelBooking(req, res, orderId) {
         }
 
         const beforeRow = beforeRows[0];
-        if (authSession.role !== "admin") {
+        if (authSession.role === "admin") {
+            const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, beforeRow, res);
+            if (!hasBranchAccess) {
+                return;
+            }
+        } else {
             const bookingEmail = normalizeEmail(beforeRow.email || "");
             const bookingUserEmail = normalizeEmail(beforeRow.user_email || "");
             if (!sessionEmail || (sessionEmail !== bookingEmail && sessionEmail !== bookingUserEmail)) {
@@ -7421,20 +7826,28 @@ async function handleAdminBookings(_req, res, parsedUrl) {
             return;
         }
 
+        const adminBranch = getAdminBranchCity(authSession);
+        if (!adminBranch) {
+            sendJson(res, 403, { success: false, message: "Admin branch is not configured." });
+            return;
+        }
+
         const scope = normalizeText(parsedUrl.searchParams.get("scope")).toLowerCase();
         const pool = await getDbPool();
+        await backfillMissingBranchCities(pool);
 
         const query = scope === "all"
-            ? `SELECT * FROM bookings ORDER BY created_at DESC`
+            ? `SELECT * FROM bookings WHERE branch_city = ? ORDER BY created_at DESC`
             : `SELECT *
                FROM bookings
-               WHERE review_decision = 'none'
+               WHERE branch_city = ?
+                 AND review_decision = 'none'
                  AND LOWER(status) NOT LIKE '%cancel%'
                  AND LOWER(fulfillment_status) NOT LIKE '%cancel%'
                  AND LOWER(status) NOT LIKE '%reject%'
                ORDER BY created_at DESC`;
 
-        const [rows] = await pool.execute(query);
+        const [rows] = await pool.execute(query, [adminBranch]);
         const bookings = Array.isArray(rows) ? rows.map(mapBookingRow) : [];
         sendJson(res, 200, { success: true, bookings: bookings });
     } catch (error) {
@@ -7467,9 +7880,15 @@ async function handleAdminBookingDetails(_req, res, orderId) {
             return;
         }
 
+        const bookingRow = rows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, bookingRow, res);
+        if (!hasBranchAccess) {
+            return;
+        }
+
         sendJson(res, 200, {
             success: true,
-            booking: mapBookingRow(rows[0], { includeInstallmentAttachmentData: true })
+            booking: mapBookingRow(bookingRow, { includeInstallmentAttachmentData: true })
         });
     } catch (error) {
         sendJson(res, 500, { success: false, message: error.message || "Unable to load booking details." });
@@ -7516,6 +7935,13 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             return;
         }
         const beforeRow = beforeRows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(db, authSession, beforeRow, res);
+        if (!hasBranchAccess) {
+            if (connection && typeof connection.rollback === "function") {
+                await connection.rollback();
+            }
+            return;
+        }
         const beforeMergedStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
         const wasAlreadyRejected = String(beforeRow.review_decision || "").toLowerCase() === "rejected"
             || beforeMergedStatus.includes("reject")
@@ -7669,7 +8095,7 @@ async function handleAdminBookingRemove(_req, res, orderId) {
 
         const pool = await getDbPool();
         const [beforeRows] = await pool.execute(
-            `SELECT id
+            `SELECT *
              FROM bookings
              WHERE order_id = ?
              LIMIT 1`,
@@ -7677,6 +8103,12 @@ async function handleAdminBookingRemove(_req, res, orderId) {
         );
         if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
             sendJson(res, 404, { success: false, message: "Booking not found." });
+            return;
+        }
+
+        const beforeRow = beforeRows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, beforeRow, res);
+        if (!hasBranchAccess) {
             return;
         }
 
@@ -7737,6 +8169,10 @@ async function handleAdminBookingPaymentStatus(_req, res, orderId) {
             return;
         }
         const beforeRow = beforeRows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, beforeRow, res);
+        if (!hasBranchAccess) {
+            return;
+        }
         const beforePaymentStatus = normalizePaymentStatus(
             beforeRow.payment_status,
             getDefaultPaymentStatus(beforeRow.payment_method, beforeRow.service_type)
@@ -7824,6 +8260,10 @@ async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
         }
 
         const beforeRow = beforeRows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, beforeRow, res);
+        if (!hasBranchAccess) {
+            return;
+        }
         const reviewDecision = String(beforeRow.review_decision || "").trim().toLowerCase();
         const mergedBeforeStatus = `${String(beforeRow.status || "")} ${String(beforeRow.fulfillment_status || "")}`.toLowerCase();
         const isRejectedOrCancelled = reviewDecision === "rejected"
@@ -7974,6 +8414,10 @@ async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
         }
 
         const beforeRow = beforeRows[0];
+        const hasBranchAccess = await requireAdminBranchAccess(pool, authSession, beforeRow, res);
+        if (!hasBranchAccess) {
+            return;
+        }
         const reviewDecision = String(beforeRow.review_decision || "").trim().toLowerCase();
         if (isRejectedOrCancelledBookingState(beforeRow.status, beforeRow.fulfillment_status, reviewDecision)) {
             sendJson(res, 409, { success: false, message: "Rejected or cancelled bookings cannot be updated." });
@@ -8513,7 +8957,9 @@ function bootstrapRuntime(triggerLabelInput) {
     const semaphoreStatus = isSemaphoreConfigured() ? "configured" : "missing-config";
     const otpMode = DEMO_OTP_ENABLED ? "demo-allowed" : "provider-required";
     const corsStatus = CORS_ALLOWED_ORIGINS.size > 0 ? `${CORS_ALLOWED_ORIGINS.size}-origins` : "none";
-    const adminStatus = getAdminCredentials() ? "configured" : "missing";
+    const adminStatus = (getAdminAccounts() && Array.isArray(getAdminAccounts().admins) && getAdminAccounts().admins.length)
+        ? "configured"
+        : "missing";
     const runtimeType = IS_SERVERLESS_RUNTIME ? "serverless" : "server";
     const triggerLabel = String(triggerLabelInput || "startup").trim().toLowerCase() || "startup";
     const apiUrl = PUBLIC_API_BASE || `http://127.0.0.1:${PORT}`;
@@ -9208,7 +9654,7 @@ async function requestListener(req, res) {
             ok: true,
             service: "ecodrive-api",
             dbConfigured: isDbConfigured(),
-            adminAuthConfigured: Boolean(getAdminCredentials()),
+            adminAuthConfigured: Boolean(getAdminAccounts() && Array.isArray(getAdminAccounts().admins) && getAdminAccounts().admins.length),
             smtpConfigured: isSmtpConfigured(),
             smsConfigured: isSmsDeliveryConfigured(),
             smsMode: isSemaphoreConfigured()

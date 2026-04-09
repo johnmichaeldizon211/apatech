@@ -1,5 +1,23 @@
 document.addEventListener("DOMContentLoaded", function () {
     var OTP_TTL_MS = 5 * 60 * 1000;
+    var ALLOWED_PROVINCE = "Bulacan";
+    var ALLOWED_CITY_CONFIG = [
+        { label: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
+        { label: "San Ildefonso", aliases: [] },
+        { label: "San Rafael", aliases: [] },
+        { label: "Pulilan", aliases: ["Pullilan"] },
+        { label: "Bustos", aliases: [] }
+    ];
+    var BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
+    var PSGC_API_BASE = "https://psgc.cloud/api/v2";
+    var PSGC_TIMEOUT_MS = 15000;
+    var FALLBACK_BARANGAYS_BY_CITY = {
+        "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],
+        "San Ildefonso": ["Akle", "Anyatam", "Bubulong Munti", "Garlang", "Malipampang", "Sapang Putik", "Umpucan"],
+        "San Rafael": ["Banca-banca", "Caingin", "Lico", "Maasim", "Poblacion", "Talacsan", "Tukod"],
+        "Pulilan": ["Balatong A", "Balatong B", "Cutcot", "Lumbac", "Longos", "Poblacion", "Santa Peregrina"],
+        "Bustos": ["Bonga Mayor", "Buisan", "Camachile", "Cambaog", "Poblacion", "Tibagan", "Talampas"]
+    };
 
     var form = document.getElementById("signup-form");
     var verificationStep = document.getElementById("signup-verification-step");
@@ -7,7 +25,10 @@ document.addEventListener("DOMContentLoaded", function () {
     var fullNameInput = document.getElementById("fullName");
     var emailInput = document.getElementById("email");
     var phoneInput = document.getElementById("phone");
-    var addressInput = document.getElementById("address");
+    var streetInput = document.getElementById("street");
+    var provinceSelect = document.getElementById("province");
+    var citySelect = document.getElementById("city");
+    var barangaySelect = document.getElementById("barangay");
     var passwordInput = document.getElementById("password");
     var confirmPasswordInput = document.getElementById("confirmPassword");
 
@@ -27,7 +48,10 @@ document.addEventListener("DOMContentLoaded", function () {
     var fullNameErr = document.getElementById("fullName-error");
     var emailErr = document.getElementById("email-error");
     var phoneErr = document.getElementById("phone-error");
-    var addressErr = document.getElementById("address-error");
+    var streetErr = document.getElementById("street-error");
+    var provinceErr = document.getElementById("province-error");
+    var cityErr = document.getElementById("city-error");
+    var barangayErr = document.getElementById("barangay-error");
     var passwordErr = document.getElementById("password-error");
     var confirmPasswordErr = document.getElementById("confirmPassword-error");
 
@@ -41,7 +65,10 @@ document.addEventListener("DOMContentLoaded", function () {
         !fullNameInput ||
         !emailInput ||
         !phoneInput ||
-        !addressInput ||
+        !streetInput ||
+        !provinceSelect ||
+        !citySelect ||
+        !barangaySelect ||
         !passwordInput ||
         !confirmPasswordInput
     ) {
@@ -52,12 +79,37 @@ document.addEventListener("DOMContentLoaded", function () {
         fullName: false,
         email: false,
         phone: false,
-        address: false,
+        street: false,
+        province: false,
+        city: false,
+        barangay: false,
         password: false,
         confirmPassword: false
     };
     var submitted = false;
     var isFormValid = false;
+    var ALLOWED_CITY_LABELS = ALLOWED_CITY_CONFIG.map(function (item) {
+        return String(item.label || "").trim();
+    }).filter(Boolean);
+    var CITY_ALIAS_TO_CANONICAL = (function buildCityAliasMap() {
+        var map = new Map();
+        ALLOWED_CITY_CONFIG.forEach(function (item) {
+            var canonical = String(item.label || "").trim();
+            if (!canonical) {
+                return;
+            }
+            var tokens = [canonical].concat(Array.isArray(item.aliases) ? item.aliases : []);
+            tokens.forEach(function (token) {
+                var normalized = String(token || "").trim().toLowerCase();
+                if (normalized) {
+                    map.set(normalized, canonical);
+                }
+            });
+        });
+        return map;
+    })();
+    var psgcCityRowsByCanonical = {};
+    var barangayCacheByCity = {};
 
     var verificationState = {
         requestId: "",
@@ -125,6 +177,263 @@ document.addEventListener("DOMContentLoaded", function () {
         return cleaned;
     }
 
+    function normalizeAddressPart(value) {
+        return String(value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function sortUniqueTextList(listInput) {
+        var values = Array.isArray(listInput) ? listInput : [];
+        var unique = Array.from(new Set(values.map(function (item) {
+            return normalizeAddressPart(item);
+        }).filter(Boolean)));
+        return unique.sort(function (a, b) {
+            return String(a).localeCompare(String(b), "en", { sensitivity: "base" });
+        });
+    }
+
+    function resolveAllowedCityName(value) {
+        var cleaned = normalizeAddressPart(value);
+        if (!cleaned) {
+            return "";
+        }
+        return CITY_ALIAS_TO_CANONICAL.get(cleaned.toLowerCase()) || "";
+    }
+
+    function normalizeProvinceName(value) {
+        var cleaned = normalizeAddressPart(value);
+        return cleaned.toLowerCase() === ALLOWED_PROVINCE.toLowerCase()
+            ? ALLOWED_PROVINCE
+            : "";
+    }
+
+    function parseLocationApiRows(payload) {
+        var list = Array.isArray(payload)
+            ? payload
+            : (payload && Array.isArray(payload.data) ? payload.data : []);
+        return list
+            .map(function (row) {
+                if (!row || typeof row !== "object") {
+                    return null;
+                }
+                var name = normalizeAddressPart(row.name || row.city || row.municipality || row.barangay);
+                var code = normalizeAddressPart(row.code || row.psgc_code || row.id || name);
+                if (!name) {
+                    return null;
+                }
+                return { name: name, code: code || name };
+            })
+            .filter(Boolean);
+    }
+
+    async function fetchPsgcRows(url) {
+        var controller = typeof AbortController === "function" ? new AbortController() : null;
+        var timer = controller ? setTimeout(function () {
+            controller.abort();
+        }, PSGC_TIMEOUT_MS) : null;
+        try {
+            var response = await fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                signal: controller ? controller.signal : undefined
+            });
+            if (!response.ok) {
+                return [];
+            }
+            var payload = await response.json().catch(function () {
+                return [];
+            });
+            return parseLocationApiRows(payload);
+        } catch (_error) {
+            return [];
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    function readBarangayCache() {
+        try {
+            var raw = JSON.parse(localStorage.getItem(BARANGAY_CACHE_KEY));
+            if (!raw || typeof raw !== "object") {
+                return {};
+            }
+            var next = {};
+            Object.keys(raw).forEach(function (cityName) {
+                var canonical = resolveAllowedCityName(cityName);
+                if (!canonical) {
+                    return;
+                }
+                var list = sortUniqueTextList(raw[cityName]);
+                if (list.length) {
+                    next[canonical] = list;
+                }
+            });
+            return next;
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    function saveBarangayCache(cacheInput) {
+        var cache = cacheInput && typeof cacheInput === "object" ? cacheInput : {};
+        var payload = {};
+        Object.keys(cache).forEach(function (cityName) {
+            var canonical = resolveAllowedCityName(cityName);
+            if (!canonical) {
+                return;
+            }
+            var list = sortUniqueTextList(cache[cityName]);
+            if (list.length) {
+                payload[canonical] = list;
+            }
+        });
+        localStorage.setItem(BARANGAY_CACHE_KEY, JSON.stringify(payload));
+    }
+
+    function renderSelectValues(selectEl, placeholder, values, selectedValue, opts) {
+        if (!(selectEl instanceof HTMLSelectElement)) {
+            return "";
+        }
+        var options = opts && typeof opts === "object" ? opts : {};
+        var allowBlank = options.allowBlank !== false;
+        var selected = normalizeAddressPart(selectedValue);
+        var sortedValues = sortUniqueTextList(values);
+        selectEl.innerHTML = "";
+
+        if (allowBlank) {
+            var placeholderOption = document.createElement("option");
+            placeholderOption.value = "";
+            placeholderOption.textContent = placeholder;
+            selectEl.appendChild(placeholderOption);
+        }
+
+        sortedValues.forEach(function (value) {
+            var option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            selectEl.appendChild(option);
+        });
+
+        if (selected && sortedValues.includes(selected)) {
+            selectEl.value = selected;
+            return selected;
+        }
+        selectEl.value = allowBlank ? "" : (sortedValues[0] || "");
+        return selectEl.value;
+    }
+
+    async function preloadAllowedBulacanCities() {
+        if (Object.keys(psgcCityRowsByCanonical).length) {
+            return psgcCityRowsByCanonical;
+        }
+        var provinces = await fetchPsgcRows(PSGC_API_BASE + "/provinces");
+        var bulacan = provinces.find(function (row) {
+            return normalizeAddressPart(row.name).toLowerCase() === ALLOWED_PROVINCE.toLowerCase();
+        });
+        if (!bulacan) {
+            return psgcCityRowsByCanonical;
+        }
+        var cityRows = await fetchPsgcRows(
+            PSGC_API_BASE + "/provinces/" + encodeURIComponent(bulacan.code) + "/cities-municipalities"
+        );
+        cityRows.forEach(function (row) {
+            var canonical = resolveAllowedCityName(row.name);
+            if (canonical && !psgcCityRowsByCanonical[canonical]) {
+                psgcCityRowsByCanonical[canonical] = row;
+            }
+        });
+        return psgcCityRowsByCanonical;
+    }
+
+    async function fetchBarangaysForAllowedCity(cityName) {
+        var canonicalCity = resolveAllowedCityName(cityName);
+        if (!canonicalCity) {
+            return [];
+        }
+        if (Array.isArray(barangayCacheByCity[canonicalCity]) && barangayCacheByCity[canonicalCity].length) {
+            return barangayCacheByCity[canonicalCity];
+        }
+        await preloadAllowedBulacanCities();
+        var cityRow = psgcCityRowsByCanonical[canonicalCity];
+        var rows = [];
+        if (cityRow && cityRow.code) {
+            rows = await fetchPsgcRows(
+                PSGC_API_BASE + "/cities-municipalities/" + encodeURIComponent(cityRow.code) + "/barangays"
+            );
+        }
+        var names = sortUniqueTextList(rows.map(function (row) {
+            return row.name;
+        }));
+        if (names.length) {
+            barangayCacheByCity[canonicalCity] = names;
+            saveBarangayCache(barangayCacheByCity);
+            return names;
+        }
+        var fallback = sortUniqueTextList(FALLBACK_BARANGAYS_BY_CITY[canonicalCity] || []);
+        if (fallback.length) {
+            barangayCacheByCity[canonicalCity] = fallback;
+            return fallback;
+        }
+        return [];
+    }
+
+    async function syncBarangayOptionsByCity(cityValue, preferredBarangay) {
+        var canonicalCity = resolveAllowedCityName(cityValue);
+        if (!canonicalCity) {
+            renderSelectValues(barangaySelect, "Select barangay", [], "", { allowBlank: true });
+            barangaySelect.disabled = true;
+            return "";
+        }
+        citySelect.value = canonicalCity;
+        barangaySelect.disabled = true;
+        renderSelectValues(barangaySelect, "Loading barangays...", [], "", { allowBlank: true });
+        var rows = await fetchBarangaysForAllowedCity(canonicalCity);
+        var selected = renderSelectValues(
+            barangaySelect,
+            rows.length ? "Select barangay" : "No barangays available",
+            rows,
+            preferredBarangay,
+            { allowBlank: true }
+        );
+        barangaySelect.disabled = rows.length < 1;
+        return selected;
+    }
+
+    async function initializeLocationSelectors() {
+        barangayCacheByCity = readBarangayCache();
+        renderSelectValues(
+            citySelect,
+            "Select city / municipality",
+            ALLOWED_CITY_LABELS,
+            citySelect.value,
+            { allowBlank: true }
+        );
+        provinceSelect.innerHTML = "";
+        var provinceOption = document.createElement("option");
+        provinceOption.value = ALLOWED_PROVINCE;
+        provinceOption.textContent = ALLOWED_PROVINCE;
+        provinceSelect.appendChild(provinceOption);
+        provinceSelect.value = ALLOWED_PROVINCE;
+        provinceSelect.disabled = true;
+
+        var seededCity = resolveAllowedCityName(citySelect.value);
+        if (seededCity) {
+            await syncBarangayOptionsByCity(seededCity, barangaySelect.value);
+        } else {
+            renderSelectValues(barangaySelect, "Select barangay", [], "", { allowBlank: true });
+            barangaySelect.disabled = true;
+        }
+    }
+
+    function buildAddressFromParts(parts) {
+        var street = normalizeAddressPart(parts.street);
+        var barangay = normalizeAddressPart(parts.barangay);
+        var city = normalizeAddressPart(parts.city);
+        var province = normalizeAddressPart(parts.province || ALLOWED_PROVINCE);
+        return [street, barangay, city, province].filter(Boolean).join(", ");
+    }
+
     function isValidEmail(value) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
     }
@@ -181,15 +490,42 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function collectSignupPayload() {
         var nameParts = parseFullName(fullNameInput.value);
+        var addressParts = {
+            street: normalizeAddressPart(streetInput.value),
+            barangay: normalizeAddressPart(barangaySelect.value),
+            city: resolveAllowedCityName(citySelect.value),
+            province: normalizeProvinceName(provinceSelect.value || ALLOWED_PROVINCE)
+        };
         return {
             firstName: nameParts.first,
             middleInitial: nameParts.middleInitial,
             lastName: nameParts.last,
             email: String(emailInput.value || "").trim().toLowerCase(),
             phone: normalizePhone(phoneInput.value),
-            address: String(addressInput.value || "").trim(),
+            address: buildAddressFromParts(addressParts),
+            addressParts: addressParts,
             password: String(passwordInput.value || "")
         };
+    }
+
+    function persistSignupProfile(payload) {
+        var profileEmail = String(payload.email || "").trim().toLowerCase();
+        if (!profileEmail) {
+            return;
+        }
+        var profile = {
+            fullName: String(fullNameInput.value || "").trim(),
+            email: profileEmail,
+            phone: payload.phone || "",
+            address: payload.address || "",
+            updatedAt: new Date().toISOString()
+        };
+        try {
+            localStorage.setItem("ecodrive_profile_settings::" + profileEmail, JSON.stringify(profile));
+            localStorage.setItem("ecodrive_profile_settings", JSON.stringify(profile));
+        } catch (_error) {
+            // ignore storage errors
+        }
     }
 
     function maskEmail(email) {
@@ -283,9 +619,12 @@ document.addEventListener("DOMContentLoaded", function () {
         var fullName = String(fullNameInput.value || "").trim();
         var email = String(emailInput.value || "").trim();
         var phone = String(phoneInput.value || "").trim();
-        var address = String(addressInput.value || "").trim();
         var password = String(passwordInput.value || "");
         var confirmPassword = String(confirmPasswordInput.value || "");
+        var street = normalizeAddressPart(streetInput.value);
+        var barangay = normalizeAddressPart(barangaySelect.value);
+        var city = resolveAllowedCityName(citySelect.value);
+        var province = normalizeProvinceName(provinceSelect.value || ALLOWED_PROVINCE);
 
         var nameParts = parseFullName(fullName);
         var fullNameMsg = (
@@ -295,7 +634,12 @@ document.addEventListener("DOMContentLoaded", function () {
         ) ? "Please enter your full name." : "";
         var emailMsg = !isValidEmail(email) ? "Please enter a valid email." : "";
         var phoneMsg = !isValidPhone(phone) ? "Use 09XXXXXXXXX or +639XXXXXXXXX." : "";
-        var addressMsg = address.length < 5 ? "Please enter a complete address." : "";
+        var streetMsg = !street ? "House / Street is required." : "";
+        var barangayMsg = !barangay ? "Barangay is required." : "";
+        var cityMsg = !city
+            ? "City must be City of Baliwag, San Ildefonso, San Rafael, Pulilan, or Bustos."
+            : "";
+        var provinceMsg = !province ? "Province must be Bulacan." : "";
         var passwordMsg = !isStrongPassword(password)
             ? "Password must be 8+ chars and include upper, lower, number and symbol."
             : "";
@@ -304,7 +648,10 @@ document.addEventListener("DOMContentLoaded", function () {
         setFieldError(fullNameInput, fullNameErr, fullNameMsg, touched.fullName || submitted);
         setFieldError(emailInput, emailErr, emailMsg, touched.email || submitted);
         setFieldError(phoneInput, phoneErr, phoneMsg, touched.phone || submitted);
-        setFieldError(addressInput, addressErr, addressMsg, touched.address || submitted);
+        setFieldError(streetInput, streetErr, streetMsg, touched.street || submitted);
+        setFieldError(barangaySelect, barangayErr, barangayMsg, touched.barangay || submitted);
+        setFieldError(citySelect, cityErr, cityMsg, touched.city || submitted);
+        setFieldError(provinceSelect, provinceErr, provinceMsg, touched.province || submitted);
         setFieldError(passwordInput, passwordErr, passwordMsg, touched.password || submitted);
         setFieldError(
             confirmPasswordInput,
@@ -313,7 +660,15 @@ document.addEventListener("DOMContentLoaded", function () {
             touched.confirmPassword || submitted
         );
 
-        isFormValid = !fullNameMsg && !emailMsg && !phoneMsg && !addressMsg && !passwordMsg && !confirmPasswordMsg;
+        isFormValid = !fullNameMsg
+            && !emailMsg
+            && !phoneMsg
+            && !streetMsg
+            && !barangayMsg
+            && !cityMsg
+            && !provinceMsg
+            && !passwordMsg
+            && !confirmPasswordMsg;
         continueBtn.disabled = !isFormValid;
         return isFormValid;
     }
@@ -598,6 +953,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        persistSignupProfile(payload);
         showToast("Account created successfully.", "success");
         window.setTimeout(function () {
             window.location.href = "Userhomefolder/userhome.html";
@@ -608,7 +964,10 @@ document.addEventListener("DOMContentLoaded", function () {
         { key: "fullName", input: fullNameInput },
         { key: "email", input: emailInput },
         { key: "phone", input: phoneInput },
-        { key: "address", input: addressInput },
+        { key: "street", input: streetInput },
+        { key: "province", input: provinceSelect },
+        { key: "city", input: citySelect },
+        { key: "barangay", input: barangaySelect },
         { key: "password", input: passwordInput },
         { key: "confirmPassword", input: confirmPasswordInput }
     ].forEach(function (entry) {
@@ -619,16 +978,26 @@ document.addEventListener("DOMContentLoaded", function () {
             touched[entry.key] = true;
             validateForm();
         });
-        entry.input.addEventListener("input", function () {
+        var handleChange = function () {
             if (entry.key === "email" || entry.key === "phone") {
                 resetVerificationState();
             }
             validateForm();
             refreshVerificationUi();
-        });
+        };
+        entry.input.addEventListener("input", handleChange);
+        entry.input.addEventListener("change", handleChange);
     });
 
     bindOtpInputs();
+
+    void initializeLocationSelectors();
+    citySelect.addEventListener("change", function () {
+        void syncBarangayOptionsByCity(citySelect.value, "");
+    });
+    provinceSelect.addEventListener("change", function () {
+        provinceSelect.value = ALLOWED_PROVINCE;
+    });
 
     document.querySelectorAll(".toggle-password").forEach(function (btn) {
         btn.addEventListener("click", function () {

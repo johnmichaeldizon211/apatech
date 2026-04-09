@@ -286,6 +286,22 @@ body {
   outline: none;
 }
 
+.settings-card select {
+  height: 40px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  padding: 0 12px;
+  font-size: 12px;
+  color: #1e376d;
+  outline: none;
+  background: #ffffff;
+}
+
+.settings-card select:disabled {
+  background: #f3f5fb;
+  color: #7a85a0;
+}
+
 .settings-card input::placeholder {
   color: #7a85a0;
 }
@@ -295,10 +311,26 @@ body {
   background: #fff4f4;
 }
 
+.settings-card select.input-invalid {
+  border-color: #c92c2c;
+  background: #fff4f4;
+}
+
 .field-error {
   min-height: 13px;
   font-size: 11px;
   color: #c92c2c;
+}
+
+.address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.address-grid .address-field {
+  display: flex;
+  flex-direction: column;
 }
 
 .actions {
@@ -785,6 +817,10 @@ body {
 }
 
 @media (max-width: 620px) {
+  .address-grid {
+    grid-template-columns: 1fr;
+  }
+
   .order-item-head {
     flex-direction: column;
     gap: 4px;

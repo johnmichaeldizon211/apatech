@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -26,9 +26,27 @@
             <input id="phone" name="phone" type="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX" autocomplete="tel">
             <span class="error" id="phone-error"></span>
 
-            <label for="address">Address*</label>
-            <input id="address" name="address" type="text" placeholder="Enter your complete address" autocomplete="street-address">
-            <span class="error" id="address-error"></span>
+            <label for="street">House / Street*</label>
+            <input id="street" name="street" type="text" placeholder="House / Street" autocomplete="address-line1">
+            <span class="error" id="street-error"></span>
+
+            <div class="address-grid">
+                <div class="address-field">
+                    <label for="province">Province*</label>
+                    <select id="province" name="province"></select>
+                    <span class="error" id="province-error"></span>
+                </div>
+                <div class="address-field">
+                    <label for="city">City / Municipality*</label>
+                    <select id="city" name="city"></select>
+                    <span class="error" id="city-error"></span>
+                </div>
+                <div class="address-field">
+                    <label for="barangay">Barangay*</label>
+                    <select id="barangay" name="barangay"></select>
+                    <span class="error" id="barangay-error"></span>
+                </div>
+            </div>
 
             <label for="password">Password*</label>
             <div class="input-with-toggle">
@@ -85,9 +103,10 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="session.js?v=20260227-3"></script>
+<script src="session.js?v=20260409"></script>
 <script src="signup.js?v=20260302-2"></script>
 </body>
 </html>
+
 
 

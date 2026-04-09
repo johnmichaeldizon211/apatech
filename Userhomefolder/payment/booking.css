@@ -324,6 +324,13 @@ body {
     transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
+.payment-options .pay-btn {
+    background: #fff !important;
+    border-color: var(--line) !important;
+    color: #1b3d76 !important;
+    box-shadow: none !important;
+}
+
 .pay-btn img {
     width: 15px;
     height: 15px;
@@ -353,12 +360,37 @@ body {
     color: #ffffff;
 }
 
+.payment-options .pay-btn.active {
+    background: var(--button-blue) !important;
+    border-color: var(--button-blue) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 14px rgba(46, 77, 168, 0.28) !important;
+}
+
+.payment-options .pay-btn.active .btn-icon {
+    color: #ffffff !important;
+}
+
 .pay-btn:hover {
     transform: translateY(-1px);
 }
 
+.payment-options .pay-btn:hover {
+    background: #fff !important;
+    border-color: var(--line) !important;
+    color: #1b3d76 !important;
+    box-shadow: none !important;
+}
+
 .pay-btn:active {
     transform: translateY(0);
+}
+
+.payment-options .pay-btn:active {
+    background: #fff !important;
+    border-color: var(--line) !important;
+    color: #1b3d76 !important;
+    box-shadow: none !important;
 }
 
 .pay-btn:focus-visible {
@@ -403,8 +435,8 @@ body {
 
 #summary-image {
     width: 100%;
-    max-width: 150px;
-    height: 108px;
+    max-width: 240px;
+    height: 180px;
     object-fit: contain;
     display: block;
     margin: 0 auto 6px;
@@ -712,8 +744,8 @@ body {
     }
 
     #summary-image {
-        max-width: 124px;
-        height: 96px;
+        max-width: 180px;
+        height: 140px;
         margin-bottom: 8px;
     }
 

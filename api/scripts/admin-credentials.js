@@ -5,18 +5,20 @@ const fs = require("fs");
 const path = require("path");
 
 const CREDENTIALS_PATH = path.join(__dirname, "..", "admin-credentials.json");
+const DEFAULT_BRANCH_CITY = "City of Baliwag";
 
 function printUsage() {
     console.log(
         [
             "Usage:",
             "  node scripts/admin-credentials.js --login-id <value> --keep-password-hash",
-            "  node scripts/admin-credentials.js --login-id <value> --password <strong-password>",
+            "  node scripts/admin-credentials.js --login-id <value> --password <strong-password> [--branch-city <value>]",
             "",
             "Options:",
             "  --login-id <value>       Required. New admin username/email.",
             "  --keep-password-hash     Keep current password hash from admin-credentials.json.",
             "  --password <value>       Set a new admin password (must be strong).",
+            "  --branch-city <value>    Optional. Branch city label (default: City of Baliwag).",
             "  --help                   Show this help."
         ].join("\n")
     );
@@ -27,6 +29,7 @@ function parseArgs(argv) {
         loginId: "",
         keepPasswordHash: false,
         password: "",
+        branchCity: "",
         help: false
     };
 
@@ -76,6 +79,21 @@ function parseArgs(argv) {
             continue;
         }
 
+        if (arg === "--branch-city") {
+            const nextCity = String(argv[index + 1] || "").trim();
+            if (!nextCity) {
+                throw new Error("Missing value for --branch-city.");
+            }
+            options.branchCity = nextCity;
+            index += 1;
+            continue;
+        }
+
+        if (arg.startsWith("--branch-city=")) {
+            options.branchCity = String(arg.slice("--branch-city=".length) || "").trim();
+            continue;
+        }
+
         throw new Error(`Unknown option: ${arg}`);
     }
 
@@ -108,17 +126,50 @@ function hashPassword(password) {
     return `scrypt:${salt}:${derived}`;
 }
 
+function normalizeBranchCity(value) {
+    return String(value || "").trim() || DEFAULT_BRANCH_CITY;
+}
+
+function sanitizeAdminEntry(entry) {
+    const raw = entry && typeof entry === "object" ? entry : {};
+    const loginId = normalizeAdminLoginId(raw.loginId || raw.username || raw.email);
+    const passwordHash = String(raw.passwordHash || "").trim();
+    if (!isValidAdminLoginId(loginId) || !passwordHash) {
+        return null;
+    }
+    return {
+        loginId: loginId,
+        passwordHash: passwordHash,
+        branchCity: normalizeBranchCity(raw.branchCity || raw.branch_city),
+        updatedAt: String(raw.updatedAt || new Date().toISOString())
+    };
+}
+
 function readCredentialsFromDisk(filePath) {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = raw ? JSON.parse(raw) : {};
     if (!parsed || typeof parsed !== "object") {
         throw new Error("Invalid credentials file content.");
     }
-    return parsed;
+    if (Array.isArray(parsed.admins)) {
+        return {
+            admins: parsed.admins.map(sanitizeAdminEntry).filter(Boolean),
+            updatedAt: String(parsed.updatedAt || new Date().toISOString())
+        };
+    }
+    if (parsed.loginId || parsed.passwordHash) {
+        const single = sanitizeAdminEntry(parsed);
+        return {
+            admins: single ? [single] : [],
+            updatedAt: String(parsed.updatedAt || new Date().toISOString())
+        };
+    }
+    return { admins: [], updatedAt: String(parsed.updatedAt || new Date().toISOString()) };
 }
 
 function writeCredentialsToDisk(filePath, credentials) {
-    fs.writeFileSync(filePath, JSON.stringify(credentials, null, 2) + "\n", "utf8");
+    const payload = credentials && typeof credentials === "object" ? credentials : {};
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + "\n", "utf8");
 }
 
 function main() {
@@ -143,16 +194,24 @@ function main() {
         throw new Error("Invalid login ID. Use 3-190 chars from: a-z, 0-9, dot, underscore, @, +, -.");
     }
 
+    let existingList = { admins: [], updatedAt: new Date().toISOString() };
+    if (fs.existsSync(CREDENTIALS_PATH)) {
+        existingList = readCredentialsFromDisk(CREDENTIALS_PATH);
+    }
+
+    const existingIndex = existingList.admins.findIndex(function (admin) {
+        return admin && admin.loginId === nextLoginId;
+    });
+
     let nextPasswordHash = "";
     if (options.keepPasswordHash) {
-        if (!fs.existsSync(CREDENTIALS_PATH)) {
+        if (existingIndex < 0) {
             throw new Error(
-                "admin-credentials.json was not found. Cannot keep password hash. " +
+                "admin-credentials.json does not contain this loginId. " +
                 "Create credentials first with --password."
             );
         }
-        const existing = readCredentialsFromDisk(CREDENTIALS_PATH);
-        nextPasswordHash = String(existing.passwordHash || "").trim();
+        nextPasswordHash = String(existingList.admins[existingIndex].passwordHash || "").trim();
         if (!nextPasswordHash) {
             throw new Error("Existing credentials file does not contain passwordHash.");
         }
@@ -163,16 +222,25 @@ function main() {
         nextPasswordHash = hashPassword(options.password);
     }
 
-    const nextCredentials = {
+    const nextAdmin = {
         loginId: nextLoginId,
         passwordHash: nextPasswordHash,
+        branchCity: normalizeBranchCity(options.branchCity || (existingIndex >= 0 ? existingList.admins[existingIndex].branchCity : "")),
         updatedAt: new Date().toISOString()
     };
 
-    writeCredentialsToDisk(CREDENTIALS_PATH, nextCredentials);
+    if (existingIndex >= 0) {
+        existingList.admins[existingIndex] = nextAdmin;
+    } else {
+        existingList.admins.push(nextAdmin);
+    }
+    existingList.updatedAt = new Date().toISOString();
+
+    writeCredentialsToDisk(CREDENTIALS_PATH, existingList);
 
     console.log(`[admin-credentials] Updated: ${CREDENTIALS_PATH}`);
-    console.log(`[admin-credentials] loginId set to: ${nextCredentials.loginId}`);
+    console.log(`[admin-credentials] loginId set to: ${nextAdmin.loginId}`);
+    console.log(`[admin-credentials] branchCity set to: ${nextAdmin.branchCity}`);
     if (options.keepPasswordHash) {
         console.log("[admin-credentials] Password hash kept from existing credentials.");
     } else {

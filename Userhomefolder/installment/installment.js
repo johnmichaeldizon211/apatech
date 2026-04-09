@@ -2,6 +2,10 @@
     const INSTALLMENT_CHECKOUT_KEY = "ecodrive_installment_checkout";
     const INSTALLMENT_FORM_KEY = "ecodrive_installment_form";
     const BOOKING_STORAGE_KEYS = ["ecodrive_bookings", "ecodrive_orders", "orders"];
+    const CURRENT_USER_KEY = "ecodrive_current_user_email";
+    const PROFILE_STORAGE_PREFIX = "ecodrive_profile_settings::";
+    const LEGACY_PROFILE_STORAGE_KEY = "ecodrive_profile_settings";
+    const USERS_KEY = "users";
     const KYC_API_BASE = (
         localStorage.getItem("ecodrive_kyc_api_base")
         || localStorage.getItem("ecodrive_api_base")
@@ -328,6 +332,49 @@
         }
     }
 
+    function getCurrentUserEmail() {
+        return String(localStorage.getItem(CURRENT_USER_KEY) || "").trim().toLowerCase();
+    }
+
+    function readProfileByEmail(emailInput) {
+        const email = String(emailInput || "").trim().toLowerCase();
+        if (email) {
+            const scoped = safeParse(localStorage.getItem(PROFILE_STORAGE_PREFIX + email));
+            if (scoped) {
+                return scoped;
+            }
+        }
+        return safeParse(localStorage.getItem(LEGACY_PROFILE_STORAGE_KEY));
+    }
+
+    function readUsersList() {
+        const parsed = safeParse(localStorage.getItem(USERS_KEY));
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function getUserFromUsers(emailInput) {
+        const email = String(emailInput || "").trim().toLowerCase();
+        if (!email) {
+            return null;
+        }
+        const users = readUsersList();
+        return users.find(function (user) {
+            return String((user && user.email) || "").trim().toLowerCase() === email;
+        }) || null;
+    }
+
+    function getCurrentUserProfile() {
+        const currentEmail = getCurrentUserEmail();
+        const user = getUserFromUsers(currentEmail);
+        const profile = readProfileByEmail(currentEmail) || {};
+        return {
+            fullName: String(profile.fullName || profile.name || (user && user.name) || "").trim(),
+            email: String(profile.email || (user && user.email) || currentEmail || "").trim().toLowerCase(),
+            phone: String(profile.phone || (user && user.phone) || "").trim(),
+            address: String(profile.address || (user && user.address) || "").trim()
+        };
+    }
+
     function getApiUrl(endpoint) {
         return KYC_API_BASE ? `${KYC_API_BASE}${endpoint}` : endpoint;
     }
@@ -604,6 +651,131 @@
         };
     }
 
+    function parseLegacyFullNameParts(fullNameInput) {
+        const fullName = String(fullNameInput || "").replace(/\s+/g, " ").trim();
+        if (!fullName) {
+            return { firstName: "", middleName: "", lastName: "" };
+        }
+
+        if (fullName.includes(",")) {
+            const parts = fullName.split(",");
+            const lastName = String(parts[0] || "").trim();
+            const rest = parts.slice(1).join(",").trim();
+            if (!rest) {
+                return { firstName: "", middleName: "", lastName: lastName };
+            }
+            const tokens = rest.split(" ").filter(Boolean);
+            if (tokens.length === 1) {
+                return { firstName: tokens[0], middleName: "", lastName: lastName };
+            }
+            if (tokens.length === 2) {
+                return { firstName: tokens[0], middleName: "", lastName: lastName || tokens[1] };
+            }
+            return {
+                firstName: tokens[0],
+                middleName: tokens.slice(1).join(" "),
+                lastName: lastName
+            };
+        }
+
+        const tokens = fullName.split(" ").filter(Boolean);
+        if (tokens.length === 1) {
+            return { firstName: tokens[0], middleName: "", lastName: "" };
+        }
+        if (tokens.length === 2) {
+            return { firstName: tokens[0], middleName: "", lastName: tokens[1] };
+        }
+        return {
+            firstName: tokens[0],
+            middleName: tokens.slice(1, tokens.length - 1).join(" "),
+            lastName: tokens[tokens.length - 1]
+        };
+    }
+
+    function parseFullNameParts(fullNameInput) {
+        const fullName = String(fullNameInput || "").replace(/\s+/g, " ").trim();
+        if (!fullName) {
+            return { firstName: "", middleName: "", lastName: "" };
+        }
+
+        const compoundParticles = new Set([
+            "de",
+            "del",
+            "dela",
+            "da",
+            "dos",
+            "das",
+            "von",
+            "van",
+            "bin",
+            "ibn",
+            "al"
+        ]);
+        const compoundPairs = new Set([
+            "de la",
+            "de los",
+            "de las",
+            "van der",
+            "von der",
+            "van den",
+            "von den"
+        ]);
+
+        const buildParts = function (tokens) {
+            if (tokens.length === 1) {
+                return { firstName: tokens[0], middleName: "", lastName: "" };
+            }
+            if (tokens.length === 2) {
+                return { firstName: tokens[0], middleName: "", lastName: tokens[1] };
+            }
+
+            let lastName = tokens[tokens.length - 1];
+            let cutIndex = tokens.length - 1;
+            if (tokens.length >= 3) {
+                const pair = tokens.slice(-3, -1).join(" ").toLowerCase();
+                if (compoundPairs.has(pair)) {
+                    lastName = tokens.slice(-3).join(" ");
+                    cutIndex = tokens.length - 3;
+                } else {
+                    const particle = String(tokens[tokens.length - 2] || "").toLowerCase();
+                    if (compoundParticles.has(particle)) {
+                        lastName = tokens.slice(-2).join(" ");
+                        cutIndex = tokens.length - 2;
+                    }
+                }
+            }
+
+            const firstName = tokens.slice(0, Math.max(cutIndex, 0)).join(" ").trim();
+            return {
+                firstName: firstName,
+                middleName: "",
+                lastName: lastName
+            };
+        };
+
+        if (fullName.includes(",")) {
+            const parts = fullName.split(",");
+            const lastName = String(parts[0] || "").trim();
+            const rest = parts.slice(1).join(",").trim();
+            if (!rest) {
+                return { firstName: "", middleName: "", lastName: lastName };
+            }
+            const tokens = rest.split(" ").filter(Boolean);
+            const parsed = buildParts(tokens);
+            return {
+                firstName: parsed.firstName,
+                middleName: "",
+                lastName: lastName || parsed.lastName
+            };
+        }
+
+        return buildParts(fullName.split(" ").filter(Boolean));
+    }
+
+    function normalizeNamePart(value) {
+        return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
     function deriveStep2SeedFromCheckoutDraft(existingDataInput) {
         const existingData = existingDataInput && typeof existingDataInput === "object"
             ? existingDataInput
@@ -616,6 +788,41 @@
         const next = Object.assign({}, existingData);
         if (!next.personalEmail && draft.email) {
             next.personalEmail = String(draft.email).trim();
+        }
+        if (!next.personalEmail && draft.userEmail) {
+            next.personalEmail = String(draft.userEmail).trim();
+        }
+
+        if ((!next.firstName || !next.lastName) && draft.fullName) {
+            const nameParts = parseFullNameParts(draft.fullName);
+            if (!next.firstName && nameParts.firstName) {
+                next.firstName = nameParts.firstName;
+            }
+            if (!next.middleName && nameParts.middleName) {
+                next.middleName = nameParts.middleName;
+            }
+            if (!next.lastName && nameParts.lastName) {
+                next.lastName = nameParts.lastName;
+            }
+        }
+
+        if (draft.fullName && next.middleName) {
+            const legacyParts = parseLegacyFullNameParts(draft.fullName);
+            const matchesLegacy = (
+                normalizeNamePart(next.firstName) === normalizeNamePart(legacyParts.firstName)
+                && normalizeNamePart(next.middleName) === normalizeNamePart(legacyParts.middleName)
+                && normalizeNamePart(next.lastName) === normalizeNamePart(legacyParts.lastName)
+            );
+            if (matchesLegacy) {
+                const updatedParts = parseFullNameParts(draft.fullName);
+                next.firstName = updatedParts.firstName || next.firstName;
+                next.middleName = updatedParts.middleName || "";
+                next.lastName = updatedParts.lastName || next.lastName;
+            }
+        }
+
+        if (!next.cellphone && draft.phone) {
+            next.cellphone = String(draft.phone).trim();
         }
 
         const shippingAddressParts = draft.shippingAddressParts && typeof draft.shippingAddressParts === "object"
@@ -637,6 +844,31 @@
             }
             if (!next.barangay && shippingAddressParts.barangay) {
                 next.barangay = normalizeLocationText(shippingAddressParts.barangay);
+            }
+        }
+
+        if (!next.street || !next.city || !next.barangay || !next.province) {
+            const profile = getCurrentUserProfile();
+            if (profile && profile.address) {
+                const parsedProfile = parseShippingAddressParts(profile.address);
+                if (!next.street && parsedProfile.street) {
+                    next.street = parsedProfile.street;
+                }
+                if (!next.province && parsedProfile.province) {
+                    const canonicalProvince = normalizeInstallmentProvinceName(parsedProfile.province);
+                    if (canonicalProvince) {
+                        next.province = canonicalProvince;
+                    }
+                }
+                if (!next.city && parsedProfile.city) {
+                    const canonicalCity = resolveInstallmentCityName(parsedProfile.city);
+                    if (canonicalCity) {
+                        next.city = canonicalCity;
+                    }
+                }
+                if (!next.barangay && parsedProfile.barangay) {
+                    next.barangay = parsedProfile.barangay;
+                }
             }
         }
 
