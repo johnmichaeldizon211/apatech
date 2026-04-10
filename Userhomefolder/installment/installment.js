@@ -220,10 +220,10 @@
     const ALLOWED_INSTALLMENT_PROVINCE = "Bulacan";
     const ALLOWED_INSTALLMENT_CITY_CONFIG = [
         { canonical: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
-        { canonical: "San Ildefonso", aliases: [] },
-        { canonical: "San Rafael", aliases: [] },
-        { canonical: "Pulilan", aliases: ["Pullilan"] },
-        { canonical: "Bustos", aliases: [] }
+        { canonical: "San Ildefonso", aliases: ["City of San Ildefonso", "Municipality of San Ildefonso"] },
+        { canonical: "San Rafael", aliases: ["City of San Rafael", "Municipality of San Rafael"] },
+        { canonical: "Pulilan", aliases: ["Pullilan", "City of Pulilan", "Municipality of Pulilan"] },
+        { canonical: "Bustos", aliases: ["City of Bustos", "Municipality of Bustos"] }
     ];
     const ALLOWED_INSTALLMENT_CITIES = ALLOWED_INSTALLMENT_CITY_CONFIG
         .map(function (entry) {

@@ -271,10 +271,10 @@ const MAX_BOOKINGS_PER_DAY = 5;
 const BOOKING_ALLOWED_PROVINCE = "Bulacan";
 const BOOKING_ALLOWED_CITY_CONFIG = [
     { canonical: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
-    { canonical: "San Ildefonso", aliases: [] },
-    { canonical: "San Rafael", aliases: [] },
-    { canonical: "Pulilan", aliases: ["Pullilan"] },
-    { canonical: "Bustos", aliases: [] }
+    { canonical: "San Ildefonso", aliases: ["City of San Ildefonso", "Municipality of San Ildefonso"] },
+    { canonical: "San Rafael", aliases: ["City of San Rafael", "Municipality of San Rafael"] },
+    { canonical: "Pulilan", aliases: ["Pullilan", "City of Pulilan", "Municipality of Pulilan"] },
+    { canonical: "Bustos", aliases: ["City of Bustos", "Municipality of Bustos"] }
 ];
 const BOOKING_ALLOWED_CITY_ALIAS_MAP = BOOKING_ALLOWED_CITY_CONFIG.reduce((map, entry) => {
     const canonical = String(entry.canonical || "").trim();
@@ -7358,7 +7358,11 @@ async function prepareBookingForInsert(bodyInput, options) {
 
     if (serviceType === "Pick Up") {
         if (!branchCity) {
-            branchCity = normalizeBranchCity(DEFAULT_ADMIN_BRANCH_CITY);
+            branchCity = resolveAllowedBookingCityName(
+                authSession && authSession.branchCity
+                    ? authSession.branchCity
+                    : ""
+            ) || normalizeBranchCity(DEFAULT_ADMIN_BRANCH_CITY);
         }
     }
 

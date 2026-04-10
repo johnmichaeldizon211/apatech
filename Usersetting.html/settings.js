@@ -80,10 +80,10 @@
   const ALLOWED_PROVINCE = "Bulacan";
   const ALLOWED_CITY_CONFIG = [
     { label: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
-    { label: "San Ildefonso", aliases: [] },
-    { label: "San Rafael", aliases: [] },
-    { label: "Pulilan", aliases: ["Pullilan"] },
-    { label: "Bustos", aliases: [] }
+    { label: "San Ildefonso", aliases: ["City of San Ildefonso", "Municipality of San Ildefonso"] },
+    { label: "San Rafael", aliases: ["City of San Rafael", "Municipality of San Rafael"] },
+    { label: "Pulilan", aliases: ["Pullilan", "City of Pulilan", "Municipality of Pulilan"] },
+    { label: "Bustos", aliases: ["City of Bustos", "Municipality of Bustos"] }
   ];
   const ALLOWED_CITY_LABELS = ALLOWED_CITY_CONFIG.map((item) => String(item.label || "").trim()).filter(Boolean);
   const CITY_ALIAS_TO_CANONICAL = ALLOWED_CITY_CONFIG.reduce((map, entry) => {

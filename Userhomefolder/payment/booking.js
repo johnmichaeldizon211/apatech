@@ -114,10 +114,10 @@
     const ALLOWED_PROVINCE = "Bulacan";
     const ALLOWED_CITY_CONFIG = [
         { label: "City of Baliwag", aliases: ["Baliwag City", "City of Baliuag", "Baliuag City", "Baliwag", "Baliuag"] },
-        { label: "San Ildefonso", aliases: [] },
-        { label: "San Rafael", aliases: [] },
-        { label: "Pulilan", aliases: ["Pullilan"] },
-        { label: "Bustos", aliases: [] }
+        { label: "San Ildefonso", aliases: ["City of San Ildefonso", "Municipality of San Ildefonso"] },
+        { label: "San Rafael", aliases: ["City of San Rafael", "Municipality of San Rafael"] },
+        { label: "Pulilan", aliases: ["Pullilan", "City of Pulilan", "Municipality of Pulilan"] },
+        { label: "Bustos", aliases: ["City of Bustos", "Municipality of Bustos"] }
     ];
     const BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
     const PSGC_API_BASE = "https://psgc.cloud/api/v2";
@@ -1948,9 +1948,14 @@
         const shippingAddress = selectedService === "Delivery"
             ? composeDeliveryAddress(shippingAddressParts)
             : (selectedService === "Pick Up" ? PICKUP_SHOP_ADDRESS : "");
+        const currentUser = window.EcodriveSession && typeof window.EcodriveSession.getCurrentUser === "function"
+            ? window.EcodriveSession.getCurrentUser()
+            : null;
         const pickupBranchCity = selectedService === "Pick Up"
             ? resolveAllowedCityName(
-                (rememberedDeliveryAddressParts && rememberedDeliveryAddressParts.city) || shipCityInput.value
+                (rememberedDeliveryAddressParts && rememberedDeliveryAddressParts.city)
+                || shipCityInput.value
+                || (currentUser && currentUser.branchCity)
             )
             : "";
 
