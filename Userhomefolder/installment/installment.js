@@ -57,6 +57,9 @@
     };
     const PSGC_API_BASE = "https://psgc.cloud/api/v2";
     const LOCATION_FETCH_TIMEOUT_MS = 15000;
+    // Keep payload size within common serverless request limits.
+    const INSTALLMENT_ATTACHMENT_MAX_FILE_BYTES = 900 * 1024;
+    const INSTALLMENT_ATTACHMENT_MAX_TOTAL_BYTES = 2800 * 1024;
     const REGULAR_PLAN_PRICING_SOURCE = "flyer_regular_dp_2026_02";
     const ALLOWED_REGULAR_MONTHS = ["6", "12", "18", "24"];
     const REGULAR_PLAN_MATRIX = [
@@ -518,6 +521,17 @@
         }
 
         return raw;
+    }
+
+    function formatBytesLabel(bytesInput) {
+        const bytes = Number(bytesInput || 0);
+        if (!Number.isFinite(bytes) || bytes <= 0) {
+            return "0 KB";
+        }
+        if (bytes >= 1024 * 1024) {
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+        return `${Math.round(bytes / 1024)} KB`;
     }
 
     function normalizeLookupValue(value) {
@@ -1198,13 +1212,36 @@
                 };
             }
 
-            const payload = await response.json().catch(function () {
-                return {};
-            });
-            if (!response.ok || !payload || payload.success !== true) {
+            if (response.status === 413) {
                 return {
                     success: false,
-                    message: String((payload && payload.message) || "Unable to sync booking to server.")
+                    message: "Uploaded files are too large. Please use smaller JPG/PDF attachments."
+                };
+            }
+
+            const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+            let payload = {};
+            let rawText = "";
+            if (contentType.includes("application/json")) {
+                payload = await response.json().catch(function () {
+                    return {};
+                });
+            } else {
+                rawText = await response.text().catch(function () {
+                    return "";
+                });
+            }
+            if (!response.ok || !payload || payload.success !== true) {
+                const cleanedText = String(rawText || "")
+                    .replace(/<[^>]*>/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                const fallbackMessage = response.status >= 500
+                    ? `Server error (${response.status}). Please try again in a moment.`
+                    : (cleanedText || "Unable to sync booking to server.");
+                return {
+                    success: false,
+                    message: String((payload && payload.message) || fallbackMessage)
                 };
             }
 
@@ -2071,6 +2108,7 @@
 
                 const uploadsMetadata = {};
                 const uploadsPayload = {};
+                let totalAttachmentBytes = 0;
                 for (const definition of requirementNodes) {
                     if (!definition || !definition.input) {
                         continue;
@@ -2081,6 +2119,20 @@
                     const file = definition.input.files && definition.input.files[0] ? definition.input.files[0] : null;
                     if (!file) {
                         continue;
+                    }
+                    const fileBytes = Number(file.size || 0);
+                    if (fileBytes > INSTALLMENT_ATTACHMENT_MAX_FILE_BYTES) {
+                        if (error) {
+                            error.textContent = `${definition.label} is too large (${formatBytesLabel(fileBytes)}). Max per file is ${formatBytesLabel(INSTALLMENT_ATTACHMENT_MAX_FILE_BYTES)}.`;
+                        }
+                        return;
+                    }
+                    totalAttachmentBytes += Math.max(fileBytes, 0);
+                    if (totalAttachmentBytes > INSTALLMENT_ATTACHMENT_MAX_TOTAL_BYTES) {
+                        if (error) {
+                            error.textContent = `Total upload is too large (${formatBytesLabel(totalAttachmentBytes)}). Keep total attachments under ${formatBytesLabel(INSTALLMENT_ATTACHMENT_MAX_TOTAL_BYTES)}.`;
+                        }
+                        return;
                     }
 
                     const uploadedAt = new Date().toISOString();
