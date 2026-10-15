@@ -83,8 +83,8 @@ const SESSION_TTL_MS = (
     : 24 * 60 * 60 * 1000;
 const AUTH_SESSION_SECRET = resolveAuthSessionSecret();
 const ALLOW_DEMO_OTP = String(process.env.ALLOW_DEMO_OTP || "").trim().toLowerCase() === "true";
-// Allow demo OTP in non-production by default so local/dev can proceed without SMTP.
-const DEMO_OTP_ENABLED = !IS_PRODUCTION;
+const DEMO_OTP_ENABLED = !IS_PRODUCTION && ALLOW_DEMO_OTP;
+const LOCAL_DEMO_MODE = !IS_PRODUCTION && String(process.env.LOCAL_DEMO_MODE || "").toLowerCase() === "true";
 const CORS_ALLOWED_ORIGINS = buildAllowedCorsOrigins(String(process.env.CORS_ALLOWED_ORIGINS || ""));
 const RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 const LOGIN_RATE_LIMIT_MAX = parsePositiveInt(process.env.LOGIN_RATE_LIMIT_MAX, 10);
@@ -193,6 +193,7 @@ const DB_SSL = parseBooleanEnv(process.env.DB_SSL, SHOULD_DEFAULT_DB_SSL);
 const DB_SSL_REJECT_UNAUTHORIZED = parseBooleanEnv(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 let dbPool = null;
 let dbSchemaReadyPromise = null;
+let dbSchemaError = null;
 
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim().toLowerCase();
 const SMTP_PORT = Number(process.env.SMTP_PORT || "587");
@@ -455,6 +456,13 @@ async function tryServeStaticRequest(req, res, parsedUrl) {
 
     const isRootRequest = pathname === "/";
     const relativePath = isRootRequest ? "" : pathname.replace(/^\/+/, "");
+    const pathParts = relativePath.toLowerCase().split("/");
+    if (pathParts.some((part) => part.startsWith(".")) ||
+        ["api", "node_modules", "scripts", "tests"].includes(pathParts[0]) ||
+        (relativePath && !Object.prototype.hasOwnProperty.call(STATIC_CONTENT_TYPES, path.extname(relativePath).toLowerCase()))) {
+        writeStaticNotFound(res);
+        return true;
+    }
     const absoluteRequestedPath = path.resolve(STATIC_ROOT_DIR, relativePath);
     if (!isPathWithinRoot(STATIC_ROOT_DIR, absoluteRequestedPath)) {
         writeStaticNotFound(res);
@@ -1345,6 +1353,9 @@ async function validateEmailDomainExists(email) {
     if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {
         return { valid: false, uncertain: false };
     }
+    if (LOCAL_DEMO_MODE && DEMO_OTP_ENABLED) {
+        return { valid: true, uncertain: false };
+    }
     if (!dnsPromises) {
         return { valid: true, uncertain: true };
     }
@@ -1501,7 +1512,7 @@ function getAuthSessionFromRequest(req) {
     return verifySignedAuthToken(token);
 }
 
-function requireAuthSession(req, res, options) {
+async function requireAuthSession(req, res, options) {
     const opts = options && typeof options === "object" ? options : {};
     const session = getAuthSessionFromRequest(req);
     if (!session) {
@@ -1520,6 +1531,36 @@ function requireAuthSession(req, res, options) {
         return null;
     }
 
+    const pool = await getDbPool();
+    const [revoked] = await pool.execute(
+        "SELECT token_hash FROM revoked_auth_tokens WHERE token_hash = ? LIMIT 1",
+        [crypto.createHash("sha256").update(session.token).digest("hex")]
+    );
+    if (revoked.length) {
+        sendJson(res, 401, { success: false, message: "Session ended. Please sign in again." });
+        return null;
+    }
+    if (session.role === "user") {
+        const [users] = await pool.execute("SELECT email, full_name, branch_city, is_blocked FROM users WHERE id = ? LIMIT 1", [session.userId]);
+        const user = users[0];
+        if (!user || normalizeEmail(user.email) !== session.email) {
+            sendJson(res, 401, { success: false, message: "Account changed. Please sign in again." });
+            return null;
+        }
+        if (Number(user.is_blocked) === 1) {
+            sendJson(res, 403, { success: false, message: "Your account is blocked. Please contact admin." });
+            return null;
+        }
+        session.name = user.full_name;
+        session.branchCity = normalizeBranchCity(user.branch_city);
+    } else {
+        const admin = findAdminAccount(session.email);
+        if (!admin) {
+            sendJson(res, 401, { success: false, message: "Admin account changed. Please sign in again." });
+            return null;
+        }
+        session.branchCity = admin.branchCity;
+    }
     return session;
 }
 
@@ -1613,12 +1654,18 @@ async function getDbPool() {
 }
 
 async function ensureDbSchema() {
+    dbSchemaError = null;
     if (!isDbConfigured()) {
         return;
     }
 
     try {
         const pool = await getDbPool();
+        await pool.execute(`CREATE TABLE IF NOT EXISTS revoked_auth_tokens (
+            token_hash CHAR(64) NOT NULL PRIMARY KEY,
+            expires_at BIGINT NOT NULL
+        ) ENGINE=InnoDB`);
+        await pool.execute("DELETE FROM revoked_auth_tokens WHERE expires_at < ?", [Date.now()]);
         await pool.execute(
             `CREATE TABLE IF NOT EXISTS users (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1650,7 +1697,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE users ADD COLUMN branch_city VARCHAR(40) NULL AFTER address"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add users.branch_city automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add users.branch_city automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1658,7 +1705,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE users ADD COLUMN avatar_data_url MEDIUMTEXT NULL AFTER address"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add users.avatar_data_url automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add users.avatar_data_url automatically:", alterError.message || alterError);
         }
 
         await pool.execute(
@@ -1714,7 +1761,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN schedule_date DATE NULL AFTER service_type"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.schedule_date automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.schedule_date automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1722,7 +1769,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN branch_city VARCHAR(40) NULL AFTER service_type"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.branch_city automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.branch_city automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1730,7 +1777,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN bike_color VARCHAR(64) NULL AFTER model"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.bike_color automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.bike_color automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1738,7 +1785,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings MODIFY COLUMN bike_image MEDIUMTEXT NULL"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to widen bookings.bike_image automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to widen bookings.bike_image automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1746,7 +1793,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN payment_status VARCHAR(64) NOT NULL DEFAULT 'awaiting_payment_confirmation' AFTER payment_method"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.payment_status automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.payment_status automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1754,7 +1801,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN schedule_time TIME NULL AFTER schedule_date"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.schedule_time automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.schedule_time automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1762,7 +1809,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN tracking_eta VARCHAR(80) NULL AFTER fulfillment_status"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.tracking_eta automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.tracking_eta automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1770,7 +1817,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN tracking_location VARCHAR(120) NULL AFTER tracking_eta"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.tracking_location automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.tracking_location automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1778,7 +1825,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN receipt_number VARCHAR(40) NULL AFTER tracking_location"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.receipt_number automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.receipt_number automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1786,7 +1833,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN receipt_issued_at TIMESTAMP NULL DEFAULT NULL AFTER receipt_number"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.receipt_issued_at automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.receipt_issued_at automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1794,7 +1841,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE bookings ADD COLUMN repair_details TEXT NULL AFTER user_email"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add bookings.repair_details automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add bookings.repair_details automatically:", alterError.message || alterError);
         }
 
         await pool.execute(
@@ -1862,7 +1909,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE products ADD COLUMN product_info VARCHAR(255) NULL AFTER category"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add products.product_info automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add products.product_info automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1870,7 +1917,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE products MODIFY COLUMN image_url MEDIUMTEXT NULL"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to widen products.image_url automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to widen products.image_url automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1878,7 +1925,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE products ADD COLUMN stock_count INT UNSIGNED NOT NULL DEFAULT 1 AFTER detail_url"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add products.stock_count automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add products.stock_count automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1886,7 +1933,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE products ADD COLUMN color_variants_json LONGTEXT NULL AFTER stock_count"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add products.color_variants_json automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add products.color_variants_json automatically:", alterError.message || alterError);
         }
 
         if (Array.isArray(DEFAULT_PRODUCT_CATALOG) && DEFAULT_PRODUCT_CATALOG.length > 0) {
@@ -1947,7 +1994,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_threads ADD COLUMN mode ENUM('bot', 'admin') NOT NULL DEFAULT 'bot' AFTER user_email"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_threads.mode automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_threads.mode automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1955,7 +2002,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_threads ADD COLUMN takeover_by_admin_id BIGINT UNSIGNED NULL AFTER mode"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_id automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_id automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1963,7 +2010,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_threads ADD COLUMN takeover_by_admin_email VARCHAR(190) NULL AFTER takeover_by_admin_id"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_email automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_threads.takeover_by_admin_email automatically:", alterError.message || alterError);
         }
 
         try {
@@ -1971,7 +2018,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_threads ADD COLUMN takeover_started_at TIMESTAMP NULL DEFAULT NULL AFTER takeover_by_admin_email"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_threads.takeover_started_at automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_threads.takeover_started_at automatically:", alterError.message || alterError);
         }
 
         await pool.execute(
@@ -2000,7 +2047,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN client_message_id VARCHAR(120) NULL AFTER message_text"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.client_message_id automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.client_message_id automatically:", alterError.message || alterError);
         }
 
         try {
@@ -2008,7 +2055,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN message_type ENUM('text', 'image', 'video', 'audio') NOT NULL DEFAULT 'text' AFTER message_text"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.message_type automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.message_type automatically:", alterError.message || alterError);
         }
 
         try {
@@ -2016,7 +2063,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN media_data_url MEDIUMTEXT NULL AFTER message_type"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.media_data_url automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.media_data_url automatically:", alterError.message || alterError);
         }
 
         try {
@@ -2024,7 +2071,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN media_mime VARCHAR(120) NULL AFTER media_data_url"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.media_mime automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.media_mime automatically:", alterError.message || alterError);
         }
 
         try {
@@ -2032,7 +2079,7 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN media_name VARCHAR(255) NULL AFTER media_mime"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.media_name automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.media_name automatically:", alterError.message || alterError);
         }
 
         try {
@@ -2040,14 +2087,16 @@ async function ensureDbSchema() {
                 "ALTER TABLE chat_messages ADD COLUMN media_size_bytes INT UNSIGNED NULL AFTER media_name"
             );
         } catch (alterError) {
-            console.warn("[db-schema] Unable to add chat_messages.media_size_bytes automatically:", alterError.message || alterError);
+            if (![1060, 1061].includes(Number(alterError.errno))) console.warn("[db-schema] Unable to add chat_messages.media_size_bytes automatically:", alterError.message || alterError);
         }
     } catch (error) {
+        dbSchemaError = error;
         console.warn("[db-schema] Unable to auto-prepare schema:", error.message || error);
     }
 }
 
 function isSmtpConfigured() {
+    if (LOCAL_DEMO_MODE) return false;
     return Boolean(
         nodemailer &&
         SMTP_HOST &&
@@ -3391,6 +3440,9 @@ async function sendOtpSms(mobile, code) {
 }
 
 async function deliverOtp(method, contact, code, options) {
+    if (LOCAL_DEMO_MODE && DEMO_OTP_ENABLED) {
+        return { sent: false, reason: "Local demo OTP: no email or SMS is sent." };
+    }
     if (method === "email") {
         return sendOtpEmail(contact, code, options);
     }
@@ -5197,7 +5249,10 @@ async function getOrCreateChatThreadForUser(pool, userRow) {
             user_id,
             user_email,
             mode
-        ) VALUES (?, ?, ?)`,
+        ) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            user_id = VALUES(user_id),
+            updated_at = NOW()`,
         [userId, userEmail, CHAT_THREAD_MODE_BOT]
     );
 
@@ -5939,7 +5994,7 @@ async function handleLogin(req, res) {
 }
 
 async function handleAuthMe(req, res) {
-    const session = requireAuthSession(req, res);
+    const session = await requireAuthSession(req, res);
     if (!session) {
         return;
     }
@@ -5959,13 +6014,19 @@ async function handleAuthMe(req, res) {
 }
 
 async function handleLogout(req, res) {
-    void req;
+    const session = getAuthSessionFromRequest(req);
+    if (session) {
+        const pool = await getDbPool();
+        await pool.execute("INSERT IGNORE INTO revoked_auth_tokens (token_hash, expires_at) VALUES (?, ?)", [
+            crypto.createHash("sha256").update(session.token).digest("hex"), session.expiresAt
+        ]);
+    }
     sendJson(res, 200, { success: true, message: "Logged out." });
 }
 
 async function handleAdminUsers(req, res) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6070,7 +6131,7 @@ async function handleAdminUsers(req, res) {
 
 async function handleAdminDashboard(_req, res) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6295,7 +6356,7 @@ async function handleAdminDashboard(_req, res) {
 
 async function handleBlockToggle(req, res, userId, action) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6386,7 +6447,7 @@ function toChatUserPayload(userRow) {
 
 async function handleChatThreadGet(req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -6449,7 +6510,7 @@ function parseIncomingChatEntries(bodyInput) {
 
 async function handleChatMessagesPost(req, res) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -6550,13 +6611,14 @@ async function handleChatMessagesPost(req, res) {
             messages: persistedMessages
         });
     } catch (error) {
+        console.error("[chat] Unable to save chat messages:", error && error.message ? error.message : error);
         sendJson(res, 500, { success: false, message: error.message || "Unable to save chat messages." });
     }
 }
 
 async function handleChatThreadClear(req, res) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -6630,7 +6692,7 @@ async function resolveAdminChatUser(pool, userId) {
 
 async function handleAdminChatThreadGet(req, res, parsedUrl, userId) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6666,7 +6728,7 @@ async function handleAdminChatThreadGet(req, res, parsedUrl, userId) {
 
 async function handleAdminChatTakeover(req, res, userId) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6702,7 +6764,7 @@ async function handleAdminChatTakeover(req, res, userId) {
 
 async function handleAdminChatRelease(req, res, userId) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6738,7 +6800,7 @@ async function handleAdminChatRelease(req, res, userId) {
 
 async function handleAdminChatSendMessage(req, res, userId) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6786,7 +6848,7 @@ async function handleAdminChatSendMessage(req, res, userId) {
 
 async function handleAdminSettingsGet(req, res) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6814,7 +6876,7 @@ async function handleAdminSettingsGet(req, res) {
 
 async function handleAdminSettingsUpdateLoginId(req, res) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6885,7 +6947,7 @@ async function handleAdminSettingsUpdateLoginId(req, res) {
 
 async function handleAdminSettingsUpdatePassword(req, res) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -6932,7 +6994,7 @@ async function handleAdminSettingsUpdatePassword(req, res) {
 
 async function handleProfileSettingsGet(_req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(_req, res);
+        const authSession = await requireAuthSession(_req, res);
         if (!authSession) {
             return;
         }
@@ -6981,7 +7043,7 @@ async function handleProfileSettingsGet(_req, res, parsedUrl) {
 
 async function handleProfileSettingsSave(req, res) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -7104,7 +7166,7 @@ async function handleProfileSettingsSave(req, res) {
 
 async function handleProfilePasswordChange(req, res) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -7498,7 +7560,7 @@ async function insertPreparedBooking(db, preparedInput) {
             review_decision,
             reviewed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             orderId,
             prepared.userId || null,
@@ -7556,7 +7618,7 @@ async function createBookingFromDraft(bodyInput, options) {
 
 async function handleCreateBooking(req, res) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -7590,7 +7652,7 @@ async function handleCreateBooking(req, res) {
 
 async function handleBookingDateAvailability(req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -7634,7 +7696,7 @@ async function handleBookingDateAvailability(req, res, parsedUrl) {
 
 async function handleListBookings(_req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(_req, res);
+        const authSession = await requireAuthSession(_req, res);
         if (!authSession) {
             return;
         }
@@ -7669,7 +7731,7 @@ async function handleListBookings(_req, res, parsedUrl) {
 
 async function handleCancelBooking(req, res, orderId) {
     try {
-        const authSession = requireAuthSession(req, res);
+        const authSession = await requireAuthSession(req, res);
         if (!authSession) {
             return;
         }
@@ -7911,13 +7973,15 @@ async function handleReviewsGet(_req, res, parsedUrl) {
 
 async function handleReviewsPost(req, res) {
     try {
+        const authSession = await requireAuthSession(req, res, { role: "user" });
+        if (!authSession) return;
         const body = await readBody(req);
         const productId = normalizeReviewProductId(body.product_id || body.productId);
         const productName = normalizeText(body.product_name || body.productName || "").slice(0, 180);
         const orderId = normalizeOrderId(body.order_id || body.orderId || "", false);
         const reviewerName = normalizeText(body.reviewer_name || body.reviewerName || body.name || "Anonymous").slice(0, 120);
         const reviewText = normalizeText(body.review_text || body.reviewText || body.text || "");
-        const userEmail = normalizeEmail(body.user_email || body.userEmail || "");
+        const userEmail = authSession.email;
         const rating = Number(body.rating || 0);
 
         if (!productId || !productName || !orderId || !reviewText || rating < 1 || rating > 5) {
@@ -7927,18 +7991,13 @@ async function handleReviewsPost(req, res) {
 
         const pool = await getDbPool();
         const [bookingRows] = await pool.execute(
-            "SELECT status, fulfillment_status FROM bookings WHERE order_id = ? LIMIT 1",
+            "SELECT status, fulfillment_status, user_email FROM bookings WHERE order_id = ? LIMIT 1",
             [orderId]
         );
-        let booking = Array.isArray(bookingRows) && bookingRows.length ? bookingRows[0] : null;
-        if (!booking) {
-            const fallbackStatus = body.booking_status || body.bookingStatus || "";
-            const fallbackFulfillment = body.fulfillment_status || body.fulfillmentStatus || "";
-            if (!isDeliveredReviewStatus(fallbackStatus, fallbackFulfillment)) {
-                sendJson(res, 403, { success: false, message: "Booking not found." }, REVIEWS_CORS_HEADERS);
-                return;
-            }
-            booking = { status: fallbackStatus, fulfillment_status: fallbackFulfillment };
+        const booking = Array.isArray(bookingRows) && bookingRows.length ? bookingRows[0] : null;
+        if (!booking || normalizeEmail(booking.user_email) !== userEmail) {
+            sendJson(res, 403, { success: false, message: "Booking not found for this account." }, REVIEWS_CORS_HEADERS);
+            return;
         }
         if (!isDeliveredReviewStatus(booking.status, booking.fulfillment_status)) {
             sendJson(res, 403, { success: false, message: "Review is available only after delivery." }, REVIEWS_CORS_HEADERS);
@@ -8024,7 +8083,7 @@ async function handlePublicBookingModelStats(_req, res, parsedUrl) {
 
 async function handleAdminBookings(_req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8060,7 +8119,7 @@ async function handleAdminBookings(_req, res, parsedUrl) {
 
 async function handleAdminBookingDetails(_req, res, orderId) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8101,7 +8160,7 @@ async function handleAdminBookingDetails(_req, res, orderId) {
 async function handleAdminBookingDecision(_req, res, orderId, action) {
     let connection = null;
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8127,7 +8186,7 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             `SELECT *
              FROM bookings
              WHERE order_id = ?
-             LIMIT 1`,
+             LIMIT 1 FOR UPDATE`,
             [normalizedOrderId]
         );
         if (!Array.isArray(beforeRows) || beforeRows.length < 1) {
@@ -8155,6 +8214,16 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
             || beforeMergedStatus.includes("complete")
             || beforeMergedStatus.includes("picked up")
             || beforeMergedStatus.includes("released");
+        if (wasAlreadyRejected || (wasAlreadyApproved && normalizedAction === "reject")) {
+            if (connection) await connection.rollback();
+            sendJson(res, 409, { success: false, message: "This booking has already been decided or cancelled." });
+            return;
+        }
+        if (wasAlreadyApproved && normalizedAction === "approve") {
+            if (connection) await connection.commit();
+            sendJson(res, 200, { success: true, booking: mapBookingRow(beforeRow) });
+            return;
+        }
         const existingReceiptNumber = normalizeText(beforeRow.receipt_number).slice(0, 40);
         const ensuredReceiptNumber = existingReceiptNumber || buildReceiptNumber(normalizedOrderId, new Date());
         let inventoryResult = null;
@@ -8285,7 +8354,7 @@ async function handleAdminBookingDecision(_req, res, orderId, action) {
 
 async function handleAdminBookingRemove(_req, res, orderId) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8338,7 +8407,7 @@ async function handleAdminBookingRemove(_req, res, orderId) {
 
 async function handleAdminBookingPaymentStatus(_req, res, orderId) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8425,7 +8494,7 @@ async function handleAdminBookingPaymentStatus(_req, res, orderId) {
 
 async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -8584,7 +8653,7 @@ async function handleAdminBookingFulfillmentStatus(_req, res, orderId) {
 
 async function handleAdminInstallmentMarkPaid(_req, res, orderId) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -9347,7 +9416,7 @@ async function handleListProducts(_req, res, parsedUrl) {
 
 async function handleAdminProducts(_req, res, parsedUrl) {
     try {
-        const authSession = requireAuthSession(_req, res, { role: "admin" });
+        const authSession = await requireAuthSession(_req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -9391,7 +9460,7 @@ async function handleAdminProducts(_req, res, parsedUrl) {
 
 async function handleAdminCreateProduct(req, res) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -9475,7 +9544,7 @@ async function handleAdminCreateProduct(req, res) {
 
 async function handleAdminUpdateProduct(req, res, productId) {
     try {
-        const authSession = requireAuthSession(req, res, { role: "admin" });
+        const authSession = await requireAuthSession(req, res, { role: "admin" });
         if (!authSession) {
             return;
         }
@@ -9976,6 +10045,22 @@ async function requestListener(req, res) {
     const parsedUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     const pathname = parsedUrl.pathname;
 
+    if (req.method === "GET" && pathname === "/favicon.ico") {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/api/locations/")) {
+        const locations = require("./data/bulacan-locations.json");
+        let data = null;
+        if (pathname === "/api/locations/provinces") data = [locations.province];
+        if (pathname === `/api/locations/provinces/${locations.province.code}/cities-municipalities`) data = locations.cities;
+        const match = pathname.match(/^\/api\/locations\/cities-municipalities\/(\d+)\/barangays$/);
+        if (match) data = locations.barangays[match[1]] || [];
+        sendJson(res, data ? 200 : 404, data ? { data } : { success: false, message: "Location not found." });
+        return;
+    }
+
     if (req.method === "OPTIONS") {
         if (pathname === "/api/reviews") {
             sendJson(res, 200, { ok: true }, REVIEWS_CORS_HEADERS);
@@ -9986,10 +10071,17 @@ async function requestListener(req, res) {
     }
 
     if (req.method === "GET" && pathname === "/api/health") {
-        sendJson(res, 200, {
-            ok: true,
+        let dbReady = false;
+        try {
+            const pool = await getDbPool();
+            await pool.query("SELECT 1");
+            dbReady = !dbSchemaError;
+        } catch (_) { /* Report database failures in health without claiming readiness. */ }
+        sendJson(res, dbReady ? 200 : 503, {
+            ok: dbReady,
             service: "ecodrive-api",
             dbConfigured: isDbConfigured(),
+            dbReady: dbReady,
             adminAuthConfigured: Boolean(getAdminAccounts() && Array.isArray(getAdminAccounts().admins) && getAdminAccounts().admins.length),
             smtpConfigured: isSmtpConfigured(),
             smsConfigured: isSmsDeliveryConfigured(),
@@ -9997,7 +10089,9 @@ async function requestListener(req, res) {
                 ? "semaphore-direct"
                 : (isSmsWebhookConfigured() ? "webhook-relay" : "not-configured"),
             semaphoreConfigured: isSemaphoreConfigured(),
-            semaphoreSenderConfigured: Boolean(SEMAPHORE_SENDERNAME)
+            semaphoreSenderConfigured: Boolean(SEMAPHORE_SENDERNAME),
+            localDemoMode: LOCAL_DEMO_MODE,
+            demoOtpEnabled: DEMO_OTP_ENABLED
         });
         return;
     }
@@ -10279,10 +10373,16 @@ async function requestListener(req, res) {
     sendJson(res, 404, { success: false, message: "Endpoint not found." });
 }
 
-const server = http.createServer(requestListener);
+const server = http.createServer((req, res) => {
+    requestListener(req, res).catch((error) => {
+        console.error("[request]", error.message);
+        if (!res.headersSent) sendJson(res, 500, { success: false, message: "The server could not complete this request. Please try again." });
+        else res.end();
+    });
+});
 
 function startServer() {
-    server.listen(PORT, () => {
+    server.listen(PORT, process.env.HOST || undefined, () => {
         bootstrapRuntime("startup");
     });
 }

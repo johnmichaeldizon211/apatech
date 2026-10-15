@@ -147,6 +147,17 @@ body {
     gap: 8px;
 }
 
+.booking-empty-state {
+    margin: 0;
+    padding: 22px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.66);
+    color: #38527f;
+    font-weight: 600;
+    text-align: center;
+}
+
 .row-grid {
     display: grid;
     grid-template-columns: 1.1fr 0.95fr 1.2fr 0.9fr 0.8fr 0.85fr 1fr 1.2fr;

@@ -1,0 +1,1368 @@
+{
+  "source": "https://psgc.cloud/api/v2",
+  "retrievedAt": "2026-10-06T05:41:40.803Z",
+  "province": {
+    "code": "0301400000",
+    "name": "Bulacan",
+    "region": "Region III (Central Luzon)"
+  },
+  "cities": [
+    {
+      "code": "0301403000",
+      "name": "City of Baliwag",
+      "type": "City",
+      "district": "1st",
+      "zip_code": "3006",
+      "region": "Region III (Central Luzon)",
+      "province": "Bulacan"
+    },
+    {
+      "code": "0301406000",
+      "name": "Bustos",
+      "type": "Mun",
+      "district": "2nd",
+      "zip_code": "3014",
+      "region": "Region III (Central Luzon)",
+      "province": "Bulacan"
+    },
+    {
+      "code": "0301418000",
+      "name": "Pulilan",
+      "type": "Mun",
+      "district": "3rd",
+      "zip_code": "3016",
+      "region": "Region III (Central Luzon)",
+      "province": "Bulacan"
+    },
+    {
+      "code": "0301419000",
+      "name": "San Ildefonso",
+      "type": "Mun",
+      "district": "3rd",
+      "zip_code": "",
+      "region": "Region III (Central Luzon)",
+      "province": "Bulacan"
+    },
+    {
+      "code": "0301422000",
+      "name": "San Rafael",
+      "type": "Mun",
+      "district": "3rd",
+      "zip_code": "3011",
+      "region": "Region III (Central Luzon)",
+      "province": "Bulacan"
+    }
+  ],
+  "barangays": {
+    "0301403000": [
+      {
+        "code": "0301403001",
+        "name": "Bagong Nayon",
+        "status": "4249",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403002",
+        "name": "Barangca",
+        "status": "3385",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403003",
+        "name": "Calantipay",
+        "status": "3522",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403004",
+        "name": "Catulinan",
+        "status": "2123",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403005",
+        "name": "Concepcion",
+        "status": "10159",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403006",
+        "name": "Hinukay",
+        "status": "2226",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403007",
+        "name": "Makinabang",
+        "status": "12637",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403008",
+        "name": "Matangtubig",
+        "status": "3332",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403010",
+        "name": "Pagala",
+        "status": "7235",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403011",
+        "name": "Paitan",
+        "status": "1863",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403012",
+        "name": "Piel",
+        "status": "2648",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403013",
+        "name": "Pinagbarilan",
+        "status": "6580",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403014",
+        "name": "Poblacion",
+        "status": "10573",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403016",
+        "name": "Sabang",
+        "status": "12547",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403017",
+        "name": "San Jose",
+        "status": "6739",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403018",
+        "name": "San Roque",
+        "status": "3967",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403019",
+        "name": "Santa Barbara",
+        "status": "12638",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403020",
+        "name": "Santo Cristo",
+        "status": "9600",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403021",
+        "name": "Santo NiÃ±o",
+        "status": "4324",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403022",
+        "name": "Subic",
+        "status": "6437",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403023",
+        "name": "Sulivan",
+        "status": "5894",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403024",
+        "name": "Tangos",
+        "status": "7767",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403025",
+        "name": "Tarcan",
+        "status": "8809",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403026",
+        "name": "Tiaong",
+        "status": "5861",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403027",
+        "name": "Tibag",
+        "status": "2979",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403028",
+        "name": "Tilapayong",
+        "status": "3023",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      },
+      {
+        "code": "0301403030",
+        "name": "Virgen delas Flores",
+        "status": "7353",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "City of Baliwag",
+        "zip_code": "3006",
+        "district": "1st"
+      }
+    ],
+    "0301406000": [
+      {
+        "code": "0301406001",
+        "name": "Bonga Mayor",
+        "status": "6494",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406002",
+        "name": "Bonga Menor",
+        "status": "5301",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406003",
+        "name": "Buisan",
+        "status": "1876",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406004",
+        "name": "Camachilihan",
+        "status": "2542",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406005",
+        "name": "Cambaog",
+        "status": "6600",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406006",
+        "name": "Catacte",
+        "status": "8401",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406007",
+        "name": "Liciada",
+        "status": "6138",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406008",
+        "name": "Malamig",
+        "status": "7658",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406009",
+        "name": "Malawak",
+        "status": "2950",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406010",
+        "name": "Poblacion",
+        "status": "8262",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406011",
+        "name": "San Pedro",
+        "status": "8113",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406012",
+        "name": "Talampas",
+        "status": "3637",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406013",
+        "name": "Tanawan",
+        "status": "2731",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      },
+      {
+        "code": "0301406014",
+        "name": "Tibagan",
+        "status": "6496",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Bustos",
+        "zip_code": "3014",
+        "district": "2nd"
+      }
+    ],
+    "0301418000": [
+      {
+        "code": "0301418001",
+        "name": "Balatong A",
+        "status": "1877",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418002",
+        "name": "Balatong B",
+        "status": "4100",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418003",
+        "name": "Cutcot",
+        "status": "8320",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418005",
+        "name": "Dampol I",
+        "status": "6770",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418006",
+        "name": "Dampol II-A",
+        "status": "4896",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418007",
+        "name": "Dampol II-B",
+        "status": "5317",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418008",
+        "name": "Dulong Malabon",
+        "status": "4114",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418009",
+        "name": "Inaon",
+        "status": "9453",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418010",
+        "name": "Longos",
+        "status": "5817",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418011",
+        "name": "Lumbac",
+        "status": "4766",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418018",
+        "name": "Paltao",
+        "status": "6457",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418020",
+        "name": "Penabatan",
+        "status": "2377",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418022",
+        "name": "Poblacion",
+        "status": "13353",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418025",
+        "name": "Santa Peregrina",
+        "status": "1666",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418026",
+        "name": "Santo Cristo",
+        "status": "7700",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418033",
+        "name": "Taal",
+        "status": "7912",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418034",
+        "name": "Tabon",
+        "status": "4931",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418035",
+        "name": "Tibag",
+        "status": "4857",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      },
+      {
+        "code": "0301418037",
+        "name": "Tinejero",
+        "status": "4153",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "Pulilan",
+        "zip_code": "3016",
+        "district": "3rd"
+      }
+    ],
+    "0301419000": [
+      {
+        "code": "0301419001",
+        "name": "Akle",
+        "status": "4653",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419002",
+        "name": "Alagao",
+        "status": "3607",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419003",
+        "name": "Anyatam",
+        "status": "5271",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419006",
+        "name": "Bagong Barrio",
+        "status": "2407",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419007",
+        "name": "Basuit",
+        "status": "2199",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419008",
+        "name": "Bubulong Munti",
+        "status": "2560",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419009",
+        "name": "Bubulong Malaki",
+        "status": "2200",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419010",
+        "name": "Buhol na Mangga",
+        "status": "1973",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419011",
+        "name": "Bulusukan",
+        "status": "2118",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419012",
+        "name": "Calasag",
+        "status": "3705",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419013",
+        "name": "Calawitan",
+        "status": "3717",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419014",
+        "name": "Casalat",
+        "status": "2030",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419015",
+        "name": "Gabihan",
+        "status": "3699",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419016",
+        "name": "Garlang",
+        "status": "1273",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419017",
+        "name": "Lapnit",
+        "status": "3268",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419018",
+        "name": "Maasim",
+        "status": "3693",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419019",
+        "name": "Makapilapil",
+        "status": "2744",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419020",
+        "name": "Malipampang",
+        "status": "6605",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419021",
+        "name": "Matimbubong",
+        "status": "2806",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419022",
+        "name": "Nabaong Garlang",
+        "status": "2389",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419023",
+        "name": "Palapala",
+        "status": "6743",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419024",
+        "name": "Pasong Bangkal",
+        "status": "1145",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419025",
+        "name": "Pinaod",
+        "status": "7738",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419026",
+        "name": "Poblacion",
+        "status": "4901",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419027",
+        "name": "Pulong Tamo",
+        "status": "2198",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419028",
+        "name": "San Juan",
+        "status": "4986",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419029",
+        "name": "Santa Catalina Bata",
+        "status": "1422",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419030",
+        "name": "Santa Catalina Matanda",
+        "status": "2971",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419031",
+        "name": "Sapang Dayap",
+        "status": "1626",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419032",
+        "name": "Sapang Putik",
+        "status": "4858",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419033",
+        "name": "Sapang Putol",
+        "status": "2383",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419034",
+        "name": "Sumandig",
+        "status": "2407",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419035",
+        "name": "Telepatio",
+        "status": "1110",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419036",
+        "name": "Upig",
+        "status": "2729",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419037",
+        "name": "Umpucan",
+        "status": "2509",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      },
+      {
+        "code": "0301419038",
+        "name": "Mataas na Parang",
+        "status": "3070",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Ildefonso",
+        "zip_code": "",
+        "district": "3rd"
+      }
+    ],
+    "0301422000": [
+      {
+        "code": "0301422001",
+        "name": "BMA-Balagtas",
+        "status": "2263",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422002",
+        "name": "Banca-banca",
+        "status": "1354",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422003",
+        "name": "Caingin",
+        "status": "10836",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422004",
+        "name": "Coral na Bato",
+        "status": "1804",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422005",
+        "name": "Cruz na Daan",
+        "status": "1135",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422006",
+        "name": "Dagat-dagatan",
+        "status": "1485",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422007",
+        "name": "Diliman I",
+        "status": "3634",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422008",
+        "name": "Diliman II",
+        "status": "871",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422009",
+        "name": "Capihan",
+        "status": "6128",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422010",
+        "name": "Libis",
+        "status": "1910",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422011",
+        "name": "Lico",
+        "status": "2001",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422012",
+        "name": "Maasim",
+        "status": "1383",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422013",
+        "name": "Mabalas-balas",
+        "status": "4168",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422014",
+        "name": "Maguinao",
+        "status": "4940",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422015",
+        "name": "Maronquillo",
+        "status": "3958",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422016",
+        "name": "Paco",
+        "status": "1043",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422017",
+        "name": "Pansumaloc",
+        "status": "1118",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422018",
+        "name": "Pantubig",
+        "status": "3789",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422019",
+        "name": "Pasong Bangkal",
+        "status": "1107",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422020",
+        "name": "Pasong Callos",
+        "status": "911",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422021",
+        "name": "Pasong Intsik",
+        "status": "1492",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422022",
+        "name": "Pinacpinacan",
+        "status": "1840",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422023",
+        "name": "Poblacion",
+        "status": "1640",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422024",
+        "name": "Pulo",
+        "status": "3600",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422025",
+        "name": "Pulong Bayabas",
+        "status": "1259",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422026",
+        "name": "Salapungan",
+        "status": "2442",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422027",
+        "name": "Sampaloc",
+        "status": "4480",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422028",
+        "name": "San Agustin",
+        "status": "1745",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422030",
+        "name": "San Roque",
+        "status": "9674",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422031",
+        "name": "Talacsan",
+        "status": "4152",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422032",
+        "name": "Tambubong",
+        "status": "7719",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422033",
+        "name": "Tukod",
+        "status": "2579",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422034",
+        "name": "Ulingao",
+        "status": "3711",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      },
+      {
+        "code": "0301422035",
+        "name": "Sapang Pahalang",
+        "status": "926",
+        "region": "Region III (Central Luzon)",
+        "province": "Bulacan",
+        "city_municipality": "San Rafael",
+        "zip_code": "3011",
+        "district": "3rd"
+      }
+    ]
+  }
+}

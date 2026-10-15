@@ -9,7 +9,7 @@ body {
 
 @font-face {
     font-family: "Poppins";
-    src: url("https://fonts.gstatic.com/s/poppins/v20/pxiEyp8kv8JHgFVrJJfedA.woff2") format("woff2");
+    src: local("Poppins");
 }
 
 body {

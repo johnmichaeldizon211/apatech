@@ -100,8 +100,10 @@
     });
     return map;
   }, new Map());
-  const BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
-  const PSGC_API_BASE = "https://psgc.cloud/api/v2";
+  const BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v2";
+  const PSGC_API_BASE = window.EcodriveSession && window.EcodriveSession.isLocalDevelopment()
+        ? window.EcodriveSession.getApiUrl("/api/locations")
+        : "https://psgc.cloud/api/v2";
   const PSGC_TIMEOUT_MS = 15000;
   const FALLBACK_BARANGAYS_BY_CITY = {
     "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],

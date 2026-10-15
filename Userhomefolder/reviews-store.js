@@ -49,15 +49,22 @@
     }
 
     function resolveApiBase() {
-        const stored = String(localStorage.getItem("ecodrive_reviews_api_base") || "").trim();
         const sessionBase = (window.EcodriveSession && typeof window.EcodriveSession.getApiBase === "function")
             ? String(window.EcodriveSession.getApiBase() || "").trim()
             : "";
+        if (sessionBase) {
+            return sessionBase.replace(/\/+$/, "");
+        }
         const host = window.location && window.location.hostname;
-        const isLocalhost = host && (host === "localhost" || host === "127.0.0.1");
+        const isLocalhost = host && (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "0.0.0.0");
         if (isLocalhost) {
-            const localBase = stored || sessionBase || window.location.origin;
+            const localBase = /^55\d\d$/.test(String(window.location.port || ""))
+                ? window.location.protocol + "//" + host + ":5050"
+                : window.location.origin;
             return localBase.replace(/\/+$/, "");
+        }
+        if (window.location && window.location.protocol === "file:") {
+            return "http://127.0.0.1:5050";
         }
 
         const resolved = sessionBase || DEFAULT_API_BASE;
@@ -240,6 +247,8 @@
             const xhr = new XMLHttpRequest();
             xhr.open("POST", getApiUrl(""), true);
             xhr.setRequestHeader("Content-Type", "text/plain");
+            const token = window.EcodriveSession && window.EcodriveSession.getToken();
+            if (token) xhr.setRequestHeader("Authorization", "Bearer " + token);
             xhr.onload = function () {
                 const status = xhr.status || 0;
                 const responseText = xhr.responseText || "";

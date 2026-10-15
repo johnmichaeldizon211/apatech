@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ecodrive - Repair Booking</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="repair.css?v=20260309-chatbot-pos">
+<link rel="stylesheet" href="repair.css?v=20260309-chatbot-pos">
     <link rel="stylesheet" href="../nav-responsive.css?v=20260306c">
     <link rel="stylesheet" href="../userhome-theme.css?v=20260310a">
     <link rel="stylesheet" href="../cart.css?v=20260311a">
@@ -148,7 +145,7 @@
                                     title="Home service map preview"
                                     loading="lazy"
                                     referrerpolicy="no-referrer-when-downgrade"
-                                    src="https://www.openstreetmap.org/export/embed.html?bbox=120.9400%2C14.5200%2C121.0600%2C14.6600&layer=mapnik&marker=14.5995%2C120.9842"></iframe>
+                                    src="about:blank"></iframe>
                                 <p id="repair-ship-map-status" class="ship-map-status" aria-live="polite">Complete address fields, then click Find on Map.</p>
                             </section>
                         </section>
@@ -229,6 +226,18 @@
                     ? window.EcodriveSession.getApiBase()
                     : '')
             ).trim().replace(/\/+$/, '');
+            const IS_LOCAL_DEMO = Boolean(
+                window.EcodriveSession
+                && typeof window.EcodriveSession.isLocalDevelopment === 'function'
+                && window.EcodriveSession.isLocalDevelopment()
+            );
+            const LOCAL_BRANCH_COORDINATES = {
+                'city of baliwag': { lat: 14.9547, lng: 120.8969 },
+                'pulilan': { lat: 14.9014, lng: 120.8490 },
+                'san ildefonso': { lat: 15.0798, lng: 120.9410 },
+                'san rafael': { lat: 14.9483, lng: 121.0155 },
+                'bustos': { lat: 14.9583, lng: 120.9180 }
+            };
             let shippingCoords = null;
             let lastMappedAddressToken = '';
             let scheduleDateAvailabilityRequestId = 0;
@@ -452,6 +461,9 @@
             }
 
             function getMapEmbedUrl(lat, lng) {
+                if (IS_LOCAL_DEMO) {
+                    return '';
+                }
                 const x = Number(lng || 0);
                 const y = Number(lat || 0);
                 const delta = 0.01;
@@ -471,7 +483,22 @@
                 if (!shipMapFrame) {
                     return;
                 }
+                if (IS_LOCAL_DEMO) {
+                    shipMapFrame.src = 'about:blank';
+                    if (shipMapPanel) {
+                        shipMapPanel.classList.add('local-demo');
+                    }
+                    return;
+                }
                 shipMapFrame.src = getMapEmbedUrl(lat, lng);
+            }
+
+            function getLocalDemoCoordinates(address) {
+                const normalized = String(address || '').toLowerCase();
+                const cityKey = Object.keys(LOCAL_BRANCH_COORDINATES).find(function (key) {
+                    return normalized.includes(key);
+                });
+                return LOCAL_BRANCH_COORDINATES[cityKey] || LOCAL_BRANCH_COORDINATES['city of baliwag'];
             }
 
             function setMapStatus(text, isError) {
@@ -563,6 +590,9 @@
                 if (!trimmed) {
                     throw new Error('Address is required.');
                 }
+                if (IS_LOCAL_DEMO) {
+                    return getLocalDemoCoordinates(trimmed);
+                }
                 const params = new URLSearchParams({
                     format: 'jsonv2',
                     limit: '1',
@@ -616,6 +646,9 @@
             }
 
             async function reverseGeocode(lat, lng) {
+                if (IS_LOCAL_DEMO) {
+                    return null;
+                }
                 const params = new URLSearchParams({
                     format: 'jsonv2',
                     lat: String(lat),

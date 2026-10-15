@@ -13,6 +13,11 @@
             )
                 .trim()
                 .replace(/\/+$/, "");
+            const isLocalDemo = Boolean(
+                window.EcodriveSession
+                && typeof window.EcodriveSession.isLocalDevelopment === "function"
+                && window.EcodriveSession.isLocalDevelopment()
+            );
             const BOOKING_REFRESH_INTERVAL_MS = 3000;
             const REJECTED_NOTIFIED_KEY_PREFIX = "ecodrive_rejected_booking_notif_seen::";
             const RECEIPT_PDF_SCRIPT_SOURCES = [
@@ -98,6 +103,12 @@
             }
 
             function getCurrentUserEmail() {
+                const sessionEmail = window.EcodriveSession && typeof window.EcodriveSession.getCurrentEmail === "function"
+                    ? window.EcodriveSession.getCurrentEmail()
+                    : "";
+                if (sessionEmail) {
+                    return String(sessionEmail).trim().toLowerCase();
+                }
                 const localValue = (localStorage.getItem(currentUserKey) || "").trim().toLowerCase();
                 if (localValue) {
                     return localValue;
@@ -1594,13 +1605,19 @@
 
                 const apiRows = await fetchBookingsFromApi();
                 const localRows = readBookings();
-                const sourceRows = apiRows.length > 0 ? mergeApiAndLocalRows(apiRows, localRows) : localRows;
+                const sourceRows = isLocalDemo
+                    ? apiRows
+                    : (apiRows.length > 0 ? mergeApiAndLocalRows(apiRows, localRows) : localRows);
                 const rejectedSummary = captureRejectedBookingNotifications(sourceRows);
                 cleanupCancelledBookings(rejectedSummary.rejectedOrderIds);
                 const items = normalizeBookings(sourceRows);
                 latestRenderedBookingItems = items.slice();
                 const maxRows = 6;
                 const htmlParts = [];
+
+                if (!items.length) {
+                    htmlParts.push("<p class=\"booking-empty-state\">You do not have any bookings yet.</p>");
+                }
 
                 items.slice(0, maxRows).forEach(function (item) {
                     const canPrintReceipt = canPrintReceiptStatus(item.status, item.fulfillmentStatus);

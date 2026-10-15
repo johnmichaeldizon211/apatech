@@ -33,8 +33,16 @@
             host === "localhost" ||
             host === "127.0.0.1" ||
             host === "0.0.0.0" ||
+            host === "::1" ||
+            host === "[::1]" ||
             host.endsWith(".local")
         );
+    }
+
+    function isLocalDevelopment() {
+        return Boolean(global.location && (
+            isLocalHost(global.location.hostname) || global.location.protocol === "file:"
+        ));
     }
 
     function getCurrentOrigin() {
@@ -160,7 +168,7 @@
         }
 
         // On localhost, prefer local API and avoid sticky remote fallback base.
-        if (isLocalHost(currentHost)) {
+        if (isLocalDevelopment()) {
             if (!isLocalHost(storedHost)) {
                 return true;
             }
@@ -199,11 +207,18 @@
 
     function detectDefaultApiBase() {
         var fromWindow = trimSlashes(global.ECODRIVE_API_BASE || global.__ECODRIVE_API_BASE || "");
-        if (fromWindow) {
+        if (fromWindow && (!isLocalDevelopment() || isLocalApiBase(fromWindow))) {
             return fromWindow;
         }
-        if (global.location && isLocalHost(global.location.hostname)) {
-            return DEFAULT_LOCAL_API_BASE;
+        if (isLocalDevelopment()) {
+            if (global.location.protocol === "file:") {
+                return DEFAULT_LOCAL_API_BASE;
+            }
+            // Live Server serves static files; the project launcher serves both the UI and API.
+            if (/^55\d\d$/.test(String(global.location.port || ""))) {
+                return global.location.protocol + "//" + global.location.hostname + ":5050";
+            }
+            return getCurrentOrigin() || DEFAULT_LOCAL_API_BASE;
         }
         if (
             global.location
@@ -565,6 +580,10 @@
     }
 
     function shouldAttemptRemoteFallback(input) {
+        // A stopped local server must never redirect demo data or credentials to production.
+        if (isLocalDevelopment()) {
+            return false;
+        }
         if (typeof input !== "string") {
             return false;
         }
@@ -739,7 +758,10 @@
             requestInit.headers = headers;
             var fallbackUrl = shouldAttemptRemoteFallback(input) ? buildRemoteFallbackUrl(input) : "";
 
-            return originalFetch(input, requestInit)
+            var requestInput = typeof input === "string" && input.startsWith("/api/")
+                ? getApiUrl(input)
+                : input;
+            return originalFetch(requestInput, requestInit)
                 .catch(function (error) {
                     if (!fallbackUrl || !isLikelyNetworkError(error)) {
                         throw error;
@@ -807,6 +829,7 @@
         getApiBase: getApiBase,
         setApiBase: setApiBase,
         getApiUrl: getApiUrl,
+        isLocalDevelopment: isLocalDevelopment,
         requireRole: requireRole,
         isAdmin: isAdmin,
         logout: logout

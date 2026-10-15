@@ -10,3 +10,5 @@ api/*.err.log
 api/reviews-config.php
 
 .vercel
+.local/
+test-results/

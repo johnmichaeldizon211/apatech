@@ -395,9 +395,9 @@
                     try {
                         var response = await fetch(getApiUrl("/api/chat/thread/clear"), {
                             method: "POST",
-                            headers: {
+                            headers: getApiHeaders({
                                 "Content-Type": "application/json"
-                            },
+                            }),
                             body: JSON.stringify({})
                         });
                         if (response && response.ok) {
@@ -1214,6 +1214,17 @@
         return API_BASE ? API_BASE + path : path;
     }
 
+    function getApiHeaders(headers) {
+        var requestHeaders = Object.assign({}, headers || {});
+        var token = global.EcodriveSession && typeof global.EcodriveSession.getToken === "function"
+            ? global.EcodriveSession.getToken()
+            : "";
+        if (token) {
+            requestHeaders.Authorization = "Bearer " + token;
+        }
+        return requestHeaders;
+    }
+
     function refreshCatalogFromStorage() {
         var localCatalog = readCatalogFromStorage();
         if (localCatalog && localCatalog.length) {
@@ -1723,7 +1734,8 @@
             pullInFlight = true;
             try {
                 var response = await fetch(getApiUrl("/api/chat/thread?limit=" + String(CHAT_MAX_LOCAL_MESSAGES)), {
-                    method: "GET"
+                    method: "GET",
+                    headers: getApiHeaders()
                 });
                 if (!response.ok) {
                     return;
@@ -1808,9 +1820,9 @@
             try {
                 var response = await fetch(getApiUrl("/api/chat/messages"), {
                     method: "POST",
-                    headers: {
+                    headers: getApiHeaders({
                         "Content-Type": "application/json"
-                    },
+                    }),
                     body: JSON.stringify({
                         entries: outboundEntries.slice(-CHAT_MAX_PUSH_BATCH)
                     })

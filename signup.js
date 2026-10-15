@@ -8,8 +8,10 @@ document.addEventListener("DOMContentLoaded", function () {
         { label: "Pulilan", aliases: ["Pullilan", "City of Pulilan", "Municipality of Pulilan"] },
         { label: "Bustos", aliases: ["City of Bustos", "Municipality of Bustos"] }
     ];
-    var BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v1";
-    var PSGC_API_BASE = "https://psgc.cloud/api/v2";
+    var BARANGAY_CACHE_KEY = "ecodrive_bulacan_barangays_v2";
+    var PSGC_API_BASE = window.EcodriveSession && window.EcodriveSession.isLocalDevelopment()
+        ? window.EcodriveSession.getApiUrl("/api/locations")
+        : "https://psgc.cloud/api/v2";
     var PSGC_TIMEOUT_MS = 15000;
     var FALLBACK_BARANGAYS_BY_CITY = {
         "City of Baliwag": ["Bagong Nayon", "Concepcion", "Makinabang", "Poblacion", "Sabang", "San Jose", "Santo Nino", "Tarcan"],

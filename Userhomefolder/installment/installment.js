@@ -55,7 +55,9 @@
             "Taguig City": ["Fort Bonifacio", "Lower Bicutan", "Pembo", "Pinagsama", "Western Bicutan"]
         }
     };
-    const PSGC_API_BASE = "https://psgc.cloud/api/v2";
+    const PSGC_API_BASE = window.EcodriveSession && window.EcodriveSession.isLocalDevelopment()
+        ? window.EcodriveSession.getApiUrl("/api/locations")
+        : "https://psgc.cloud/api/v2";
     const LOCATION_FETCH_TIMEOUT_MS = 15000;
     // Keep payload size within common serverless request limits.
     const INSTALLMENT_ATTACHMENT_MAX_FILE_BYTES = 900 * 1024;
